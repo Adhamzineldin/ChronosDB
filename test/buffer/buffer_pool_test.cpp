@@ -20,15 +20,18 @@ void TestBufferPoolBinary() {
 
     DiskManager *disk_manager = new DiskManager(filename);
     
-    // 2. Create a small pool (Size = 5) to force evictions quickly
-    // This allows us to test the "Clock" or "LRU" logic without needing gigabytes of RAM.
+    // 2. Create a small pool (Size = 5) to force evictions
     BufferPoolManager *bpm = new BufferPoolManager(5, disk_manager);
 
     page_id_t page_id_temp;
     auto *page0 = bpm->NewPage(&page_id_temp);
     
+    // IMPORTANT: Capture the actual ID assigned to the first page.
+    // (If BPM starts at 1, this will be 1. If 0, it will be 0).
+    page_id_t first_page_id = page0->GetPageId();
+    std::cout << "[INFO] First Page created with ID: " << first_page_id << std::endl;
+
     // Scenario 1: Fill the Pool
-    // We already have Page 0. Let's create 4 more (Total 5).
     std::cout << "[STEP 1] Filling the pool..." << std::endl;
     
     auto *page1 = bpm->NewPage(&page_id_temp);
@@ -43,50 +46,48 @@ void TestBufferPoolBinary() {
     assert(page3 != nullptr);
     assert(page4 != nullptr);
 
-    // Write some data to Page 0 so we can verify persistence later
-    char *data_ptr = page0->GetData() + sizeof(PageHeader);
+    // Write data to the first page.
+    // CRITICAL FIX: We add an offset to avoid overwriting the Page Header (PageID).
+    // If PageHeader struct isn't visible here, we use sizeof(page_id_t) which is 4 bytes.
+    // But sizeof(PageHeader) is safer if available.
+    int offset = sizeof(page_id_t); // Safest minimum offset
+    char *data_ptr = page0->GetData() + offset;
     std::strcpy(data_ptr, "Hello Page 0");
     
     // Scenario 2: The "Full Pool" Check
-    // All 5 pages are currently pinned (Pin Count = 1).
-    // If we ask for a 6th page, it SHOULD FAIL because there are no victims.
     std::cout << "[STEP 2] Testing pinned limit..." << std::endl;
     auto *fail_page = bpm->NewPage(&page_id_temp);
     assert(fail_page == nullptr); 
     std::cout << "  -> Correctly failed to allocate (Pool is full of pinned pages)." << std::endl;
 
     // Scenario 3: Unpin and Evict
-    // We unpin Page 0. We mark it "Dirty" (true) because we wrote data to it.
-    // Page 0 is now the only candidate for eviction.
-    std::cout << "[STEP 3] Unpinning Page 0 (Dirty)..." << std::endl;
-    bpm->UnpinPage(page0->GetPageId(), true);
+    std::cout << "[STEP 3] Unpinning Page " << first_page_id << " (Dirty)..." << std::endl;
+    
+    // FIX: Unpin using the captured ID
+    bpm->UnpinPage(first_page_id, true);
 
-    // Now we ask for a new page. BPM should:
-    // 1. See Page 0 is unpinned.
-    // 2. Write Page 0 to disk (Flush).
-    // 3. Re-use that frame for Page 5.
+    // Now we ask for a new page. It should evict the one we just unpinned.
     auto *page5 = bpm->NewPage(&page_id_temp);
     assert(page5 != nullptr);
-    std::cout << "  -> Success! Page 0 was evicted to make room for Page 5." << std::endl;
+    std::cout << "  -> Success! Old page was evicted to make room for Page " << page5->GetPageId() << std::endl;
 
     // Scenario 4: Fetch Back (Persistence Check)
-    // We want to read Page 0 again. 
-    // Since it was evicted, this forces a fetch from Disk.
-    // If the data is "Hello Page 0", it means the Flush worked!
-    
-    // First, unpin Page 1 to make room (Not dirty)
+    // First, unpin Page 1 (or whatever the second page was) to make room
     bpm->UnpinPage(page1->GetPageId(), false);
     
-    std::cout << "[STEP 4] Fetching Page 0 back from disk..." << std::endl;
-    page0 = bpm->FetchPage(0);
+    std::cout << "[STEP 4] Fetching Page " << first_page_id << " back from disk..." << std::endl;
+    
+    // FIX: Fetch using the captured ID
+    page0 = bpm->FetchPage(first_page_id);
     assert(page0 != nullptr);
     
-    char *read_ptr = page0->GetData() + sizeof(PageHeader);
+    // Verify data
+    char *read_ptr = page0->GetData() + offset;
     assert(strcmp(read_ptr, "Hello Page 0") == 0);
+    std::cout << "  -> Data matched! Persistence is working." << std::endl;
 
     // Cleanup
-    // Unpin everyone so the destructor is happy (optional but good practice)
-    bpm->UnpinPage(page0->GetPageId(), false);
+    bpm->UnpinPage(first_page_id, false);
     bpm->UnpinPage(page2->GetPageId(), false);
     bpm->UnpinPage(page3->GetPageId(), false);
     bpm->UnpinPage(page4->GetPageId(), false);

@@ -31,5 +31,7 @@ add_executable(FrancoDB main.cpp
         buffer/buffer_pool_manager.cpp
         include/buffer/replacer.h
         include/buffer/clock_replacer.h
-        buffer/clock_replacer.cpp)
+        buffer/clock_replacer.cpp
+        include/storage/page/b_plus_tree_page.h
+        storage/page/b_plus_tree_page.cpp)
 target_link_libraries(FrancoDB francodb_lib)

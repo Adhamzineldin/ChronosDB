@@ -12,8 +12,7 @@ foreach(test_source ${TEST_SOURCES})
     get_filename_component(test_name ${test_source} NAME_WE)
 
     # Create the executable (e.g., bin/disk_test)
-    add_executable(${test_name} ${test_source}
-            buffer/buffer_pool_test.cpp)
+    add_executable(${test_name} ${test_source})
 
     # Link it to your database library
     target_link_libraries(${test_name} PRIVATE francodb_lib)

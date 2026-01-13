@@ -151,4 +151,11 @@ namespace francodb {
         int rc = stat(file_name.c_str(), &stat_buf);
         return rc == 0 ? static_cast<int>(stat_buf.st_size) : -1;
     }
+    
+    int DiskManager::GetNumPages() {
+        return GetFileSize(file_name_) / PAGE_SIZE;
+    }
+    
+    
+    
 } // namespace francodb

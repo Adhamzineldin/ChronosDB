@@ -57,6 +57,8 @@ namespace francodb {
          * Returns the enforced file name (e.g., "users.franco").
          */
         inline std::string GetFileName() const { return file_name_; }
+        
+        int GetNumPages();
 
         /**
          * Closes and deletes the file (useful for unit tests).
