@@ -40,6 +40,16 @@ public:
     // Search for a key and store the value in 'result'.
     // Returns true if found.
     bool GetValue(const KeyType &key, std::vector<ValueType> *result, Transaction *transaction = nullptr);
+    
+    
+    void SetRootPageId(page_id_t root_page_id) {
+        root_page_id_ = root_page_id;
+    }
+    
+    page_id_t GetRootPageId() const {
+        return root_page_id_;
+    }
+    
 
     // --- DEBUGGING ---
     // (Optional: Prints the tree structure to console)

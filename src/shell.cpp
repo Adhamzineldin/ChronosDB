@@ -30,7 +30,7 @@ void PrintPrompt() {
 int main() {
     // 1. Initialize the Engine
     // We persist data to "franco.db"
-    std::string db_file = "franco.db";
+    std::string db_file = "franco.francodb";
     auto *disk_manager = new DiskManager(db_file);
     // Give the shell plenty of memory (100 pages)
     auto *bpm = new BufferPoolManager(100, disk_manager); 

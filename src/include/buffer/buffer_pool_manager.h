@@ -23,6 +23,8 @@ namespace francodb {
         Page *NewPage(page_id_t *page_id);
         bool DeletePage(page_id_t page_id);
         void FlushAllPages();
+        
+        DiskManager *GetDiskManager() { return disk_manager_; }
 
     private:
         bool FindFreeFrame(frame_id_t *out_frame_id);

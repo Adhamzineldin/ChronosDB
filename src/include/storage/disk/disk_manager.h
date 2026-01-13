@@ -6,6 +6,7 @@
 #include <mutex>
 #include <sys/stat.h>
 #include <filesystem>
+#include <vector>
 
 // OS-Specific Includes for Raw I/O
 #ifdef _WIN32
@@ -23,13 +24,13 @@ namespace francodb {
     /**
      * DiskManager takes care of the allocation and deallocation of pages within a database.
      * It performs the physical read/write operations to the disk.
-     * * "Exclusive" Feature: Enforces the .franco file extension.
+     * Enforces the .francodb file extension.
      */
     class DiskManager {
     public:
         /**
          * Creates or opens a database file.
-         * Automatically appends ".franco" if missing.
+         * Automatically appends ".francodb" if missing.
          * @param db_file The base name of the database.
          */
         explicit DiskManager(const std::string &db_file);
@@ -37,12 +38,12 @@ namespace francodb {
         ~DiskManager();
 
         /**
-         * Read a specific page from the .franco file.
+         * Read a specific page from the .francodb file.
          */
         void ReadPage(uint32_t page_id, char *page_data);
 
         /**
-         * Write a specific page to the .franco file.
+         * Write a specific page to the .francodb file.
          */
         void WritePage(uint32_t page_id, const char *page_data);
         
@@ -54,7 +55,7 @@ namespace francodb {
         int GetFileSize(const std::string &file_name);
     
         /**
-         * Returns the enforced file name (e.g., "users.franco").
+         * Returns the enforced file name (e.g., "users.francodb").
          */
         inline std::string GetFileName() const { return file_name_; }
         
@@ -65,8 +66,14 @@ namespace francodb {
          */
         void ShutDown();
 
+        // --- NEW: SECURE METADATA MANAGEMENT ---
+        // These methods handle the .francodb.meta file with magic headers
+        void WriteMetadata(const std::string &data);
+        bool ReadMetadata(std::string &data);
+
     private:
         std::string file_name_;
+        std::string meta_file_name_; // <--- Stores the name of the meta file
         std::mutex io_mutex_;
 
         // OS-Specific File Handles

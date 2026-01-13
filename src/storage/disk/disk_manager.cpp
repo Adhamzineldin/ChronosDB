@@ -7,8 +7,12 @@ namespace francodb {
     constexpr char FRAME_FILE_MAGIC[] = "FRANCODB";
     constexpr size_t MAGIC_LEN = sizeof(FRAME_FILE_MAGIC) - 1; 
 
+    // New Magic Header for the Metadata File
+    constexpr char META_FILE_MAGIC[] = "FRANCO_META"; 
+    constexpr size_t META_MAGIC_LEN = sizeof(META_FILE_MAGIC) - 1;
+
     DiskManager::DiskManager(const std::string &db_file) {
-        // 1. Enforce the ".franco" extension
+        // 1. Enforce the ".francodb" extension
         std::filesystem::path path(db_file);
         if (path.extension() != ".francodb") {
             file_name_ = db_file + ".francodb";
@@ -16,7 +20,10 @@ namespace francodb {
             file_name_ = db_file;
         }
 
-        // 2. Open the file (OS Specific)
+        // 2. Set Meta File Name (e.g., "my.francodb.meta")
+        meta_file_name_ = file_name_ + ".meta";
+
+        // 3. Open the file (OS Specific)
 #ifdef _WIN32
         // Windows: CreateFileA (The 'A' stands for ANSI strings)
         db_io_handle_ = CreateFileA(
@@ -40,8 +47,7 @@ namespace francodb {
         }
 #endif
 
-
-        // 3. THE MAGIC CHECK (The Professor Pleaser)
+        // 4. THE MAGIC CHECK (The Professor Pleaser)
         // Check if the file is empty (New Database)
         if (GetFileSize(file_name_) == 0) {
             // --- PAGE 0: BRANDING ---
@@ -58,7 +64,6 @@ namespace francodb {
             // Binary: 00000111 = 0x07 (Page 0, 1, 2)
             bitmap_page[0] = 0x07; 
             
-            // Use the constant from our new manager
             WritePage(2, bitmap_page); 
 
             FlushLog();
@@ -68,7 +73,7 @@ namespace francodb {
             char magic_page[PAGE_SIZE];
             ReadPage(0, magic_page);
 
-            // Check the first 4 bytes
+            // Check the first bytes
             if (std::memcmp(magic_page, FRAME_FILE_MAGIC, MAGIC_LEN) != 0) {
                 throw std::runtime_error(
                     "CORRUPTION ERROR: File is not a valid FrancoDB format. Missing magic header.");
@@ -98,22 +103,16 @@ namespace francodb {
         uint32_t offset = page_id * PAGE_SIZE;
 
 #ifdef _WIN32
-        // Windows does not have atomic seek+read (pread). 
-        // We use OVERLAPPED to specify the offset explicitly.
         OVERLAPPED overlapped = {};
         overlapped.Offset = offset;
-
         DWORD bytes_read;
         if (!ReadFile(db_io_handle_, page_data, PAGE_SIZE, &bytes_read, &overlapped)) {
             throw std::runtime_error("Disk I/O Error: Failed to read page " + std::to_string(page_id));
         }
-
-        // If we read less than PAGE_SIZE (e.g., new file), fill the rest with zeros
         if (bytes_read < PAGE_SIZE) {
             std::memset(page_data + bytes_read, 0, PAGE_SIZE - bytes_read);
         }
 #else
-        // Linux pread is atomic and thread-safe
         ssize_t bytes_read = pread(db_io_fd_, page_data, PAGE_SIZE, offset);
         if (bytes_read == -1) {
             throw std::runtime_error("Disk I/O Error: Failed to read page " + std::to_string(page_id));
@@ -130,7 +129,6 @@ namespace francodb {
 #ifdef _WIN32
         OVERLAPPED overlapped = {};
         overlapped.Offset = offset;
-
         DWORD bytes_written;
         if (!WriteFile(db_io_handle_, page_data, PAGE_SIZE, &bytes_written, &overlapped)) {
             throw std::runtime_error("Disk I/O Error: Failed to write page " + std::to_string(page_id));
@@ -143,7 +141,6 @@ namespace francodb {
 #endif
     }
 
-    // --- THE MISSING IMPLEMENTATION ---
     void DiskManager::FlushLog() {
         std::lock_guard<std::mutex> guard(io_mutex_);
 #ifdef _WIN32
@@ -152,7 +149,6 @@ namespace francodb {
         fsync(db_io_fd_);
 #endif
     }
-
 
     int DiskManager::GetFileSize(const std::string &file_name) {
         struct stat stat_buf;
@@ -163,7 +159,55 @@ namespace francodb {
     int DiskManager::GetNumPages() {
         return GetFileSize(file_name_) / PAGE_SIZE;
     }
-    
-    
+
+    // --- NEW: SECURE METADATA I/O ---
+
+    void DiskManager::WriteMetadata(const std::string &data) {
+        // We use std::ofstream here because Metadata is variable length text, not fixed 4KB pages.
+        // However, we wrap it with a Magic Header for security.
+        
+        std::ofstream out(meta_file_name_, std::ios::binary | std::ios::trunc);
+        if (!out.is_open()) {
+            std::cerr << "[DISK] Error opening meta file for write: " << meta_file_name_ << std::endl;
+            return;
+        }
+
+        // 1. Write Magic Header (FRANCO_META)
+        out.write(META_FILE_MAGIC, META_MAGIC_LEN);
+
+        // 2. Write Size
+        size_t size = data.size();
+        out.write(reinterpret_cast<const char*>(&size), sizeof(size));
+
+        // 3. Write Actual Data
+        out.write(data.c_str(), size);
+        out.close();
+    }
+
+    bool DiskManager::ReadMetadata(std::string &data) {
+        std::ifstream in(meta_file_name_, std::ios::binary);
+        if (!in.is_open()) return false; 
+
+        // 1. Verify Magic Header
+        char magic[16];
+        std::memset(magic, 0, 16);
+        in.read(magic, META_MAGIC_LEN);
+        
+        if (std::memcmp(magic, META_FILE_MAGIC, META_MAGIC_LEN) != 0) {
+            std::cerr << "[DISK] Invalid Meta File (Wrong Magic Header)!" << std::endl;
+            return false;
+        }
+
+        // 2. Read Size
+        size_t size;
+        in.read(reinterpret_cast<char*>(&size), sizeof(size));
+
+        // 3. Read Data
+        std::vector<char> buffer(size);
+        in.read(buffer.data(), size);
+        
+        data.assign(buffer.data(), size);
+        return true;
+    }
     
 } // namespace francodb

@@ -3,6 +3,8 @@
 #include <vector>
 #include <memory>
 #include <iostream>
+#include <iomanip>
+#include <sstream>
 #include "execution/executor_context.h"
 #include "parser/statement.h"
 #include "execution/executors/insert_executor.h"
@@ -34,7 +36,6 @@ namespace francodb {
                 }
 
                 case StatementType::CREATE: {
-                    // Cast the generic Statement to a specific CreateStatement
                     auto *create_stmt = dynamic_cast<CreateStatement *>(stmt);
                     ExecuteCreate(create_stmt);
                     break;
@@ -71,7 +72,65 @@ namespace francodb {
         }
 
     private:
-        // --- 1. CREATE HANDLER ---
+        // Helper function to convert Value to string
+        std::string ValueToString(const Value &v) {
+            std::ostringstream oss;
+            oss << v;
+            return oss.str();
+        }
+
+        // Helper function to print PostgreSQL-style table
+        void PrintPostgresTable(const Schema *schema, const std::vector<std::vector<std::string>> &rows) {
+            if (schema->GetColumnCount() == 0) {
+                return;
+            }
+
+            // Calculate column widths
+            std::vector<size_t> col_widths;
+            for (uint32_t i = 0; i < schema->GetColumnCount(); ++i) {
+                size_t max_width = schema->GetColumns()[i].GetName().length();
+                for (const auto &row : rows) {
+                    max_width = std::max(max_width, row[i].length());
+                }
+                col_widths.push_back(max_width);
+            }
+
+            // Print column headers
+            std::cout << " ";
+            for (uint32_t i = 0; i < schema->GetColumnCount(); ++i) {
+                std::cout << std::left << std::setw(col_widths[i]) << schema->GetColumns()[i].GetName();
+                if (i < schema->GetColumnCount() - 1) {
+                    std::cout << " | ";
+                }
+            }
+            std::cout << std::endl;
+
+            // Print separator line
+            std::cout << "-";
+            for (uint32_t i = 0; i < schema->GetColumnCount(); ++i) {
+                std::cout << std::string(col_widths[i], '-');
+                if (i < schema->GetColumnCount() - 1) {
+                    std::cout << "-+-";
+                }
+            }
+            std::cout << "-" << std::endl;
+
+            // Print rows
+            for (const auto &row : rows) {
+                std::cout << " ";
+                for (uint32_t i = 0; i < row.size(); ++i) {
+                    std::cout << std::left << std::setw(col_widths[i]) << row[i];
+                    if (i < row.size() - 1) {
+                        std::cout << " | ";
+                    }
+                }
+                std::cout << std::endl;
+            }
+
+            // Print footer
+            std::cout << "(" << rows.size() << " row" << (rows.size() != 1 ? "s" : "") << ")" << std::endl;
+        }
+
         void ExecuteCreate(CreateStatement *stmt) {
             Schema schema(stmt->columns_);
             bool success = catalog_->CreateTable(stmt->table_name_, schema);
@@ -89,8 +148,6 @@ namespace francodb {
             std::cout << "[EXEC] Created Index: " << stmt->index_name_ << " on " << stmt->table_name_ << std::endl;
         }
 
-
-        // --- 2. INSERT HANDLER ---
         void ExecuteInsert(InsertStatement *stmt) {
             InsertExecutor executor(exec_ctx_, stmt);
             executor.Init();
@@ -99,31 +156,23 @@ namespace francodb {
             std::cout << "[EXEC] Insert successful." << std::endl;
         }
 
-        // --- 3. SELECT HANDLER ---
         void ExecuteSelect(SelectStatement *stmt) {
             AbstractExecutor *executor = nullptr;
 
             // --- OPTIMIZER LOGIC START ---
-            // 1. Check if we have a simple equality filter (e.g., "id = 100")
             bool use_index = false;
             std::string index_col_name;
             Value index_search_value;
 
-            // We only optimize simple cases: "WHERE col = val"
             if (!stmt->where_clause_.empty()) {
-                // Check the first condition
                 auto &cond = stmt->where_clause_[0];
                 if (cond.op == "=") {
-                    // 2. Ask Catalog: "Is there an index on this column?"
                     auto indexes = catalog_->GetTableIndexes(stmt->table_name_);
                     for (auto *idx: indexes) {
                         if (idx->col_name_ == cond.column) {
-                            // FOUND A MATCHING INDEX!
                             use_index = true;
                             index_col_name = idx->name_;
                             index_search_value = cond.value;
-
-                            // Create the specialized IndexScanExecutor
                             executor = new IndexScanExecutor(exec_ctx_, stmt, idx, index_search_value);
                             std::cout << "[OPTIMIZER] Using Index: " << idx->name_ << std::endl;
                             break;
@@ -133,39 +182,35 @@ namespace francodb {
             }
             // --- OPTIMIZER LOGIC END ---
 
-            // Fallback: If no index found, use SeqScan
             if (!use_index) {
                 executor = new SeqScanExecutor(exec_ctx_, stmt);
                 std::cout << "[OPTIMIZER] Using Sequential Scan" << std::endl;
             }
 
-            // --- EXECUTION (Same as before) ---
+            // --- EXECUTION WITH BEAUTIFUL FORMATTING ---
             executor->Init();
             Tuple t;
-            int count = 0;
             const Schema *output_schema = executor->GetOutputSchema();
-
-            std::cout << "\n=== QUERY RESULT ===" << std::endl;
-            for (const auto &col: output_schema->GetColumns()) {
-                std::cout << col.GetName() << "\t| ";
-            }
-            std::cout << "\n--------------------" << std::endl;
-
+            
+            // Collect all rows first
+            std::vector<std::vector<std::string>> rows;
             while (executor->Next(&t)) {
+                std::vector<std::string> row;
                 for (uint32_t i = 0; i < output_schema->GetColumnCount(); ++i) {
                     Value v = t.GetValue(*output_schema, i);
-                    std::cout << v << "\t\t| ";
+                    row.push_back(ValueToString(v));
                 }
-                std::cout << std::endl;
-                count++;
+                rows.push_back(row);
             }
-            std::cout << "====================" << std::endl;
-            std::cout << "Rows returned: " << count << "\n" << std::endl;
 
-            delete executor; // Cleanup
+            // Print the beautiful table
+            std::cout << std::endl;
+            PrintPostgresTable(output_schema, rows);
+            std::cout << std::endl;
+
+            delete executor;
         }
 
-        // --- 4. DROP HANDLER ---
         void ExecuteDrop(DropStatement *stmt) {
             bool success = catalog_->DropTable(stmt->table_name_);
             if (!success) {
@@ -174,7 +219,6 @@ namespace francodb {
             std::cout << "[EXEC] Dropped Table: " << stmt->table_name_ << std::endl;
         }
 
-        // --- 5. DELETE HANDLER ---
         void ExecuteDelete(DeleteStatement *stmt) {
             DeleteExecutor executor(exec_ctx_, stmt);
             executor.Init();
@@ -182,7 +226,6 @@ namespace francodb {
             executor.Next(&t);
         }
 
-        // --- 6. UPDATE HANDLER ---
         void ExecuteUpdate(UpdateStatement *stmt) {
             UpdateExecutor executor(exec_ctx_, stmt);
             executor.Init();
