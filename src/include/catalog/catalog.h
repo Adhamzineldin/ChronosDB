@@ -3,6 +3,8 @@
 #include <unordered_map>
 #include <string>
 #include <memory>
+#include <mutex> // <--- NEW
+#include <atomic> // <--- NEW
 
 #include "catalog/table_metadata.h"
 #include "buffer/buffer_pool_manager.h"
@@ -12,48 +14,83 @@ namespace francodb {
 
     class Catalog {
     public:
-        Catalog(BufferPoolManager *bpm) : bpm_(bpm) {}
+        // Initialize OID counter to 0
+        Catalog(BufferPoolManager *bpm) : bpm_(bpm), next_table_oid_(0) {}
 
-        // CREATE TABLE ESM (id RAKAM, ...)
-        bool CreateTable(const std::string &table_name, const Schema &schema) {
-            if (names_to_metadata_.find(table_name) != names_to_metadata_.end()) {
-                return false; // Table already exists
+        /**
+         * Create a new table.
+         * Returns pointers to the metadata, or nullptr if it exists.
+         */
+        TableMetadata *CreateTable(const std::string &table_name, const Schema &schema) {
+            std::lock_guard<std::mutex> lock(latch_); // <--- THREAD SAFETY
+
+            if (names_to_oid_.count(table_name) > 0) {
+                return nullptr; // Table already exists
             }
 
-            // 1. Create the physical storage (TableHeap)
+            // 1. Assign a unique ID
+            uint32_t table_oid = next_table_oid_++;
+
+            // 2. Create physical storage
             auto table_heap = std::make_unique<TableHeap>(bpm_);
             page_id_t first_page_id = table_heap->GetFirstPageId();
 
-            // 2. Create the metadata
-            auto metadata = std::make_unique<TableMetadata>(schema, table_name, std::move(table_heap), first_page_id);
+            // 3. Create metadata with the new OID
+            auto metadata = std::make_unique<TableMetadata>(
+                schema, table_name, std::move(table_heap), first_page_id, table_oid);
 
-            // 3. Register in our maps
-            names_to_metadata_[table_name] = std::move(metadata);
-            return true;
+            // 4. Update Maps
+            TableMetadata *ptr = metadata.get();
+            tables_[table_oid] = std::move(metadata);
+            names_to_oid_[table_name] = table_oid;
+
+            return ptr;
         }
 
-        // Lookup a table by name
-        TableMetadata* GetTable(const std::string &table_name) {
-            if (names_to_metadata_.find(table_name) == names_to_metadata_.end()) {
+        /**
+         * Get table by Name (Used by Parser/Binder)
+         */
+        TableMetadata *GetTable(const std::string &table_name) {
+            std::lock_guard<std::mutex> lock(latch_);
+            if (names_to_oid_.count(table_name) == 0) {
                 return nullptr;
             }
-            return names_to_metadata_[table_name].get();
+            uint32_t oid = names_to_oid_[table_name];
+            return tables_[oid].get();
+        }
+
+        /**
+         * Get table by OID (Used by internal Executors/Indexes)
+         */
+        TableMetadata *GetTable(uint32_t table_oid) {
+            std::lock_guard<std::mutex> lock(latch_);
+            if (tables_.count(table_oid) == 0) {
+                return nullptr;
+            }
+            return tables_[table_oid].get();
         }
         
-        
-        // DROP TABLE ESM
+        /**
+         * Drop Table (S-Grade: Reclaims disk space)
+         */
         bool DropTable(const std::string &table_name) {
-            auto it = names_to_metadata_.find(table_name);
-            if (it == names_to_metadata_.end()) return false;
+            std::lock_guard<std::mutex> lock(latch_);
+            
+            if (names_to_oid_.count(table_name) == 0) return false;
 
-            // 1. Fetch the Bitmap Page from Buffer Pool
+            uint32_t oid = names_to_oid_[table_name];
+            TableMetadata *info = tables_[oid].get();
+
+            // 1. Fetch the Bitmap Page
             Page *bitmap_page = bpm_->FetchPage(FreePageManager::BITMAP_PAGE_ID);
             char *bitmap_data = bitmap_page->GetData();
 
-            // 2. Traverse the TableHeap and free every page
-            page_id_t curr_id = it->second->first_page_id_;
+            // 2. Traverse TableHeap and free pages
+            page_id_t curr_id = info->first_page_id_;
             while (curr_id != INVALID_PAGE_ID) {
                 Page *p = bpm_->FetchPage(curr_id);
+                if (p == nullptr) break; 
+                
                 auto *table_p = reinterpret_cast<TablePage *>(p->GetData());
                 page_id_t next_id = table_p->GetNextPageId();
         
@@ -61,19 +98,28 @@ namespace francodb {
                 FreePageManager::DeallocatePage(bitmap_data, curr_id);
         
                 bpm_->UnpinPage(curr_id, false);
-                // In a real system, you'd mark the page as "deleted" in BPM too
                 curr_id = next_id;
             }
 
-            // 3. Finalize
             bpm_->UnpinPage(FreePageManager::BITMAP_PAGE_ID, true); // Dirty = true
-            names_to_metadata_.erase(table_name);
+
+            // 3. Erase from maps
+            names_to_oid_.erase(table_name);
+            tables_.erase(oid);
+            
             return true;
         }
 
     private:
         BufferPoolManager *bpm_;
-        std::unordered_map<std::string, std::unique_ptr<TableMetadata>> names_to_metadata_;
+        std::mutex latch_; // Protects the maps
+        std::atomic<uint32_t> next_table_oid_;
+
+        // Map: Table OID -> Metadata (Owner of the pointer)
+        std::unordered_map<uint32_t, std::unique_ptr<TableMetadata>> tables_;
+        
+        // Map: Table Name -> Table OID (Lookup helper)
+        std::unordered_map<std::string, uint32_t> names_to_oid_;
     };
 
 } // namespace francodb
