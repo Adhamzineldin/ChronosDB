@@ -13,7 +13,7 @@ foreach(test_source ${TEST_SOURCES})
 
     # Create the executable (e.g., bin/disk_test)
     add_executable(${test_name} ${test_source}
-            storage/index/b_plus_tree_test.cpp)
+    )
 
     # Link it to your database library
     target_link_libraries(${test_name} PRIVATE francodb_lib)

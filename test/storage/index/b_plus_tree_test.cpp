@@ -11,7 +11,7 @@
 using namespace francodb;
 
 void TestSinglePageTree() {
-    std::string filename = "test_tree_single.fdb";
+    std::string filename = "test_tree_single.francodb";
     if (std::filesystem::exists(filename)) {
         std::filesystem::remove(filename);
     }
