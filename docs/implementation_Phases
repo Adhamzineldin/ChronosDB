@@ -10,5 +10,9 @@ PHASE 2 COMPLETED ( BUFFER MANAGER )
 PHASE 3 COMPLETED ( B+ TREE INDEXING )
 8) created table page structure
 9) implemented table heap file operations ( insert, delete, update, select )
+PHASE 4 COMPLETED ( TABLE HEAP FILE )
+10) Create Types for different data types ( int, float, string )
+11) Implement column schema structure
+12) Dynamic tuple structure
 
 

@@ -48,5 +48,10 @@ add_executable(FrancoDB main.cpp
         include/storage/table/table_page.h
         storage/table/table_page.cpp
         include/storage/table/table_heap.h
-        storage/table/table_heap.cpp)
+        storage/table/table_heap.cpp
+        include/common/type.h
+        include/storage/table/column.h
+        include/storage/table/schema.h
+        include/common/value.h
+        storage/table/tuple.cpp)
 target_link_libraries(FrancoDB francodb_lib)

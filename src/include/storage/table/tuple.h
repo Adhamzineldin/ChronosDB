@@ -3,53 +3,35 @@
 #include <string>
 #include <vector>
 #include <cstring>
-#include <sstream>
-
 #include "common/rid.h"
-#include "common/config.h"
+#include "common/value.h" // <--- CRITICAL: Need this for Value
+#include "storage/table/schema.h" // <--- CRITICAL: Need this for Schema
 
 namespace francodb {
-
     class Tuple {
     public:
-        // Empty Constructor
         Tuple() = default;
 
-        // Constructor with data
-        Tuple(std::vector<char> data) : data_(std::move(data)) {}
+        // The S-Grade constructors
+        Tuple(const std::vector<Value> &values, const Schema &schema);
 
-        // Getters
+        Value GetValue(const Schema &schema, uint32_t column_idx) const;
+
         RID GetRid() const { return rid_; }
         void SetRid(RID rid) { rid_ = rid; }
-    
-        // Access raw data
         char *GetData() { return data_.data(); }
         const char *GetData() const { return data_.data(); }
-    
         uint32_t GetLength() const { return data_.size(); }
 
-        // Serialization (Copy data to a buffer)
-        void SerializeTo(char *storage) const {
-            memcpy(storage, data_.data(), data_.size());
-        }
+        void SerializeTo(char *storage) const { memcpy(storage, data_.data(), data_.size()); }
 
-        // Deserialization (Read data from a buffer)
         void DeserializeFrom(const char *storage, uint32_t size) {
             data_.resize(size);
             memcpy(data_.data(), storage, size);
-        }
-    
-        // Debug helper
-        std::string ToString() const {
-            std::stringstream ss;
-            ss << "Tuple(RID=" << rid_.GetPageId() << ":" << rid_.GetSlotNum() 
-               << ", Size=" << data_.size() << ")";
-            return ss.str();
         }
 
     private:
         RID rid_;
         std::vector<char> data_;
     };
-
-} // namespace francodb
+}
