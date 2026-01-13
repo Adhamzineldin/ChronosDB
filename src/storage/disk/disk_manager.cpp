@@ -44,17 +44,25 @@ namespace francodb {
         // 3. THE MAGIC CHECK (The Professor Pleaser)
         // Check if the file is empty (New Database)
         if (GetFileSize(file_name_) == 0) {
-            // It's a new file. Branding it!
-            // We write the Magic Bytes "FRAN" into the very first page.
+            // --- PAGE 0: BRANDING ---
             char magic_page[PAGE_SIZE];
             std::memset(magic_page, 0, PAGE_SIZE);
             std::memcpy(magic_page, FRAME_FILE_MAGIC, MAGIC_LEN);
+            WritePage(0, magic_page); 
 
-            WritePage(0, magic_page); // Page 0 is now reserved for Metadata
+            // --- PAGE 2: FREE PAGE BITMAP ---
+            char bitmap_page[PAGE_SIZE];
+            std::memset(bitmap_page, 0, PAGE_SIZE);
+            
+            // We must mark Page 0, 1, and 2 as "USED" so they aren't recycled.
+            // Binary: 00000111 = 0x07 (Page 0, 1, 2)
+            bitmap_page[0] = 0x07; 
+            
+            // Use the constant from our new manager
+            WritePage(2, bitmap_page); 
 
-            // Ensure it hits the disk immediately
             FlushLog();
-            std::cout << "[INFO] Created new FrancoDB file: " << file_name_ << std::endl;
+            std::cout << "[INFO] Created new FrancoDB file with FreePageMap: " << file_name_ << std::endl;
         } else {
             // It's an existing file. Validate it!
             char magic_page[PAGE_SIZE];

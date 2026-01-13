@@ -2,6 +2,7 @@
 #include "buffer/lru_replacer.h"
 #include "buffer/clock_replacer.h"
 #include "common/config.h"
+#include "storage/page/free_page_manager.h"
 
 namespace francodb {
     BufferPoolManager::BufferPoolManager(size_t pool_size, DiskManager *disk_manager)
@@ -82,20 +83,41 @@ namespace francodb {
     Page *BufferPoolManager::NewPage(page_id_t *page_id) {
         std::lock_guard<std::mutex> guard(latch_);
 
-        // --- FIX: Initialize variable ---
+        // 1. Find a free frame in the buffer pool
         frame_id_t frame_id = -1;
-
-        if (!FindFreeFrame(&frame_id)) {
-            return nullptr;
+        if (!free_list_.empty()) {
+            frame_id = free_list_.front();
+            free_list_.pop_front();
+        } else if (replacer_->Victim(&frame_id)) {
+            Page *old_page = &pages_[frame_id];
+            if (old_page->IsDirty()) {
+                disk_manager_->WritePage(old_page->GetPageId(), old_page->GetData());
+            }
+            page_table_.erase(old_page->GetPageId());
         }
 
-        *page_id = next_page_id_++;
+        if (frame_id == -1) return nullptr;
+
+        // 2. S-CLASS ALLOCATION LOGIC
+        // Instead of just incrementing, we consult the Bitmap (Page 2)
+    
+        // We need to read Page 2 to see if there are any 0s (free pages)
+        char bitmap_data[PAGE_SIZE];
+        disk_manager_->ReadPage(2, bitmap_data);
+    
+        // AllocatePage will return a recycled ID or the end-of-file ID
+        *page_id = FreePageManager::AllocatePage(bitmap_data, disk_manager_->GetNumPages());
+    
+        // Write the updated bitmap back to disk immediately 
+        // (Or better: keep Page 2 pinned in the buffer pool, but this is safer for now)
+        disk_manager_->WritePage(2, bitmap_data);
+
+        // 3. Initialize the page
         Page *page = &pages_[frame_id];
         page->Init(*page_id);
-
+    
         page_table_[*page_id] = frame_id;
         page->IncrementPinCount();
-        replacer_->Pin(frame_id);
 
         return page;
     }

@@ -14,5 +14,7 @@ PHASE 4 COMPLETED ( TABLE HEAP FILE )
 10) Create Types for different data types ( int, float, string )
 11) Implement column schema structure
 12) Dynamic tuple structure
+PHASE 5 COMPLETED ( SYSTEM CATALOGS AND TUPLES )
+13) implemented a bit map to recycle free pages
 
 
