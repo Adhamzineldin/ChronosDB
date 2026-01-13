@@ -8,7 +8,7 @@
 using namespace francodb;
 
 void TestPersistence() {
-    std::string filename = "test_persistence.fdb";
+    std::string filename = "test_persistence.francodb";
     
     // 1. Clean up previous runs
     if (std::filesystem::exists(filename)) {

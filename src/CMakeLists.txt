@@ -33,5 +33,15 @@ add_executable(FrancoDB main.cpp
         include/buffer/clock_replacer.h
         buffer/clock_replacer.cpp
         include/storage/page/b_plus_tree_page.h
-        storage/page/b_plus_tree_page.cpp)
+        storage/page/b_plus_tree_page.cpp
+        include/storage/page/b_plus_tree_internal_page.h
+        "storage/page/b_plus_tree_internal_page.cpp"
+        include/common/exception.h
+        include/common/rid.h
+        include/storage/page/b_plus_tree_leaf_page.h
+        storage/page/b_plus_tree_leaf_page.cpp
+        "include/storage/index/b_plus_tree.h"
+        include/concurrency/transaction.h
+        include/storage/index/index_iterator.h
+        storage/index/b_plus_tree.cpp)
 target_link_libraries(FrancoDB francodb_lib)

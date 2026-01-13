@@ -1,0 +1,8 @@
+//
+// Created by mohal on 13/1/2026.
+//
+
+#ifndef FRANCODB_INDEX_ITERATOR_H
+#define FRANCODB_INDEX_ITERATOR_H
+
+#endif //FRANCODB_INDEX_ITERATOR_H

@@ -19,5 +19,5 @@ namespace francodb {
     /**
      * INVALID_PAGE_ID: Represents a null pointer for pages.
      */
-    static constexpr uint32_t INVALID_PAGE_ID = UINT32_MAX;
+    static constexpr page_id_t INVALID_PAGE_ID = -1;
 } // namespace francodb

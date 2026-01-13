@@ -10,8 +10,8 @@ namespace francodb {
     DiskManager::DiskManager(const std::string &db_file) {
         // 1. Enforce the ".franco" extension
         std::filesystem::path path(db_file);
-        if (path.extension() != ".fdb") {
-            file_name_ = db_file + ".fdb";
+        if (path.extension() != ".francodb") {
+            file_name_ = db_file + ".francodb";
         } else {
             file_name_ = db_file;
         }

@@ -9,7 +9,7 @@
 using namespace francodb;
 
 void TestBufferPoolBinary() {
-    const std::string filename = "test_buffer_pool.fdb";
+    const std::string filename = "test_buffer_pool.francodb";
     
     // 1. Cleanup from previous runs
     if (std::filesystem::exists(filename)) {
