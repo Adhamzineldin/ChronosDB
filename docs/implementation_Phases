@@ -16,5 +16,10 @@ PHASE 4 COMPLETED ( TABLE HEAP FILE )
 12) Dynamic tuple structure
 PHASE 5 COMPLETED ( SYSTEM CATALOGS AND TUPLES )
 13) implemented a bit map to recycle free pages
+14) implemented a free page manager to track free pages
+PHASE 5.5 COMPLETED ( FREE PAGE MANAGEMENT )
+15) implemented a FQL LEXER to tokenize the input query
+PHASE 6 COMPLETED ( FQL LEXER )
+16) implemented a FQL PARSER to parse the tokenized query into an AST (To do)
 
 
