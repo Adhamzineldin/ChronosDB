@@ -28,12 +28,14 @@ namespace francodb {
 
         // --- Specific Command Parsers ---
     
-        std::unique_ptr<CreateStatement> ParseCreate();
+        std::unique_ptr<CreateStatement> ParseCreateTable();
         std::unique_ptr<InsertStatement> ParseInsert();
         std::unique_ptr<SelectStatement> ParseSelect();
         std::unique_ptr<UpdateStatement> ParseUpdate();
         std::unique_ptr<Statement> ParseDelete(); // Handles DROP and DELETE
         std::vector<WhereCondition> ParseWhereClause();
+
+        std::unique_ptr<CreateIndexStatement> ParseCreateIndex();
 
         Lexer lexer_;
         Token current_token_;

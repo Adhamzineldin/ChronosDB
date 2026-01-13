@@ -2,8 +2,11 @@
 
 #include <queue>
 #include "storage/page/b_plus_tree_page.h"
+#include "storage/index/index_key.h"
+
 
 namespace francodb {
+    class RID;
 
     /**
      * Internal Page for B+ Tree.
@@ -44,5 +47,6 @@ namespace francodb {
         // In memory, this array actually extends as far as the page size allows.
         MappingType array_[1]; 
     };
-
+    
+    
 } // namespace francodb

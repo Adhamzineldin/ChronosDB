@@ -7,7 +7,7 @@
 #include "common/value.h"
 
 namespace francodb {
-    enum class StatementType { CREATE, INSERT, SELECT, DELETE_CMD, UPDATE_CMD, DROP };
+    enum class StatementType { CREATE, INSERT, SELECT, DELETE_CMD, UPDATE_CMD, DROP, CREATE_INDEX };
 
     enum class LogicType { NONE, AND, OR };
 
@@ -81,5 +81,13 @@ namespace francodb {
         std::string table_name_;
 
         std::vector<WhereCondition> where_clause_; // Upgrade
+    };
+    
+    struct CreateIndexStatement : public Statement {
+        StatementType GetType() const override { return StatementType::CREATE_INDEX; }
+    
+        std::string index_name_;
+        std::string table_name_;
+        std::string column_name_; // Single column index for simplicity
     };
 } // namespace francodb

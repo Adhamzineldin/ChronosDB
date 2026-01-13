@@ -9,6 +9,7 @@
 #include "execution/executors/seq_scan_executor.h"
 #include "common/exception.h"
 #include "executors/delete_executor.h"
+#include "executors/index_scan_executor.h"
 #include "executors/update_executor.h"
 
 namespace francodb {
@@ -26,6 +27,12 @@ namespace francodb {
             }
 
             switch (stmt->GetType()) {
+                case StatementType::CREATE_INDEX: {
+                    auto *idx_stmt = dynamic_cast<CreateIndexStatement *>(stmt);
+                    ExecuteCreateIndex(idx_stmt);
+                    break;
+                }
+
                 case StatementType::CREATE: {
                     // Cast the generic Statement to a specific CreateStatement
                     auto *create_stmt = dynamic_cast<CreateStatement *>(stmt);
@@ -74,6 +81,15 @@ namespace francodb {
             std::cout << "[EXEC] Created Table: " << stmt->table_name_ << std::endl;
         }
 
+        void ExecuteCreateIndex(CreateIndexStatement *stmt) {
+            auto *index = catalog_->CreateIndex(stmt->index_name_, stmt->table_name_, stmt->column_name_);
+            if (index == nullptr) {
+                throw Exception(ExceptionType::EXECUTION, "Failed to create index (Table exists? Column exists?)");
+            }
+            std::cout << "[EXEC] Created Index: " << stmt->index_name_ << " on " << stmt->table_name_ << std::endl;
+        }
+
+
         // --- 2. INSERT HANDLER ---
         void ExecuteInsert(InsertStatement *stmt) {
             InsertExecutor executor(exec_ctx_, stmt);
@@ -85,24 +101,57 @@ namespace francodb {
 
         // --- 3. SELECT HANDLER ---
         void ExecuteSelect(SelectStatement *stmt) {
-            SeqScanExecutor executor(exec_ctx_, stmt);
-            executor.Init();
+            AbstractExecutor *executor = nullptr;
 
+            // --- OPTIMIZER LOGIC START ---
+            // 1. Check if we have a simple equality filter (e.g., "id = 100")
+            bool use_index = false;
+            std::string index_col_name;
+            Value index_search_value;
+
+            // We only optimize simple cases: "WHERE col = val"
+            if (!stmt->where_clause_.empty()) {
+                // Check the first condition
+                auto &cond = stmt->where_clause_[0];
+                if (cond.op == "=") {
+                    // 2. Ask Catalog: "Is there an index on this column?"
+                    auto indexes = catalog_->GetTableIndexes(stmt->table_name_);
+                    for (auto *idx: indexes) {
+                        if (idx->col_name_ == cond.column) {
+                            // FOUND A MATCHING INDEX!
+                            use_index = true;
+                            index_col_name = idx->name_;
+                            index_search_value = cond.value;
+
+                            // Create the specialized IndexScanExecutor
+                            executor = new IndexScanExecutor(exec_ctx_, stmt, idx, index_search_value);
+                            std::cout << "[OPTIMIZER] Using Index: " << idx->name_ << std::endl;
+                            break;
+                        }
+                    }
+                }
+            }
+            // --- OPTIMIZER LOGIC END ---
+
+            // Fallback: If no index found, use SeqScan
+            if (!use_index) {
+                executor = new SeqScanExecutor(exec_ctx_, stmt);
+                std::cout << "[OPTIMIZER] Using Sequential Scan" << std::endl;
+            }
+
+            // --- EXECUTION (Same as before) ---
+            executor->Init();
             Tuple t;
             int count = 0;
-            const Schema *output_schema = executor.GetOutputSchema();
+            const Schema *output_schema = executor->GetOutputSchema();
 
             std::cout << "\n=== QUERY RESULT ===" << std::endl;
-
-            // Print Header
             for (const auto &col: output_schema->GetColumns()) {
                 std::cout << col.GetName() << "\t| ";
             }
             std::cout << "\n--------------------" << std::endl;
 
-            // Fetch Rows Loop
-            while (executor.Next(&t)) {
-                // Print Columns
+            while (executor->Next(&t)) {
                 for (uint32_t i = 0; i < output_schema->GetColumnCount(); ++i) {
                     Value v = t.GetValue(*output_schema, i);
                     std::cout << v << "\t\t| ";
@@ -112,6 +161,8 @@ namespace francodb {
             }
             std::cout << "====================" << std::endl;
             std::cout << "Rows returned: " << count << "\n" << std::endl;
+
+            delete executor; // Cleanup
         }
 
         // --- 4. DROP HANDLER ---

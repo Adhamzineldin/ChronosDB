@@ -6,6 +6,7 @@
 #include "parser/statement.h"
 #include "storage/table/tuple.h"
 #include "common/exception.h"
+#include "catalog/index_info.h"
 
 namespace francodb {
 
@@ -26,27 +27,29 @@ namespace francodb {
 
         // Insert executes everything in one go, then returns false.
         bool Next(Tuple *tuple) override {
-            // <--- FIX 3: Silence "unused parameter" warning
-            (void)tuple; 
-        
-            if (is_finished_) {
-                return false;
-            }
+            (void)tuple;
+            if (is_finished_) return false;
 
-            // 1. Create the Tuple from the Values in the Plan
             Tuple to_insert(plan_->values_, table_info_->schema_);
-
-            // 2. Insert into TableHeap
-            // <--- FIX 1: Provide the missing RID argument
-            RID rid; // This will hold the PageID and SlotID of where it got saved
+            RID rid;
             bool success = table_info_->table_heap_->InsertTuple(to_insert, &rid, nullptr);
+            if (!success) throw Exception(ExceptionType::EXECUTION, "Failed to insert tuple");
 
-            if (!success) {
-                throw Exception(ExceptionType::EXECUTION, "Failed to insert tuple (Out of space?)");
+            // --- UPDATE INDEXES ---
+            auto indexes = exec_ctx_->GetCatalog()->GetTableIndexes(plan_->table_name_);
+            for (auto *index : indexes) {
+                int col_idx = table_info_->schema_.GetColIdx(index->col_name_);
+                Value key_val = to_insert.GetValue(table_info_->schema_, col_idx);
+             
+                GenericKey<8> key;
+                key.SetFromValue(key_val); 
+             
+                index->b_plus_tree_->Insert(key, rid, nullptr);
             }
+            // ----------------------
 
             is_finished_ = true;
-            return false; // We don't produce output rows for INSERT
+            return false;
         }
 
         const Schema *GetOutputSchema() override { return &table_info_->schema_; }

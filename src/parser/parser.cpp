@@ -4,33 +4,54 @@
 namespace francodb {
 
     std::unique_ptr<Statement> Parser::ParseQuery() {
-        // Dispatch based on the first token (The Command Word)
+        // --- DISPATCHER ---
+        
+        // 1. CREATE ...
         if (current_token_.type == TokenType::CREATE) {
-            return ParseCreate();
-        } else if (current_token_.type == TokenType::INSERT) {
+            Advance(); // Eat '2E3MEL'
+            
+            if (current_token_.type == TokenType::TABLE) {
+                Advance(); // Eat 'GADWAL'
+                return ParseCreateTable();
+            } else if (current_token_.type == TokenType::INDEX) {
+                Advance(); // Eat 'FEHRIS'
+                return ParseCreateIndex();
+            }
+            throw Exception(ExceptionType::PARSER, "Expected GADWAL or FEHRIS after 2E3MEL");
+        } 
+        
+        // 2. INSERT
+        else if (current_token_.type == TokenType::INSERT) {
             return ParseInsert();
-        } else if (current_token_.type == TokenType::SELECT) {
+        } 
+        // 3. SELECT
+        else if (current_token_.type == TokenType::SELECT) {
             return ParseSelect();
-        } else if (current_token_.type == TokenType::UPDATE_CMD) {
+        } 
+        // 4. UPDATE
+        else if (current_token_.type == TokenType::UPDATE_CMD) {
             return ParseUpdate();
-        } else if (current_token_.type == TokenType::DELETE_CMD) {
+        } 
+        // 5. DELETE
+        else if (current_token_.type == TokenType::DELETE_CMD) {
             return ParseDelete();
         }
 
         throw Exception(ExceptionType::PARSER, "Unknown command start: " + current_token_.text);
     }
 
-    // 2E3MEL GADWAL users (id RAKAM, is_active BOOL, price KASR);
-    std::unique_ptr<CreateStatement> Parser::ParseCreate() {
+    // Pre-condition: '2E3MEL' and 'GADWAL' are already consumed.
+    // Expects: TableName ( ... ) ;
+    std::unique_ptr<CreateStatement> Parser::ParseCreateTable() {
         auto stmt = std::make_unique<CreateStatement>();
-        Advance(); // Eat 2E3MEL
 
-        if (!Match(TokenType::TABLE)) throw Exception(ExceptionType::PARSER, "Expected GADWAL");
-
-        if (current_token_.type != TokenType::IDENTIFIER) throw Exception(ExceptionType::PARSER, "Expected table name");
+        // 1. Parse Table Name
+        if (current_token_.type != TokenType::IDENTIFIER) 
+            throw Exception(ExceptionType::PARSER, "Expected table name");
         stmt->table_name_ = current_token_.text;
         Advance();
 
+        // 2. Parse Columns
         if (!Match(TokenType::L_PAREN)) throw Exception(ExceptionType::PARSER, "Expected (");
 
         while (current_token_.type != TokenType::R_PAREN) {
@@ -55,10 +76,40 @@ namespace francodb {
         }
         Advance(); // Eat )
         
-        // STRICT CHECK: Must end with ;
         if (!Match(TokenType::SEMICOLON)) 
-            throw Exception(ExceptionType::PARSER, "Expected ; at end of command, found: " + current_token_.text);
+            throw Exception(ExceptionType::PARSER, "Expected ; at end of command");
             
+        return stmt;
+    }
+
+    // Pre-condition: '2E3MEL' and 'FEHRIS' are already consumed.
+    // Expects: IndexName 3ALA TableName ( Column ) ;
+    std::unique_ptr<CreateIndexStatement> Parser::ParseCreateIndex() {
+        auto stmt = std::make_unique<CreateIndexStatement>();
+        
+        // 1. Index Name
+        if (current_token_.type != TokenType::IDENTIFIER) throw Exception(ExceptionType::PARSER, "Expected Index Name");
+        stmt->index_name_ = current_token_.text;
+        Advance();
+
+        // 2. ON (3ALA)
+        if (!Match(TokenType::ON)) throw Exception(ExceptionType::PARSER, "Expected 3ALA (ON)");
+
+        // 3. Table Name
+        if (current_token_.type != TokenType::IDENTIFIER) throw Exception(ExceptionType::PARSER, "Expected Table Name");
+        stmt->table_name_ = current_token_.text;
+        Advance();
+
+        // 4. ( Column )
+        if (!Match(TokenType::L_PAREN)) throw Exception(ExceptionType::PARSER, "Expected (");
+        
+        if (current_token_.type != TokenType::IDENTIFIER) throw Exception(ExceptionType::PARSER, "Expected Column Name");
+        stmt->column_name_ = current_token_.text;
+        Advance();
+
+        if (!Match(TokenType::R_PAREN)) throw Exception(ExceptionType::PARSER, "Expected )");
+        if (!Match(TokenType::SEMICOLON)) throw Exception(ExceptionType::PARSER, "Expected ;");
+
         return stmt;
     }
 
@@ -76,20 +127,16 @@ namespace francodb {
         if (!Match(TokenType::L_PAREN)) throw Exception(ExceptionType::PARSER, "Expected (");
 
         while (current_token_.type != TokenType::R_PAREN) {
-            stmt->values_.push_back(ParseValue()); // Use helper
-
+            stmt->values_.push_back(ParseValue());
             if (current_token_.type == TokenType::COMMA) Advance();
         }
         Advance(); // )
         
-        // STRICT CHECK
-        if (!Match(TokenType::SEMICOLON)) 
-            throw Exception(ExceptionType::PARSER, "Expected ; at end of command, found: " + current_token_.text);
-
+        if (!Match(TokenType::SEMICOLON)) throw Exception(ExceptionType::PARSER, "Expected ;");
         return stmt;
     }
 
-    // 2E5TAR * MEN users LAMA ... ;
+    // 2E5TAR ...
     std::unique_ptr<SelectStatement> Parser::ParseSelect() {
         auto stmt = std::make_unique<SelectStatement>();
         Advance(); // 2E5TAR
@@ -111,14 +158,11 @@ namespace francodb {
 
         stmt->where_clause_ = ParseWhereClause();
         
-        // STRICT CHECK (This fixes the 'Invalid Token' test failure)
-        if (!Match(TokenType::SEMICOLON)) 
-            throw Exception(ExceptionType::PARSER, "Expected ; at end of command, found: " + current_token_.text);
-
+        if (!Match(TokenType::SEMICOLON)) throw Exception(ExceptionType::PARSER, "Expected ;");
         return stmt;
     }
 
-    // 2EMSA7 MEN users LAMA ... ;
+    // 2EMSA7 ...
     std::unique_ptr<Statement> Parser::ParseDelete() {
         Advance(); // Eat 2EMSA7
 
@@ -127,36 +171,30 @@ namespace francodb {
             auto stmt = std::make_unique<DropStatement>();
             stmt->table_name_ = current_token_.text;
             Advance();
-            
-            if (!Match(TokenType::SEMICOLON)) 
-                throw Exception(ExceptionType::PARSER, "Expected ; after Drop Table");
+            if (!Match(TokenType::SEMICOLON)) throw Exception(ExceptionType::PARSER, "Expected ;");
             return stmt;
-            
         } else if (Match(TokenType::FROM)) {
             // DELETE FROM
             auto stmt = std::make_unique<DeleteStatement>();
             stmt->table_name_ = current_token_.text;
             Advance();
-
             stmt->where_clause_ = ParseWhereClause();
-
-            if (!Match(TokenType::SEMICOLON)) 
-                throw Exception(ExceptionType::PARSER, "Expected ; at end of command");
+            if (!Match(TokenType::SEMICOLON)) throw Exception(ExceptionType::PARSER, "Expected ;");
             return stmt;
         }
-        throw Exception(ExceptionType::PARSER, "Syntax error after 2EMSA7: Expected GADWAL or MEN");
+        throw Exception(ExceptionType::PARSER, "Expected GADWAL or MEN after 2EMSA7");
     }
 
-    // 3ADEL GOWA users 5ALY ... ;
+    // 3ADEL ...
     std::unique_ptr<UpdateStatement> Parser::ParseUpdate() {
         auto stmt = std::make_unique<UpdateStatement>();
         Advance(); // Eat 3ADEL
-        if (!Match(TokenType::INTO)) throw Exception(ExceptionType::PARSER, "Expected GOWA after Update");
+        if (!Match(TokenType::INTO)) throw Exception(ExceptionType::PARSER, "Expected GOWA");
 
         stmt->table_name_ = current_token_.text;
         Advance();
 
-        if (!Match(TokenType::UPDATE_SET)) throw Exception(ExceptionType::PARSER, "Expected 5ALY (Set)");
+        if (!Match(TokenType::UPDATE_SET)) throw Exception(ExceptionType::PARSER, "Expected 5ALY");
 
         stmt->target_column_ = current_token_.text;
         Advance();
@@ -166,16 +204,13 @@ namespace francodb {
 
         stmt->where_clause_ = ParseWhereClause();
 
-        if (!Match(TokenType::SEMICOLON)) 
-            throw Exception(ExceptionType::PARSER, "Expected ; at end of command");
-
+        if (!Match(TokenType::SEMICOLON)) throw Exception(ExceptionType::PARSER, "Expected ;");
         return stmt;
     }
 
-    // --- HELPER FUNCTIONS ---
+    // --- HELPERS ---
 
     Value Parser::ParseValue() {
-        // Handle Negative Numbers (The Lexer produces NUMBER for -50, so this logic is simple)
         if (current_token_.type == TokenType::NUMBER) {
             Value v(TypeId::INTEGER, std::stoi(current_token_.text));
             Advance();
@@ -197,29 +232,22 @@ namespace francodb {
             Advance();
             return v;
         }
-        throw Exception(ExceptionType::PARSER, "Expected a valid value at: " + current_token_.text);
+        throw Exception(ExceptionType::PARSER, "Expected value, found: " + current_token_.text);
     }
 
     std::vector<WhereCondition> Parser::ParseWhereClause() {
         std::vector<WhereCondition> conditions;
-
-        if (!Match(TokenType::WHERE)) {
-            return conditions;
-        }
+        if (!Match(TokenType::WHERE)) return conditions;
 
         while (true) {
             WhereCondition cond;
-
-            if (current_token_.type != TokenType::IDENTIFIER) 
-                throw Exception(ExceptionType::PARSER, "Expected column name in LAMA clause");
+            if (current_token_.type != TokenType::IDENTIFIER) throw Exception(ExceptionType::PARSER, "Expected column");
             cond.column = current_token_.text;
             Advance();
 
-            if (!Match(TokenType::EQUALS)) 
-                throw Exception(ExceptionType::PARSER, "Expected =");
-            cond.op = "=";
-
+            if (!Match(TokenType::EQUALS)) throw Exception(ExceptionType::PARSER, "Expected =");
             cond.value = ParseValue();
+            cond.op = "=";
 
             if (Match(TokenType::AND)) {
                 cond.next_logic = LogicType::AND;
@@ -230,7 +258,7 @@ namespace francodb {
             } else {
                 cond.next_logic = LogicType::NONE;
                 conditions.push_back(cond);
-                break; 
+                break;
             }
         }
         return conditions;
@@ -243,4 +271,5 @@ namespace francodb {
         }
         return false;
     }
+
 } // namespace francodb

@@ -25,6 +25,8 @@ namespace francodb {
         {"AH",      TokenType::TRUE_LIT},  // True
         {"LA",      TokenType::FALSE_LIT},
         {"KASR",    TokenType::DECIMAL_TYPE},
+        {"FEHRIS", TokenType::INDEX},
+        {"3ALA",   TokenType::ON},
         
     };
 

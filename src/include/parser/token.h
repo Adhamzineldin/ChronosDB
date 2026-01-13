@@ -23,6 +23,7 @@ namespace francodb {
         BOOL_TYPE,   // BOOL
         DATE_TYPE,   // TARE5
         DECIMAL_TYPE,    // KASR
+        INDEX, // FEHRIS
     
         DECIMAL_LITERAL,
         TRUE_LIT,    // AH
@@ -31,6 +32,7 @@ namespace francodb {
         // LOGICAL OPERATORS
         AND,         // WE
         OR,          // AW
+        ON,     // 3ALA
         
         
         // Literals & Symbols
