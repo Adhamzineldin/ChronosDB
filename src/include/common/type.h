@@ -7,7 +7,7 @@ namespace francodb {
 
     /**
      * The Data Types supported by FrancoDB internally.
-     * The Parser will map "RAKAM" -> INTEGER, "ESM" -> VARCHAR.
+     * The Parser will map "RAKAM" -> INTEGER, "GOMLA" -> VARCHAR.
      */
     enum class TypeId {
         INVALID = 0,

@@ -22,7 +22,7 @@ void TestFullSystem() {
     auto bpm = std::make_unique<BufferPoolManager>(50, disk_manager.get());
     auto catalog = std::make_unique<Catalog>(bpm.get());
 
-    // 2. CREATE TABLE users (id RAKAM, name ESM, points RAKAM)
+    // 2. CREATE TABLE users (id RAKAM, name GOMLA, points RAKAM)
     std::vector<Column> cols;
     cols.emplace_back("id", TypeId::INTEGER);
     cols.emplace_back("name", TypeId::VARCHAR, 0);

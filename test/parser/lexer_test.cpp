@@ -9,7 +9,7 @@ void TestLexer() {
     std::cout << "[TEST] Starting Franco Lexer Test..." << std::endl;
 
     // A complete Franco Create Table query
-    std::string input = "2E3MEL gadwal users (id RAKAM, name ESM);";
+    std::string input = "2E3MEL gadwal users (id RAKAM, name GOMLA);";
     std::cout << "Test Input: " << input << std::endl;
     Lexer lexer(input);
 
@@ -27,7 +27,7 @@ void TestLexer() {
         {TokenType::INT_TYPE, "RAKAM"},
         {TokenType::COMMA, ","},
         {TokenType::IDENTIFIER, "name"},
-        {TokenType::STRING_TYPE, "ESM"},
+        {TokenType::STRING_TYPE, "GOMLA"},
         {TokenType::R_PAREN, ")"},
         {TokenType::SEMICOLON, ";"}
     };

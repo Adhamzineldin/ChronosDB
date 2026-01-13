@@ -17,7 +17,7 @@ namespace francodb {
         {"GOWA", TokenType::INTO},
         {"ELKEYAM", TokenType::VALUES},
         {"RAKAM", TokenType::INT_TYPE},
-        {"ESM", TokenType::STRING_TYPE},
+        {"GOMLA", TokenType::STRING_TYPE},
         {"WE",     TokenType::AND},
         {"AW",     TokenType::OR},
         {"BOOL", TokenType::BOOL_TYPE},

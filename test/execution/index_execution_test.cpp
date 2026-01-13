@@ -44,7 +44,7 @@ int main() {
 
     try {
         // 2. Create Table
-        RunQuery(engine, "2E3MEL GADWAL users (id RAKAM, name ESM);");
+        RunQuery(engine, "2E3MEL GADWAL users (id RAKAM, name GOMLA);");
 
         // 3. Create Index (The Moment of Truth)
         // Syntax: 2E3MEL FEHRIS index_name 3ALA table_name (column);

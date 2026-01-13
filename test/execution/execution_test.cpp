@@ -35,8 +35,8 @@ int main() {
         std::cout << "--- STARTING FRANCO DB ENGINE ---" << std::endl;
 
         // A. CREATE TABLE
-        // 2E3MEL GADWAL users (id RAKAM, name ESM, points KASR);
-        RunQuery(engine, "2E3MEL GADWAL users (id RAKAM, name ESM, points KASR);");
+        // 2E3MEL GADWAL users (id RAKAM, name GOMLA, points KASR);
+        RunQuery(engine, "2E3MEL GADWAL users (id RAKAM, name GOMLA, points KASR);");
 
         // B. INSERT DATA
         // EMLA GOWA users ELKEYAM (1, 'Ahmed', 95.5);

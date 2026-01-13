@@ -29,6 +29,10 @@ PHASE 8 COMPLETED ( FQL Executor  )
 20) updated executor to interact with B+ tree indexes for faster data retrieval
 21) implemented index creation and deletion commands in FQL
 PHASE 9 COMPLETED ( INDEX INTEGRATION  )
+22) created a simple command line interface to interact with the database
+23) implemented error handling and user feedback in the CLI
+PHASE 10 COMPLETED ( COMMAND LINE INTERFACE  )
+24) wrote unit tests for all major components ( Disk Manager, Buffer Manager, B+ Tree
 
 
 

@@ -12,7 +12,7 @@ using namespace francodb;
 void TestTuplePacking() {
     std::cout << "[TEST] Starting S-Grade Tuple Packing Test..." << std::endl;
 
-    // 1. Define the Schema: (ID: INT, Name: ESM/VARCHAR, IsActive: BOOL)
+    // 1. Define the Schema: (ID: INT, Name: GOMLA/VARCHAR, IsActive: BOOL)
     std::vector<Column> cols;
     cols.emplace_back("id", TypeId::INTEGER);
     cols.emplace_back("name", TypeId::VARCHAR, 0); // Length 0 because it's dynamic

@@ -19,7 +19,7 @@ namespace francodb {
     
         // Types
         INT_TYPE,    // RAKAM
-        STRING_TYPE, // ESM
+        STRING_TYPE, // GOMLA
         BOOL_TYPE,   // BOOL
         DATE_TYPE,   // TARE5
         DECIMAL_TYPE,    // KASR
