@@ -175,6 +175,14 @@ namespace francodb {
             }
             std::cout << "[SYSTEM] Database restored from disk." << std::endl;
         }
+        
+        IndexInfo *GetIndex(const std::string &index_name) {
+            std::lock_guard<std::mutex> lock(latch_);
+            if (index_names_.find(index_name) == index_names_.end()) {
+                return nullptr;
+            }
+            return index_names_[index_name];
+        }
 
     private:
         BufferPoolManager *bpm_;

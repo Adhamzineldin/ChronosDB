@@ -13,11 +13,8 @@ namespace francodb {
      */
     class TableHeap {
     public:
-        // Create a new table heap (or open existing)
-        // If first_page_id is INVALID, we create a new table.
-        
-        TableHeap(BufferPoolManager *bpm, page_id_t first_page_id) 
-        : buffer_pool_manager_(bpm), first_page_id_(first_page_id) {}
+        // FIX: Just DECLARE it here (removed the {} body)
+        TableHeap(BufferPoolManager *bpm, page_id_t first_page_id);
         
         TableHeap(BufferPoolManager *bpm, Transaction *txn = nullptr);
 

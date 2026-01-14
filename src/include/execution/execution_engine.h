@@ -204,9 +204,9 @@ namespace francodb {
             }
 
             // Print the beautiful table
-            std::cout << std::endl;
-            PrintPostgresTable(output_schema, rows);
-            std::cout << std::endl;
+            // std::cout << std::endl;
+            // PrintPostgresTable(output_schema, rows);
+            // std::cout << std::endl;
 
             delete executor;
         }

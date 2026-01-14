@@ -186,10 +186,14 @@ namespace francodb {
     }
 
     // 3ADEL ...
+    // 3ADEL table 5ALY col = val LAMA ...
     std::unique_ptr<UpdateStatement> Parser::ParseUpdate() {
         auto stmt = std::make_unique<UpdateStatement>();
-        Advance(); // Eat 3ADEL
-        if (!Match(TokenType::INTO)) throw Exception(ExceptionType::PARSER, "Expected GOWA");
+        Advance(); // Eat 3ADEL (UPDATE)
+        
+
+        if (current_token_.type != TokenType::IDENTIFIER) 
+            throw Exception(ExceptionType::PARSER, "Expected Table Name after 3ADEL");
 
         stmt->table_name_ = current_token_.text;
         Advance();

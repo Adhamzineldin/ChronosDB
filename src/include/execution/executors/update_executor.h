@@ -62,7 +62,7 @@ public:
             
             count++;
         }
-
+        (void) count;
         std::cout << "[EXEC] Updated " << count << " rows." << std::endl;
         is_finished_ = true;
         return false;

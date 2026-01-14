@@ -50,9 +50,7 @@ macro(add_franco_test test_name file_path)
     endif()
 endmacro()
 
-add_franco_test(parser_test "${TEST_DIR}/parser/parser_test.cpp")
-add_franco_test(lexer_test "${TEST_DIR}/parser/lexer_test.cpp")
-add_franco_test(execution_test "${TEST_DIR}/execution/execution_test.cpp")
-add_franco_test(index_execution_test "${TEST_DIR}/execution/index_execution_test.cpp")
-add_franco_test(b_plus_tree_test "${TEST_DIR}/index/b_plus_tree_test.cpp")
-add_franco_test(b_plus_tree_split_test "${TEST_DIR}/index/b_plus_tree_split_test.cpp")
+
+
+# 4. Add Tests (Optional for now, but good for scalability)
+add_subdirectory(test)
