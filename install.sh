@@ -43,6 +43,22 @@ cmake --build . --target francodb_server francodb_shell
 echo "Creating data directory..."
 mkdir -p ../data
 
+cd ..
+
+# Configuration setup
+echo ""
+echo "=========================================="
+echo "  Configuration Setup"
+echo "=========================================="
+echo ""
+read -p "Would you like to configure FrancoDB now? (y/n) [y]: " configure
+if [ -z "$configure" ] || [ "$configure" = "y" ] || [ "$configure" = "Y" ]; then
+    echo ""
+    echo "Running configuration..."
+    echo "Note: Configuration will be prompted on first server startup."
+    echo "You can also edit francodb.conf manually."
+fi
+
 echo ""
 echo "=========================================="
 echo "  Installation Complete!"
@@ -56,4 +72,6 @@ echo "  ./build/francodb_server"
 echo ""
 echo "To use the shell:"
 echo "  ./build/francodb_shell"
+echo ""
+echo "Configuration file: francodb.conf"
 echo ""

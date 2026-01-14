@@ -29,56 +29,21 @@ int main(int argc, char* argv[]) {
     // Check if connection string provided as argument
     if (argc > 1) {
         std::string conn_str = argv[1];
-        if (conn_str.find("maayn://") == 0) {
-            if (db_client.ConnectFromString(conn_str)) {
-                connected = true;
-                // Extract username from connection string for display
-                size_t user_start = conn_str.find("://") + 3;
-                size_t user_end = conn_str.find('@', user_start);
-                if (user_end != std::string::npos) {
-                    username = conn_str.substr(user_start, user_end - user_start);
-                    size_t colon = username.find(':');
-                    if (colon != std::string::npos) {
-                        username = username.substr(0, colon);
-                    }
-                }
-                // Extract database from connection string (only if there is a path part after host)
-                size_t at_pos = conn_str.find('@');
-                size_t db_start = conn_str.find_last_of('/');
-                if (at_pos != std::string::npos &&
-                    db_start != std::string::npos &&
-                    db_start > at_pos &&
-                    db_start + 1 < conn_str.length()) {
-                    current_db = conn_str.substr(db_start + 1);
-                }
-            } else {
-                std::cerr << "[FATAL] Invalid connection string or connection failed." << std::endl;
-                return 1;
+        // Trim leading colons if present
+        while (!conn_str.empty() && (conn_str.front() == ':' || conn_str.front() == ' ' || conn_str.front() == '\t')) {
+            conn_str.erase(0, 1);
+        }
+        
+        // Find connection string if it appears anywhere
+        size_t conn_start = conn_str.find("maayn://");
+        if (conn_start != std::string::npos) {
+            // Extract the connection string
+            if (conn_start != 0) {
+                conn_str = conn_str.substr(conn_start);
             }
-        }
-    }
-
-    // Manual connection if not connected via argument
-    if (!connected) {
-        std::string password;
-        std::cout << "\nConnection string (or press Enter for manual): ";
-        std::string conn_input;
-        if (!std::getline(std::cin, conn_input)) {
-            // Handle EOF/Ctrl+C gracefully
-            std::cerr << "\n[INFO] Connection cancelled." << std::endl;
-            return 0;
-        }
-        
-        // Trim whitespace
-        while (!conn_input.empty() && (conn_input.front() == ' ' || conn_input.front() == '\t')) {
-            conn_input.erase(0, 1);
-        }
-        while (!conn_input.empty() && (conn_input.back() == ' ' || conn_input.back() == '\t' || conn_input.back() == '\r')) {
-            conn_input.pop_back();
-        }
-        
-        if (!conn_input.empty() && conn_input.find("maayn://") == 0) {
-            if (!db_client.ConnectFromString(conn_input)) {
+            
+            // Try to connect - if fails, exit (NO fallback)
+            if (!db_client.ConnectFromString(conn_str)) {
                 std::cerr << "[FATAL] Invalid connection string or connection failed." << std::endl;
                 std::cerr << "Make sure:" << std::endl;
                 std::cerr << "  1. The server is running (francodb_server)" << std::endl;
@@ -86,50 +51,55 @@ int main(int argc, char* argv[]) {
                 std::cerr << "  3. The server is listening on port 2501" << std::endl;
                 return 1;
             }
-            // Extract username and database from connection string
-            size_t user_start = conn_input.find("://") + 3;
-            size_t user_end = conn_input.find('@', user_start);
+            
+            connected = true;
+            // Extract username from connection string for display
+            size_t user_start = conn_str.find("://") + 3;
+            size_t user_end = conn_str.find('@', user_start);
             if (user_end != std::string::npos) {
-                username = conn_input.substr(user_start, user_end - user_start);
+                username = conn_str.substr(user_start, user_end - user_start);
                 size_t colon = username.find(':');
                 if (colon != std::string::npos) {
                     username = username.substr(0, colon);
                 }
             }
-            size_t at_pos2 = conn_input.find('@');
-            size_t db_start = conn_input.find_last_of('/');
-            if (at_pos2 != std::string::npos &&
+            // Extract database from connection string
+            size_t at_pos = conn_str.find('@');
+            size_t db_start = conn_str.find_last_of('/');
+            if (at_pos != std::string::npos &&
                 db_start != std::string::npos &&
-                db_start > at_pos2 &&
-                db_start + 1 < conn_input.length()) {
-                current_db = conn_input.substr(db_start + 1);
-            }
-        } else if (!conn_input.empty()) {
-            // Manual credentials
-            std::cout << "Username: ";
-            if (!std::getline(std::cin, username)) {
-                std::cerr << "\n[INFO] Connection cancelled." << std::endl;
-                return 0;
-            }
-            std::cout << "Password: ";
-            if (!std::getline(std::cin, password)) {
-                std::cerr << "\n[INFO] Connection cancelled." << std::endl;
-                return 0;
-            }
-            
-            if (!db_client.Connect(net::DEFAULT_SERVER_IP, net::DEFAULT_PORT, username, password)) {
-                std::cerr << "[FATAL] Could not connect/authenticate to FrancoDB server." << std::endl;
-                return 1;
+                db_start > at_pos &&
+                db_start + 1 < conn_str.length()) {
+                current_db = conn_str.substr(db_start + 1);
             }
         } else {
-            // Empty input - use defaults
-            std::cout << "Using default connection (maayn/root@localhost)..." << std::endl;
-            if (!db_client.Connect(net::DEFAULT_SERVER_IP, net::DEFAULT_PORT, net::DEFAULT_ADMIN_USERNAME, net::DEFAULT_ADMIN_PASSWORD)) {
-                std::cerr << "[FATAL] Could not connect/authenticate to FrancoDB server." << std::endl;
-                return 1;
-            }
-            username = net::DEFAULT_ADMIN_USERNAME;
+            // Argument provided but not a connection string - fail
+            std::cerr << "[FATAL] Invalid connection string format: " << argv[1] << std::endl;
+            std::cerr << "Expected format: maayn://user:pass@host:port/dbname" << std::endl;
+            return 1;
         }
+    }
+
+    // Manual connection if not connected via argument
+    if (!connected) {
+        // No argument provided - go directly to manual entry (skip connection string prompt)
+        std::string password;
+        std::cout << "\nUsername: ";
+        if (!std::getline(std::cin, username)) {
+            std::cerr << "\n[INFO] Connection cancelled." << std::endl;
+            return 0;
+        }
+        std::cout << "Password: ";
+        if (!std::getline(std::cin, password)) {
+            std::cerr << "\n[INFO] Connection cancelled." << std::endl;
+            return 0;
+        }
+        
+        if (!db_client.Connect(net::DEFAULT_SERVER_IP, net::DEFAULT_PORT, username, password)) {
+            std::cerr << "[FATAL] Could not connect/authenticate to FrancoDB server." << std::endl;
+            return 1;
+        }
+        connected = true;
     }
 
     std::string input;

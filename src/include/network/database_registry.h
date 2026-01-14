@@ -10,6 +10,7 @@
 #include "buffer/buffer_pool_manager.h"
 #include "catalog/catalog.h"
 #include "common/config.h"
+#include "common/config_manager.h"
 
 namespace francodb {
 
@@ -42,9 +43,20 @@ public:
     std::shared_ptr<DbEntry> GetOrCreate(const std::string &name, size_t pool_size = BUFFER_POOL_SIZE) {
         if (registry_.count(name)) return registry_[name];
 
-        std::filesystem::create_directories("data");
+        // Use configured data directory
+        auto& config = ConfigManager::GetInstance();
+        std::string data_dir = config.GetDataDirectory();
+        std::filesystem::create_directories(data_dir);
+        
         auto entry = std::make_shared<DbEntry>();
-        entry->dm = std::make_unique<DiskManager>("data/" + name);
+        std::string db_path = data_dir + "/" + name;
+        entry->dm = std::make_unique<DiskManager>(db_path);
+        
+        // Apply encryption if enabled
+        if (config.IsEncryptionEnabled() && !config.GetEncryptionKey().empty()) {
+            entry->dm->SetEncryptionKey(config.GetEncryptionKey());
+        }
+        
         entry->bpm = std::make_unique<BufferPoolManager>(pool_size, entry->dm.get());
         entry->catalog = std::make_unique<Catalog>(entry->bpm.get());
         registry_[name] = entry;

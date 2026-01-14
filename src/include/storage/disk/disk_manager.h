@@ -18,6 +18,7 @@
 #endif
 
 #include "common/config.h"
+#include "common/config_manager.h"
 
 namespace francodb {
 
@@ -70,11 +71,17 @@ namespace francodb {
         // These methods handle the .francodb.meta file with magic headers
         void WriteMetadata(const std::string &data);
         bool ReadMetadata(std::string &data);
+        
+        // Set encryption key (if encryption is enabled)
+        void SetEncryptionKey(const std::string& key) { encryption_key_ = key; encryption_enabled_ = !key.empty(); }
+        bool IsEncryptionEnabled() const { return encryption_enabled_; }
 
     private:
         std::string file_name_;
         std::string meta_file_name_; // <--- Stores the name of the meta file
         std::mutex io_mutex_;
+        std::string encryption_key_;
+        bool encryption_enabled_ = false;
 
         // OS-Specific File Handles
 #ifdef _WIN32

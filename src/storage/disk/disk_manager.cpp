@@ -1,4 +1,5 @@
 #include "storage/disk/disk_manager.h"
+#include "common/encryption.h"
 #include <stdexcept>
 #include <cstring>
 #include <filesystem>
@@ -121,20 +122,37 @@ namespace francodb {
             std::memset(page_data + bytes_read, 0, PAGE_SIZE - bytes_read);
         }
 #endif
+        
+        // Decrypt if encryption is enabled
+        if (encryption_enabled_ && !encryption_key_.empty() && page_id > 0) {
+            // Don't decrypt page 0 (magic header)
+            Encryption::DecryptXOR(encryption_key_, page_data, PAGE_SIZE);
+        }
     }
 
     void DiskManager::WritePage(uint32_t page_id, const char *page_data) {
+        // Encrypt if encryption is enabled (make a copy to avoid modifying original)
+        char encrypted_data[PAGE_SIZE];
+        const char* data_to_write = page_data;
+        
+        if (encryption_enabled_ && !encryption_key_.empty() && page_id > 0) {
+            // Don't encrypt page 0 (magic header)
+            std::memcpy(encrypted_data, page_data, PAGE_SIZE);
+            Encryption::EncryptXOR(encryption_key_, encrypted_data, PAGE_SIZE);
+            data_to_write = encrypted_data;
+        }
+        
         uint32_t offset = page_id * PAGE_SIZE;
 
 #ifdef _WIN32
         OVERLAPPED overlapped = {};
         overlapped.Offset = offset;
         DWORD bytes_written;
-        if (!WriteFile(db_io_handle_, page_data, PAGE_SIZE, &bytes_written, &overlapped)) {
+        if (!WriteFile(db_io_handle_, data_to_write, PAGE_SIZE, &bytes_written, &overlapped)) {
             throw std::runtime_error("Disk I/O Error: Failed to write page " + std::to_string(page_id));
         }
 #else
-        ssize_t bytes_written = pwrite(db_io_fd_, page_data, PAGE_SIZE, offset);
+        ssize_t bytes_written = pwrite(db_io_fd_, data_to_write, PAGE_SIZE, offset);
         if (bytes_written == -1) {
             throw std::runtime_error("Disk I/O Error: Failed to write page " + std::to_string(page_id));
         }
@@ -166,6 +184,15 @@ namespace francodb {
         // We use std::ofstream here because Metadata is variable length text, not fixed 4KB pages.
         // However, we wrap it with a Magic Header for security.
         
+        std::string data_to_write = data;
+        
+        // Encrypt metadata if encryption is enabled
+        if (encryption_enabled_ && !encryption_key_.empty()) {
+            std::vector<char> encrypted(data_to_write.begin(), data_to_write.end());
+            Encryption::EncryptXOR(encryption_key_, encrypted.data(), encrypted.size());
+            data_to_write = std::string(encrypted.data(), encrypted.size());
+        }
+        
         std::ofstream out(meta_file_name_, std::ios::binary | std::ios::trunc);
         if (!out.is_open()) {
             std::cerr << "[DISK] Error opening meta file for write: " << meta_file_name_ << std::endl;
@@ -176,11 +203,11 @@ namespace francodb {
         out.write(META_FILE_MAGIC, META_MAGIC_LEN);
 
         // 2. Write Size
-        size_t size = data.size();
+        size_t size = data_to_write.size();
         out.write(reinterpret_cast<const char*>(&size), sizeof(size));
 
-        // 3. Write Actual Data
-        out.write(data.c_str(), size);
+        // 3. Write Actual Data (encrypted if enabled)
+        out.write(data_to_write.c_str(), size);
         out.close();
     }
 
@@ -205,6 +232,11 @@ namespace francodb {
         // 3. Read Data
         std::vector<char> buffer(size);
         in.read(buffer.data(), size);
+        
+        // 4. Decrypt if encryption is enabled
+        if (encryption_enabled_ && !encryption_key_.empty()) {
+            Encryption::DecryptXOR(encryption_key_, buffer.data(), buffer.size());
+        }
         
         data.assign(buffer.data(), size);
         return true;

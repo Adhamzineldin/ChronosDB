@@ -42,9 +42,19 @@ namespace francodb {
 #endif
 
         // Create system database for authentication (system.francodb)
-        // Use fixed path in data/ directory for persistence
-        std::filesystem::create_directories("data");
-        system_disk_ = std::make_unique<DiskManager>("data/system");
+        // Use configured data directory
+        auto& config = ConfigManager::GetInstance();
+        std::string data_dir = config.GetDataDirectory();
+        std::filesystem::create_directories(data_dir);
+        
+        std::string system_db_path = data_dir + "/system";
+        system_disk_ = std::make_unique<DiskManager>(system_db_path);
+        
+        // Apply encryption to system database if enabled
+        if (config.IsEncryptionEnabled() && !config.GetEncryptionKey().empty()) {
+            system_disk_->SetEncryptionKey(config.GetEncryptionKey());
+        }
+        
         system_bpm_ = std::make_unique<BufferPoolManager>(BUFFER_POOL_SIZE, system_disk_.get());
         system_catalog_ = std::make_unique<Catalog>(system_bpm_.get());
         // Load existing catalog if it exists

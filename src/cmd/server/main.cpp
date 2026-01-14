@@ -16,6 +16,7 @@
 #include "catalog/catalog.h"
 #include "common/config.h"
 #include "common/franco_net_config.h"
+#include "common/config_manager.h"
 
 using namespace francodb;
 
@@ -171,9 +172,33 @@ int main() {
 #endif
 
     try {
-        // Core setup - use absolute or fixed paths for persistence
-        std::filesystem::create_directories("data");
-        auto disk_manager = std::make_unique<DiskManager>("data/francodb.db");
+        // Load configuration
+        auto& config = ConfigManager::GetInstance();
+        std::string config_path = "francodb.conf";
+        
+        if (!config.LoadConfig(config_path)) {
+            // Config doesn't exist, run interactive setup
+            std::cout << "\n[INFO] Configuration file not found. Running first-time setup..." << std::endl;
+            config.InteractiveConfig();
+            config.SaveConfig(config_path);
+        }
+        
+        // Apply configuration
+        int port = config.GetPort();
+        std::string data_dir = config.GetDataDirectory();
+        bool encryption_enabled = config.IsEncryptionEnabled();
+        std::string encryption_key = config.GetEncryptionKey();
+        
+        // Create data directory
+        std::filesystem::create_directories(data_dir);
+        
+        // Create disk manager with encryption
+        std::string db_path = data_dir + "/francodb.db";
+        auto disk_manager = std::make_unique<DiskManager>(db_path);
+        if (encryption_enabled && !encryption_key.empty()) {
+            disk_manager->SetEncryptionKey(encryption_key);
+        }
+        
         auto bpm = std::make_unique<BufferPoolManager>(
             BUFFER_POOL_SIZE, disk_manager.get());
         auto catalog = std::make_unique<Catalog>(bpm.get());
@@ -193,10 +218,7 @@ int main() {
         g_system_catalog = server.GetSystemCatalog();
         g_auth_manager = server.GetAuthManager();
         
-        // Configuration from file/env
-        int port = net::DEFAULT_PORT;
-        // Could read from config: config::GetServerPort()
-        
+        // Start server with configured port
         server.Start(port);
         
         // Server.Start() blocks, so shutdown will be handled by signal handlers

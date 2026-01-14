@@ -1,5 +1,6 @@
 // database_registry.cpp
 #include "network/database_registry.h"
+#include "common/config_manager.h"
 
 namespace francodb {
 

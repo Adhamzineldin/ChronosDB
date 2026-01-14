@@ -15,17 +15,33 @@ if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
 # Check for compiler
 Write-Host "Checking for C++ compiler..." -ForegroundColor Yellow
 $compiler = $null
+$generator = $null
+
 if (Get-Command g++ -ErrorAction SilentlyContinue) {
     $compiler = "MinGW"
     $generator = "MinGW Makefiles"
 } elseif (Get-Command cl -ErrorAction SilentlyContinue) {
     $compiler = "MSVC"
-    $generator = "Visual Studio 17 2022"
+    # Try to detect VS version
+    if (Test-Path "C:\Program Files\Microsoft Visual Studio\2022") {
+        $generator = "Visual Studio 17 2022"
+    } elseif (Test-Path "C:\Program Files (x86)\Microsoft Visual Studio\2019") {
+        $generator = "Visual Studio 16 2019"
+    } else {
+        $generator = "Visual Studio 17 2022"  # Default
+    }
+} elseif (Get-Command ninja -ErrorAction SilentlyContinue) {
+    $compiler = "Ninja"
+    $generator = "Ninja"
 } else {
-    Write-Host "WARNING: No C++ compiler found. Please install:" -ForegroundColor Yellow
-    Write-Host "  - MinGW-w64, or" -ForegroundColor Yellow
-    Write-Host "  - Visual Studio with C++ tools" -ForegroundColor Yellow
+    Write-Host "ERROR: No C++ compiler found. Please install one of:" -ForegroundColor Red
+    Write-Host "  - MinGW-w64 (with g++), or" -ForegroundColor Yellow
+    Write-Host "  - Visual Studio with C++ tools, or" -ForegroundColor Yellow
+    Write-Host "  - Ninja build system" -ForegroundColor Yellow
+    exit 1
 }
+
+Write-Host "Found compiler: $compiler" -ForegroundColor Green
 
 # Create build directory
 Write-Host "Creating build directory..." -ForegroundColor Yellow
@@ -37,10 +53,25 @@ Set-Location build
 
 # Configure
 Write-Host "Configuring build..." -ForegroundColor Yellow
+if (-not $generator) {
+    Write-Host "ERROR: Could not determine CMake generator" -ForegroundColor Red
+    exit 1
+}
+
 if ($compiler -eq "MinGW") {
     cmake -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release ..
-} else {
+} elseif ($compiler -eq "MSVC") {
     cmake -G $generator -DCMAKE_BUILD_TYPE=Release ..
+} elseif ($compiler -eq "Ninja") {
+    cmake -G "Ninja" -DCMAKE_BUILD_TYPE=Release ..
+} else {
+    Write-Host "ERROR: Unknown compiler type" -ForegroundColor Red
+    exit 1
+}
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "ERROR: CMake configuration failed" -ForegroundColor Red
+    exit 1
 }
 
 # Build
@@ -50,6 +81,23 @@ cmake --build . --config Release --target francodb_server francodb_shell
 # Create data directory
 Write-Host "Creating data directory..." -ForegroundColor Yellow
 New-Item -ItemType Directory -Path ..\data -Force | Out-Null
+
+Set-Location ..
+
+# Configuration setup
+Write-Host ""
+Write-Host "==========================================" -ForegroundColor Cyan
+Write-Host "  Configuration Setup" -ForegroundColor Cyan
+Write-Host "==========================================" -ForegroundColor Cyan
+Write-Host ""
+$configure = Read-Host "Would you like to configure FrancoDB now? (y/n) [y]"
+if ($configure -eq "" -or $configure -eq "y" -or $configure -eq "Y") {
+    Write-Host ""
+    Write-Host "Running configuration..." -ForegroundColor Yellow
+    # Configuration will be handled by the server on first run
+    Write-Host "Note: Configuration will be prompted on first server startup." -ForegroundColor Yellow
+    Write-Host "You can also edit francodb.conf manually." -ForegroundColor Yellow
+}
 
 Write-Host ""
 Write-Host "==========================================" -ForegroundColor Green
@@ -65,5 +113,5 @@ Write-Host ""
 Write-Host "To use the shell:" -ForegroundColor Yellow
 Write-Host "  .\build\francodb_shell.exe" -ForegroundColor White
 Write-Host ""
-
-Set-Location ..
+Write-Host "Configuration file: francodb.conf" -ForegroundColor Cyan
+Write-Host ""

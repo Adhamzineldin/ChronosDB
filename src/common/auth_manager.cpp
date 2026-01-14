@@ -68,8 +68,11 @@ namespace francodb {
         }
 
         // Insert default admin user (from config) as SUPERADMIN
-        std::string admin_hash = HashPassword(net::DEFAULT_ADMIN_PASSWORD);
-        std::string insert_sql = "EMLA GOWA franco_users ELKEYAM ('" + net::DEFAULT_ADMIN_USERNAME + "', '" + admin_hash + "', 'default', 'SUPERADMIN');";
+        auto& config = ConfigManager::GetInstance();
+        std::string root_user = config.GetRootUsername();
+        std::string root_pass = config.GetRootPassword();
+        std::string admin_hash = HashPassword(root_pass);
+        std::string insert_sql = "EMLA GOWA franco_users ELKEYAM ('" + root_user + "', '" + admin_hash + "', 'default', 'SUPERADMIN');";
         
         Lexer lexer(insert_sql);
         Parser parser(std::move(lexer));
@@ -160,17 +163,19 @@ namespace francodb {
         }
     }
 
-    // Helper: check if user is root/superadmin (maayn)
+    // Helper: check if user is root/superadmin (from config)
     static bool IsRoot(const std::string& username) {
-        return username == net::DEFAULT_ADMIN_USERNAME; // "maayn"
+        auto& config = ConfigManager::GetInstance();
+        return username == config.GetRootUsername();
     }
 
     // Updated Authenticate: only checks password
     bool AuthManager::Authenticate(const std::string& username, const std::string& password, UserRole& out_role) {
         // Check if root user first (before loading users)
         if (IsRoot(username)) {
+            auto& config = ConfigManager::GetInstance();
             std::string input_hash = HashPassword(password);
-            std::string expected_hash = HashPassword(net::DEFAULT_ADMIN_PASSWORD);
+            std::string expected_hash = HashPassword(config.GetRootPassword());
             if (input_hash == expected_hash) {
                 out_role = UserRole::SUPERADMIN; // Root is always SUPERADMIN
                 return true;
