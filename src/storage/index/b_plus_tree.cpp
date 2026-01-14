@@ -219,8 +219,22 @@ namespace francodb {
 
             // 2. Lazy Delete (Shift Left)
             if (index != -1) {
+                // CRITICAL: Bounds check to prevent out-of-bounds access
+                int max_size = leaf->GetMaxSize();
+                if (index < 0 || index >= size || size > max_size) {
+                    buffer_pool_manager_->UnpinPage(leaf->GetPageId(), false);
+                    root_latch_.WUnlock();
+                    return; // Invalid index or size, skip deletion
+                }
+                
                 // Shift elements left to overwrite the deleted key
                 for(int i=index; i<size-1; i++) {
+                    // Bounds check: i+1 must be < size (which is <= max_size)
+                    if (i+1 >= max_size) {
+                        buffer_pool_manager_->UnpinPage(leaf->GetPageId(), false);
+                        root_latch_.WUnlock();
+                        return; // Out of bounds, skip deletion
+                    }
                     leaf->SetKeyAt(i, leaf->KeyAt(i+1));
                     leaf->SetValueAt(i, leaf->ValueAt(i+1));
                 }
@@ -242,13 +256,33 @@ namespace francodb {
     template <typename N, typename K, typename V, typename C>
     void InsertGeneric(N *node, const K &key, const V &value, const C &cmp) {
         int size = node->GetSize();
+        int max_size = node->GetMaxSize();
+        
+        // CRITICAL: Bounds check to prevent out-of-bounds array access
+        if (size < 0 || size >= max_size || max_size <= 0) {
+            throw Exception(ExceptionType::OUT_OF_RANGE, "Invalid size for insert");
+        }
+        
         int index = size;
         for (int i = 0; i < size; i++) {
             if (cmp(key, node->KeyAt(i)) < 0) {
                 index = i; break;
             }
         }
+        
+        // CRITICAL: Ensure we don't write beyond array bounds
+        // The array has max_size elements (indices 0 to max_size-1)
+        // We're inserting, so size will become size+1, which must be <= max_size
+        // The loop writes to indices [index+1, size], which must all be < max_size
+        if (size >= max_size) {
+            throw Exception(ExceptionType::OUT_OF_RANGE, "Page is full, cannot insert");
+        }
+        
         for (int i = size; i > index; i--) {
+            // Bounds check: i must be < max_size (since size < max_size, and i <= size)
+            if (i >= max_size) {
+                throw Exception(ExceptionType::OUT_OF_RANGE, "Array index out of bounds during insert");
+            }
             node->SetKeyAt(i, node->KeyAt(i - 1));
             node->SetValueAt(i, node->ValueAt(i - 1));
         }
