@@ -1,0 +1,14 @@
+cmake-build-debug/
+build/
+.git/
+.gitignore
+*.md
+docs/
+test/
+.vscode/
+.idea/
+*.exe
+*.dll
+*.so
+*.a
+*.lib

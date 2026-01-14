@@ -33,6 +33,14 @@ PHASE 9 COMPLETED ( INDEX INTEGRATION  )
 23) implemented error handling and user feedback in the CLI
 PHASE 10 COMPLETED ( COMMAND LINE INTERFACE  )
 24) wrote unit tests for all major components ( Disk Manager, Buffer Manager, B+ Tree
+25) Created server and client architecture for remote database access
+PHASE 11 COMPLETED ( TESTING AND SERVER-CLIENT ARCHITECTURE  )
+26) added system tables to track metadata about user tables and indexes
+27) added multi db support to allow users to create and manage multiple databases
+PHASE 12 COMPLETED ( MULTI DATABASE SUPPORT AND SYSTEM TABLES  )
+28) added permission management to control user access to databases and tables
+29) Added crash handling and recovery mechanisms to ensure data integrity
+PHASE 13 COMPLETED ( PERMISSION MANAGEMENT AND CRASH RECOVERY  )
 
 
 
