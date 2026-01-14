@@ -60,7 +60,7 @@ if(EXISTS "${SHELL_SRC}")
 
     # Link Networking Libraries (Windows vs Linux)
     if(WIN32)
-        target_link_libraries(francodb_shell ws2_32)
+            target_link_libraries(francodb_shell ws2_32)
     else()
         target_link_libraries(francodb_shell pthread)
     endif()
@@ -69,6 +69,49 @@ else()
 endif()
 
 # ==========================================
-# 5. BUILD TESTS
+# 5. BUILD THE SETUP UTILITY
+# ==========================================
+# Path to Setup Main
+set(SETUP_SRC "${SRC_DIR}/cmd/setup/setup.cpp")
+
+if(EXISTS "${SETUP_SRC}")
+    add_executable(francodb_setup "${SETUP_SRC}")
+
+    # Link Networking Libraries (Windows vs Linux)
+    if(WIN32)
+        target_link_libraries(francodb_setup ws2_32)
+    else()
+        target_link_libraries(francodb_setup pthread)
+    endif()
+else()
+    message(WARNING "Setup source not found at: ${SETUP_SRC}")
+endif()
+
+# ==========================================
+# 6. BUILD THE WINDOWS SERVICE WRAPPER
+# ==========================================
+# Path to Service Wrapper Main (Windows only)
+set(SERVICE_SRC "${SRC_DIR}/cmd/service/service_wrapper.cpp")
+
+if(WIN32 AND EXISTS "${SERVICE_SRC}")
+    add_executable(francodb_service "${SERVICE_SRC}")
+
+    # Set Windows subsystem
+    set_target_properties(francodb_service PROPERTIES
+        WIN32_EXECUTABLE FALSE
+    )
+
+    # Link Windows libraries
+    target_link_libraries(francodb_service advapi32)
+else()
+    if(NOT WIN32)
+        message(STATUS "Service wrapper is Windows-only, skipping on this platform")
+    else()
+        message(WARNING "Service wrapper source not found at: ${SERVICE_SRC}")
+    endif()
+endif()
+
+# ==========================================
+# 7. BUILD TESTS
 # ==========================================
 add_subdirectory(test)
