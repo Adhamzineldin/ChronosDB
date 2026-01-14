@@ -54,8 +54,16 @@ namespace francodb {
     Page *BufferPoolManager::FetchPage(page_id_t page_id) {
         std::lock_guard<std::mutex> guard(latch_);
 
+        // Validate page_id before using it
+        if (page_id == INVALID_PAGE_ID || page_id < 0) {
+            return nullptr;
+        }
+
         if (page_table_.find(page_id) != page_table_.end()) {
             frame_id_t frame_id = page_table_[page_id];
+            if (frame_id < 0 || frame_id >= static_cast<frame_id_t>(pool_size_)) {
+                return nullptr; // Invalid frame_id
+            }
             Page *page = &pages_[frame_id];
             page->IncrementPinCount();
             replacer_->Pin(frame_id);
@@ -71,7 +79,17 @@ namespace francodb {
 
         Page *page = &pages_[frame_id];
         page->Init(page_id);
-        disk_manager_->ReadPage(page_id, page->GetData());
+        
+        // Validate that ReadPage succeeds (it might fail for invalid page IDs)
+        try {
+            disk_manager_->ReadPage(page_id, page->GetData());
+        } catch (...) {
+            // If ReadPage fails, clean up and return nullptr
+            page->Init(INVALID_PAGE_ID);
+            free_list_.push_back(frame_id);
+            return nullptr;
+        }
+        
         page_table_[page_id] = frame_id;
         page->IncrementPinCount();
         replacer_->Pin(frame_id);

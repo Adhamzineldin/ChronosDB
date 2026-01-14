@@ -59,6 +59,18 @@ namespace francodb {
         // Or simpler: Find the first key strictly GREATER than our Key, then take the pointer BEFORE it.
         
         int size = GetSize();
+        int max_size = GetMaxSize();
+        
+        // Bounds checking: validate size is reasonable
+        if (size < 1 || size > max_size || max_size <= 0) {
+            // Return INVALID_PAGE_ID if size is invalid
+            return static_cast<ValueType>(INVALID_PAGE_ID);
+        }
+        
+        // Additional safety: ensure size doesn't exceed what could fit in a page
+        if (size > 300) {
+            return static_cast<ValueType>(INVALID_PAGE_ID); // Suspiciously large size
+        }
         
         // Start from 1 because index 0 key is invalid/placeholder
         for (int i = 1; i < size; i++) {
@@ -71,6 +83,10 @@ namespace francodb {
         }
         
         // If we went through the whole list and everything was smaller, it belongs to the last pointer.
+        // Validate that size - 1 is a valid index
+        if (size - 1 < 0) {
+            return static_cast<ValueType>(INVALID_PAGE_ID);
+        }
         return array_[size - 1].second;
     }
 

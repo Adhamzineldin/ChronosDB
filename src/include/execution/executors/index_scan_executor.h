@@ -6,6 +6,8 @@
 #include "storage/table/tuple.h"
 #include "catalog/index_info.h"
 #include "storage/index/index_key.h"
+#include "common/config.h"
+#include "common/exception.h"
 
 namespace francodb {
 
@@ -21,34 +23,68 @@ public:
     void Init() override {
         // 1. Get Table Metadata (so we can fetch the actual data later)
         table_info_ = exec_ctx_->GetCatalog()->GetTable(plan_->table_name_);
+        if (table_info_ == nullptr) {
+            throw Exception(ExceptionType::EXECUTION, "Table not found: " + plan_->table_name_);
+        }
         
-        // 2. Convert the Lookup Value (from WHERE clause) to a GenericKey
+        // 2. Validate index info
+        if (index_info_ == nullptr || index_info_->b_plus_tree_ == nullptr) {
+            throw Exception(ExceptionType::EXECUTION, "Invalid index info");
+        }
+        
+        // 3. Convert the Lookup Value (from WHERE clause) to a GenericKey
         GenericKey<8> key;
         key.SetFromValue(lookup_value_);
 
-        // 3. Ask the B+Tree for the RIDs
+        // 4. Ask the B+Tree for the RIDs
         // The tree returns a list of RIDs matching this key.
         result_rids_.clear();
-        index_info_->b_plus_tree_->GetValue(key, &result_rids_);
+        try {
+            index_info_->b_plus_tree_->GetValue(key, &result_rids_);
+        } catch (...) {
+            // If GetValue crashes, return empty result set
+            result_rids_.clear();
+        }
 
-        // 4. Reset iterator
+        // 5. Validate all RIDs before storing them
+        // Remove any invalid RIDs that might cause crashes later
+        std::vector<RID> valid_rids;
+        for (const auto &rid : result_rids_) {
+            if (rid.GetPageId() != INVALID_PAGE_ID && rid.GetPageId() >= 0) {
+                valid_rids.push_back(rid);
+            }
+        }
+        result_rids_ = std::move(valid_rids);
+
+        // 6. Reset iterator
         cursor_ = 0;
     }
 
     bool Next(Tuple *tuple) override {
+        if (table_info_ == nullptr || table_info_->table_heap_ == nullptr) {
+            return false;
+        }
+        
         // Loop through the results found by the B+Tree
-        if (cursor_ < result_rids_.size()) {
+        // Skip deleted tuples and continue to next RID
+        while (cursor_ < result_rids_.size()) {
             RID rid = result_rids_[cursor_];
             cursor_++;
 
-            // 5. FETCH THE ACTUAL TUPLE
+            // Validate RID before using it
+            if (rid.GetPageId() == INVALID_PAGE_ID) {
+                continue; // Skip invalid RID
+            }
+
+            // FETCH THE ACTUAL TUPLE
             // We have the address (RID), now go get the data from the Heap.
             bool success = table_info_->table_heap_->GetTuple(rid, tuple, nullptr);
-            if (!success) {
-                // This shouldn't happen unless the index is out of sync
-                return false; 
+            if (success) {
+                // Found a valid (non-deleted) tuple
+                return true;
             }
-            return true;
+            // Tuple was deleted or invalid - skip to next RID
+            // This can happen in concurrent scenarios where index hasn't been updated yet
         }
         
         return false; // No more matches

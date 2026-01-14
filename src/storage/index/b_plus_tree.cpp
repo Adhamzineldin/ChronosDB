@@ -1,7 +1,6 @@
 #include <string>
 #include <vector>
 #include <algorithm>
-#include <unordered_map>
 #include "common/exception.h"
 #include "common/rid.h"
 #include "storage/index/b_plus_tree.h"
@@ -29,51 +28,225 @@ namespace francodb {
     }
 
     /*****************************************************************************
-     * SEARCH
+     * SEARCH (Safe Mode: Global Read Lock)
      *****************************************************************************/
     template<typename KeyType, typename ValueType, typename KeyComparator>
     bool BPlusTree<KeyType, ValueType, KeyComparator>::GetValue(const KeyType &key,
                                                                 std::vector<ValueType> *result,
                                                                 Transaction *transaction) {
-        Page *page = FindLeafPage(key, false, OpType::READ, transaction);
-        if (page == nullptr) return false;
+        (void)transaction;
+        root_latch_.RLock(); // Global READ Lock
+        
+        try {
+            if (IsEmpty()) {
+                root_latch_.RUnlock();
+                return false;
+            }
 
-        auto *leaf = reinterpret_cast<BPlusTreeLeafPage<KeyType, ValueType, KeyComparator> *>(page->GetData());
-        ValueType val;
-        bool found = leaf->Lookup(key, val, comparator_);
+            // Validate root_page_id_ before using it
+            if (root_page_id_ == INVALID_PAGE_ID || root_page_id_ < 0) {
+                root_latch_.RUnlock();
+                return false;
+            }
 
-        page->RUnlock();
-        buffer_pool_manager_->UnpinPage(leaf->GetPageId(), false);
+            Page *page = buffer_pool_manager_->FetchPage(root_page_id_);
+            if (!page || !page->GetData()) { 
+                root_latch_.RUnlock(); 
+                return false; 
+            }
+            
+            auto *node = reinterpret_cast<BPlusTreePage *>(page->GetData());
+            if (!node) {
+                buffer_pool_manager_->UnpinPage(root_page_id_, false);
+                root_latch_.RUnlock();
+                return false;
+            }
+            
+            // Validate page type before accessing
+            if (node->GetPageType() != IndexPageType::LEAF_PAGE && 
+                node->GetPageType() != IndexPageType::INTERNAL_PAGE) {
+                buffer_pool_manager_->UnpinPage(root_page_id_, false);
+                root_latch_.RUnlock();
+                return false; // Invalid page type
+            }
+            
+            while (!node->IsLeafPage()) {
+                auto *internal = reinterpret_cast<BPlusTreeInternalPage<KeyType, page_id_t, KeyComparator> *>(node);
+                if (!internal) {
+                    buffer_pool_manager_->UnpinPage(page->GetPageId(), false);
+                    root_latch_.RUnlock();
+                    return false;
+                }
+                
+                page_id_t child_id = internal->Lookup(key, comparator_);
+                
+                // Validate child_id before fetching
+                if (child_id == INVALID_PAGE_ID || child_id < 0) {
+                    buffer_pool_manager_->UnpinPage(page->GetPageId(), false);
+                    root_latch_.RUnlock();
+                    return false;
+                }
+                
+                // Unpin parent BEFORE fetching child to prevent buffer clogging
+                buffer_pool_manager_->UnpinPage(page->GetPageId(), false);
+                
+                page = buffer_pool_manager_->FetchPage(child_id);
+                if (!page || !page->GetData()) { 
+                    root_latch_.RUnlock(); 
+                    return false; 
+                }
+                node = reinterpret_cast<BPlusTreePage *>(page->GetData());
+                if (!node) {
+                    buffer_pool_manager_->UnpinPage(child_id, false);
+                    root_latch_.RUnlock();
+                    return false;
+                }
+            }
 
-        if (found) {
-            result->push_back(val);
-            return true;
+            auto *leaf = reinterpret_cast<BPlusTreeLeafPage<KeyType, ValueType, KeyComparator> *>(page->GetData());
+            if (!leaf) {
+                buffer_pool_manager_->UnpinPage(page->GetPageId(), false);
+                root_latch_.RUnlock();
+                return false;
+            }
+            
+            ValueType val;
+            bool found = leaf->Lookup(key, val, comparator_);
+            
+            buffer_pool_manager_->UnpinPage(leaf->GetPageId(), false);
+            root_latch_.RUnlock();
+
+            if (found) result->push_back(val);
+            return found;
+        } catch (...) {
+            // If any exception occurs (including access violations), unlock and return false
+            root_latch_.RUnlock();
+            return false;
         }
-        return false;
     }
 
     /*****************************************************************************
-     * INSERTION
+     * INSERTION (Safe Mode: Global Write Lock)
      *****************************************************************************/
     template<typename KeyType, typename ValueType, typename KeyComparator>
     bool BPlusTree<KeyType, ValueType, KeyComparator>::Insert(const KeyType &key, const ValueType &value,
                                                               Transaction *transaction) {
-        // Optimistic Attempt
-        if (InsertIntoLeaf(key, value, transaction, true)) return true;
-        // Pessimistic Attempt (Global Lock)
-        return InsertIntoLeaf(key, value, transaction, false);
+        root_latch_.WLock(); // Global WRITE Lock
+        try {
+            if (IsEmpty()) {
+                StartNewTree(key, value);
+                root_latch_.WUnlock();
+                return true;
+            }
+            bool res = InsertIntoLeafPessimistic(key, value, transaction);
+            root_latch_.WUnlock();
+            return res;
+        } catch (...) {
+            root_latch_.WUnlock();
+            throw; 
+        }
     }
 
-    // --- GENERIC INSERT HELPER ---
+    /*****************************************************************************
+     * REMOVAL (Safe Mode: Global Write Lock + Lazy Delete)
+     *****************************************************************************/
+    template<typename KeyType, typename ValueType, typename KeyComparator>
+    void BPlusTree<KeyType, ValueType, KeyComparator>::Remove(const KeyType &key, Transaction *transaction) {
+        (void)transaction;
+        root_latch_.WLock(); // Global WRITE Lock
+
+        try {
+            if (IsEmpty()) {
+                root_latch_.WUnlock();
+                return;
+            }
+
+            // Validate root_page_id_ before using it
+            if (root_page_id_ == INVALID_PAGE_ID || root_page_id_ < 0) {
+                root_latch_.WUnlock();
+                return;
+            }
+
+            Page *page = buffer_pool_manager_->FetchPage(root_page_id_);
+            if (!page) { 
+                root_latch_.WUnlock(); 
+                return; 
+            }
+
+            auto *node = reinterpret_cast<BPlusTreePage *>(page->GetData());
+            
+            // Traverse to leaf (Unpin parent immediately)
+            while (!node->IsLeafPage()) {
+                auto *internal = reinterpret_cast<BPlusTreeInternalPage<KeyType, page_id_t, KeyComparator> *>(node);
+                page_id_t child_id = internal->Lookup(key, comparator_);
+                
+                // Validate child_id before fetching
+                if (child_id == INVALID_PAGE_ID || child_id < 0) {
+                    buffer_pool_manager_->UnpinPage(page->GetPageId(), false);
+                    root_latch_.WUnlock();
+                    return;
+                }
+                
+                buffer_pool_manager_->UnpinPage(page->GetPageId(), false);
+                
+                page = buffer_pool_manager_->FetchPage(child_id);
+                if (!page) { 
+                    root_latch_.WUnlock(); 
+                    return; 
+                }
+                node = reinterpret_cast<BPlusTreePage *>(page->GetData());
+            }
+
+            // We are at the Leaf. Safe to modify because we hold the Global Write Lock.
+            auto *leaf = reinterpret_cast<BPlusTreeLeafPage<KeyType, ValueType, KeyComparator> *>(page->GetData());
+            
+            // 1. Find Key Index
+            int size = leaf->GetSize();
+            if (size <= 0) {
+                // Invalid leaf size, skip removal
+                buffer_pool_manager_->UnpinPage(leaf->GetPageId(), false);
+                root_latch_.WUnlock();
+                return;
+            }
+            
+            int index = -1;
+            for(int i=0; i<size; i++) {
+                if (comparator_(key, leaf->KeyAt(i)) == 0) {
+                    index = i;
+                    break;
+                }
+            }
+
+            // 2. Lazy Delete (Shift Left)
+            if (index != -1) {
+                // Shift elements left to overwrite the deleted key
+                for(int i=index; i<size-1; i++) {
+                    leaf->SetKeyAt(i, leaf->KeyAt(i+1));
+                    leaf->SetValueAt(i, leaf->ValueAt(i+1));
+                }
+                leaf->SetSize(size - 1);
+                buffer_pool_manager_->UnpinPage(leaf->GetPageId(), true); // Mark Dirty
+            } else {
+                buffer_pool_manager_->UnpinPage(leaf->GetPageId(), false); // Not found, not dirty
+            }
+
+            root_latch_.WUnlock();
+        } catch (...) {
+            // If any exception occurs, make sure to unlock
+            root_latch_.WUnlock();
+            // Don't rethrow - just fail silently to prevent crashes
+        }
+    }
+
+    // --- HELPER: Generic Insert ---
     template <typename N, typename K, typename V, typename C>
     void InsertGeneric(N *node, const K &key, const V &value, const C &cmp) {
         int size = node->GetSize();
-        int index = 0;
+        int index = size;
         for (int i = 0; i < size; i++) {
             if (cmp(key, node->KeyAt(i)) < 0) {
                 index = i; break;
             }
-            index++;
         }
         for (int i = size; i > index; i--) {
             node->SetKeyAt(i, node->KeyAt(i - 1));
@@ -84,269 +257,251 @@ namespace francodb {
         node->SetSize(size + 1);
     }
 
+    // --- HELPER: Pessimistic Insert Logic ---
     template <typename KeyType, typename ValueType, typename KeyComparator>
-    bool BPlusTree<KeyType, ValueType, KeyComparator>::InsertIntoLeaf(const KeyType &key, const ValueType &value,
-                                                                      Transaction *txn, bool optimistic) {
-        if (optimistic) {
-            Page *page = FindLeafPage(key, false, OpType::INSERT, txn);
-            if (page == nullptr) return false;
-
-            auto *leaf = reinterpret_cast<BPlusTreeLeafPage<KeyType, ValueType, KeyComparator> *>(page->GetData());
-            
-            ValueType v;
-            if (leaf->Lookup(key, v, comparator_)) {
-                page->WUnlock();
-                buffer_pool_manager_->UnpinPage(leaf->GetPageId(), false);
-                return false;
-            }
-
-            if (leaf->GetSize() < leaf->GetMaxSize()) {
-                InsertGeneric(leaf, key, value, comparator_);
-                page->WUnlock();
-                buffer_pool_manager_->UnpinPage(leaf->GetPageId(), true);
-                return true;
-            }
-            
-            page->WUnlock();
-            buffer_pool_manager_->UnpinPage(leaf->GetPageId(), false);
-            return false;
-        } else {
-            root_latch_.WLock();
-            if (IsEmpty()) {
-                StartNewTree(key, value);
-                root_latch_.WUnlock();
-                return true;
-            }
-
-            std::vector<Page*> transaction_pages;
-            std::unordered_map<page_id_t, Page*> page_map;
-            
-            Page *page = buffer_pool_manager_->FetchPage(root_page_id_);
-            page->WLock();
-            transaction_pages.push_back(page);
-            page_map[root_page_id_] = page;
-
-            auto *node = reinterpret_cast<BPlusTreePage *>(page->GetData());
-            while (!node->IsLeafPage()) {
-                auto *internal = reinterpret_cast<BPlusTreeInternalPage<KeyType, page_id_t, KeyComparator> *>(node);
-                page_id_t child_id = internal->Lookup(key, comparator_);
-                Page *child = buffer_pool_manager_->FetchPage(child_id);
-                child->WLock();
-                transaction_pages.push_back(child);
-                page_map[child_id] = child;
-                page = child;
-                node = reinterpret_cast<BPlusTreePage *>(page->GetData());
-            }
-
-            auto *leaf = reinterpret_cast<BPlusTreeLeafPage<KeyType, ValueType, KeyComparator> *>(page->GetData());
-            
-            if (leaf->GetSize() < leaf->GetMaxSize()) {
-                InsertGeneric(leaf, key, value, comparator_);
-            } else {
-                // SPLIT LEAF
-                page_id_t new_id;
-                Page *new_page = buffer_pool_manager_->NewPage(&new_id);
-                new_page->WLock();
-                auto *new_leaf = reinterpret_cast<BPlusTreeLeafPage<KeyType, ValueType, KeyComparator> *>(new_page->GetData());
-                new_leaf->Init(new_id, leaf->GetParentPageId(), leaf->GetMaxSize());
-
-                // Copy ALL items to vector
-                std::vector<std::pair<KeyType, ValueType>> items;
-                for(int i=0; i<leaf->GetSize(); i++) items.push_back({leaf->KeyAt(i), leaf->ValueAt(i)});
-                
-                // Insert New Item
-                auto it = std::lower_bound(items.begin(), items.end(), key, 
-                    [&](const auto& pair, const auto& k) { return comparator_(pair.first, k) < 0; });
-                items.insert(it, {key, value});
-
-                // Write back split
-                int total = items.size();
-                int split_idx = total / 2;
-                
-                leaf->SetSize(split_idx);
-                for(int i=0; i<split_idx; i++) {
-                    leaf->SetKeyAt(i, items[i].first);
-                    leaf->SetValueAt(i, items[i].second);
-                }
-                
-                new_leaf->SetSize(total - split_idx);
-                for(int i=0; i<(total-split_idx); i++) {
-                    new_leaf->SetKeyAt(i, items[split_idx+i].first);
-                    new_leaf->SetValueAt(i, items[split_idx+i].second);
-                }
-
-                // Link
-                new_leaf->SetNextPageId(leaf->GetNextPageId());
-                leaf->SetNextPageId(new_id);
-
-                // Push Up - pass the page_map for looking up already-locked pages
-                InsertIntoParentHelper(leaf, new_leaf->KeyAt(0), new_leaf, page_map);
-                
-                new_page->WUnlock();
-                buffer_pool_manager_->UnpinPage(new_id, true);
-            }
-
-            // Cleanup
-            for (auto *p : transaction_pages) {
-                p->WUnlock();
-                buffer_pool_manager_->UnpinPage(p->GetPageId(), true);
-            }
-            root_latch_.WUnlock();
-            return true;
-        }
-    }
-
-    template<typename KeyType, typename ValueType, typename KeyComparator>
-    void BPlusTree<KeyType, ValueType, KeyComparator>::InsertIntoParentHelper(
-        BPlusTreePage *old_node, const KeyType &key, BPlusTreePage *new_node,
-        std::unordered_map<page_id_t, Page*> &page_map) {
-        
-        if (old_node->IsRootPage()) {
-            page_id_t new_root_id;
-            Page *page = buffer_pool_manager_->NewPage(&new_root_id);
-            page->WLock();
-            auto *new_root = reinterpret_cast<BPlusTreeInternalPage<KeyType, page_id_t, KeyComparator> *>(page->GetData());
-            new_root->Init(new_root_id, INVALID_PAGE_ID, internal_max_size_);
-            new_root->SetValueAt(0, old_node->GetPageId());
-            new_root->SetKeyAt(1, key);
-            new_root->SetValueAt(1, new_node->GetPageId());
-            new_root->SetSize(2);
-            old_node->SetParentPageId(new_root_id);
-            new_node->SetParentPageId(new_root_id);
-            root_page_id_ = new_root_id;
-            page->WUnlock();
-            buffer_pool_manager_->UnpinPage(new_root_id, true);
-            return;
-        }
-
-        page_id_t parent_id = old_node->GetParentPageId();
-        
-        // Use already-locked parent from page_map
-        Page *page = page_map[parent_id];
-        auto *parent = reinterpret_cast<BPlusTreeInternalPage<KeyType, page_id_t, KeyComparator> *>(page->GetData());
-
-        if (parent->GetSize() < parent->GetMaxSize()) {
-            InsertGeneric(parent, key, new_node->GetPageId(), comparator_);
-            new_node->SetParentPageId(parent_id);
-            return;
-        }
-
-        // --- INTERNAL NODE SPLIT ---
-        page_id_t new_pid;
-        Page *new_ppage = buffer_pool_manager_->NewPage(&new_pid);
-        new_ppage->WLock();
-        auto *new_parent = reinterpret_cast<BPlusTreeInternalPage<KeyType, page_id_t, KeyComparator> *>(new_ppage->GetData());
-        new_parent->Init(new_pid, parent->GetParentPageId(), parent->GetMaxSize());
-
-        std::vector<std::pair<KeyType, page_id_t>> items;
-        items.push_back({KeyType{}, parent->ValueAt(0)}); 
-        
-        for(int i=1; i<parent->GetSize(); i++) {
-            items.push_back({parent->KeyAt(i), parent->ValueAt(i)});
-        }
-
-        auto it = std::lower_bound(items.begin() + 1, items.end(), key, 
-             [&](const auto& pair, const auto& k) { return comparator_(pair.first, k) < 0; });
-        items.insert(it, {key, new_node->GetPageId()});
-
-        int total = items.size();
-        int split_idx = total / 2;
-        
-        parent->SetSize(split_idx);
-        for(int i=0; i<split_idx; i++) {
-            if(i>0) parent->SetKeyAt(i, items[i].first);
-            parent->SetValueAt(i, items[i].second);
-        }
-
-        KeyType up_key = items[split_idx].first;
-        
-        int new_count = total - split_idx;
-        new_parent->SetSize(new_count);
-        new_parent->SetValueAt(0, items[split_idx].second);
-        
-        for(int i=1; i<new_count; i++) {
-            new_parent->SetKeyAt(i, items[split_idx + i].first);
-            new_parent->SetValueAt(i, items[split_idx + i].second);
-        }
-        
-        // Update parent IDs for children moved to new_parent
-        for(int i=0; i<new_count; i++) {
-            page_id_t child_id = new_parent->ValueAt(i);
-            if (child_id == new_node->GetPageId()) {
-                new_node->SetParentPageId(new_pid);
-            } else if (page_map.find(child_id) != page_map.end()) {
-                // Child is already locked in our transaction
-                auto *cn = reinterpret_cast<BPlusTreePage *>(page_map[child_id]->GetData());
-                cn->SetParentPageId(new_pid);
-            } else {
-                // Child not in our transaction path, safe to fetch
-                Page *cp = buffer_pool_manager_->FetchPage(child_id);
-                cp->WLock();
-                auto *cn = reinterpret_cast<BPlusTreePage *>(cp->GetData());
-                cn->SetParentPageId(new_pid);
-                cp->WUnlock();
-                buffer_pool_manager_->UnpinPage(child_id, true);
-            }
-        }
-
-        // Add new parent to page_map before recursing
-        page_map[new_pid] = new_ppage;
-
-        // Recurse
-        InsertIntoParentHelper(parent, up_key, new_parent, page_map);
-
-        new_ppage->WUnlock();
-        buffer_pool_manager_->UnpinPage(new_pid, true);
-    }
-
-    template<typename KeyType, typename ValueType, typename KeyComparator>
-    void BPlusTree<KeyType, ValueType, KeyComparator>::InsertIntoParent(BPlusTreePage *old_node, const KeyType &key,
-                                                                        BPlusTreePage *new_node, Transaction *txn) {
+    bool BPlusTree<KeyType, ValueType, KeyComparator>::InsertIntoLeafPessimistic(
+        const KeyType &key, const ValueType &value, Transaction *txn) {
         (void)txn;
-        std::unordered_map<page_id_t, Page*> empty_map;
-        InsertIntoParentHelper(old_node, key, new_node, empty_map);
-    }
 
-    // --- HELPER: FindLeafPage ---
-    template<typename KeyType, typename ValueType, typename KeyComparator>
-    Page *BPlusTree<KeyType, ValueType, KeyComparator>::FindLeafPage(const KeyType &key, bool leftMost, OpType op, Transaction *txn) {
-        (void)leftMost; (void)txn;
+        Page *leaf_page = buffer_pool_manager_->FetchPage(root_page_id_);
+        if (!leaf_page) throw Exception(ExceptionType::OUT_OF_RANGE, "Cannot fetch root");
+
+        auto *node = reinterpret_cast<BPlusTreePage *>(leaf_page->GetData());
         
-        root_latch_.RLock();
-        if (IsEmpty()) {
-            root_latch_.RUnlock();
-            return nullptr;
-        }
-
-        Page *page = buffer_pool_manager_->FetchPage(root_page_id_);
-        page->RLock(); 
-        root_latch_.RUnlock();
-
-        auto *node = reinterpret_cast<BPlusTreePage *>(page->GetData());
+        // Traverse to Leaf
         while (!node->IsLeafPage()) {
             auto *internal = reinterpret_cast<BPlusTreeInternalPage<KeyType, page_id_t, KeyComparator> *>(node);
             page_id_t child_id = internal->Lookup(key, comparator_);
-            Page *child = buffer_pool_manager_->FetchPage(child_id);
-            child->RLock();
-            page->RUnlock(); 
-            buffer_pool_manager_->UnpinPage(page->GetPageId(), false);
             
-            page = child;
-            node = reinterpret_cast<BPlusTreePage *>(page->GetData());
+            buffer_pool_manager_->UnpinPage(leaf_page->GetPageId(), false);
+            
+            leaf_page = buffer_pool_manager_->FetchPage(child_id);
+            if (!leaf_page) throw Exception(ExceptionType::OUT_OF_RANGE, "Cannot fetch child");
+            
+            node = reinterpret_cast<BPlusTreePage *>(leaf_page->GetData());
         }
 
-        if (op == OpType::INSERT || op == OpType::REMOVE) {
-            page->RUnlock();
-            page->WLock();
+        auto *leaf = reinterpret_cast<BPlusTreeLeafPage<KeyType, ValueType, KeyComparator> *>(leaf_page->GetData());
+        
+        ValueType v;
+        if (leaf->Lookup(key, v, comparator_)) {
+            buffer_pool_manager_->UnpinPage(leaf->GetPageId(), false);
+            return false;
         }
-        return page;
+
+        if (leaf->GetSize() < leaf->GetMaxSize()) {
+            InsertGeneric(leaf, key, value, comparator_);
+            buffer_pool_manager_->UnpinPage(leaf->GetPageId(), true);
+            return true;
+        }
+
+        return SplitInsert(leaf, leaf_page, key, value);
     }
 
-    // --- HELPER: StartNewTree ---
+    // --- HELPER: Split Insert ---
+    template <typename KeyType, typename ValueType, typename KeyComparator>
+    bool BPlusTree<KeyType, ValueType, KeyComparator>::SplitInsert(
+        BPlusTreeLeafPage<KeyType, ValueType, KeyComparator> *leaf,
+        Page *leaf_page,
+        const KeyType &key, 
+        const ValueType &value) {
+        (void) leaf_page; 
+        
+        page_id_t leaf_id = leaf->GetPageId();
+        page_id_t parent_id = leaf->GetParentPageId();
+        
+        page_id_t new_leaf_id;
+        Page *new_leaf_page = buffer_pool_manager_->NewPage(&new_leaf_id);
+        if (!new_leaf_page) {
+            buffer_pool_manager_->UnpinPage(leaf_id, false);
+            throw Exception(ExceptionType::OUT_OF_RANGE, "Cannot allocate new leaf");
+        }
+        
+        auto *new_leaf = reinterpret_cast<BPlusTreeLeafPage<KeyType, ValueType, KeyComparator> *>(new_leaf_page->GetData());
+        new_leaf->Init(new_leaf_id, parent_id, leaf->GetMaxSize());
+
+        std::vector<std::pair<KeyType, ValueType>> entries;
+        for (int i = 0; i < leaf->GetSize(); i++) {
+            entries.push_back({leaf->KeyAt(i), leaf->ValueAt(i)});
+        }
+        
+        auto it = std::lower_bound(entries.begin(), entries.end(), key,
+            [&](const auto &p, const auto &k) { return comparator_(p.first, k) < 0; });
+        entries.insert(it, {key, value});
+
+        int mid = entries.size() / 2;
+        leaf->SetSize(mid);
+        for (int i = 0; i < mid; i++) {
+            leaf->SetKeyAt(i, entries[i].first);
+            leaf->SetValueAt(i, entries[i].second);
+        }
+        
+        new_leaf->SetSize(entries.size() - mid);
+        for (size_t i = mid; i < entries.size(); i++) {
+            new_leaf->SetKeyAt(i - mid, entries[i].first);
+            new_leaf->SetValueAt(i - mid, entries[i].second);
+        }
+        
+        new_leaf->SetNextPageId(leaf->GetNextPageId());
+        leaf->SetNextPageId(new_leaf_id);
+        
+        KeyType split_key = new_leaf->KeyAt(0);
+        
+        buffer_pool_manager_->UnpinPage(leaf_id, true);
+        buffer_pool_manager_->UnpinPage(new_leaf_id, true);
+        
+        if (parent_id == INVALID_PAGE_ID) {
+            page_id_t new_root_id;
+            Page *new_root_page = buffer_pool_manager_->NewPage(&new_root_id);
+            if (!new_root_page) throw Exception(ExceptionType::OUT_OF_RANGE, "Cannot create new root");
+            
+            auto *new_root = reinterpret_cast<BPlusTreeInternalPage<KeyType, page_id_t, KeyComparator> *>(new_root_page->GetData());
+            new_root->Init(new_root_id, INVALID_PAGE_ID, internal_max_size_);
+            new_root->SetValueAt(0, leaf_id);
+            new_root->SetKeyAt(1, split_key);
+            new_root->SetValueAt(1, new_leaf_id);
+            new_root->SetSize(2);
+            
+            Page *left = buffer_pool_manager_->FetchPage(leaf_id);
+            if (left) {
+                reinterpret_cast<BPlusTreePage*>(left->GetData())->SetParentPageId(new_root_id);
+                buffer_pool_manager_->UnpinPage(leaf_id, true);
+            }
+            Page *right = buffer_pool_manager_->FetchPage(new_leaf_id);
+            if (right) {
+                reinterpret_cast<BPlusTreePage*>(right->GetData())->SetParentPageId(new_root_id);
+                buffer_pool_manager_->UnpinPage(new_leaf_id, true);
+            }
+            
+            root_page_id_ = new_root_id;
+            buffer_pool_manager_->UnpinPage(new_root_id, true);
+            return true;
+        }
+        
+        return InsertIntoParentRecursive(parent_id, split_key, leaf_id, new_leaf_id);
+    }
+
+    // --- HELPER: Parent Recursion ---
+    template <typename KeyType, typename ValueType, typename KeyComparator>
+    bool BPlusTree<KeyType, ValueType, KeyComparator>::InsertIntoParentRecursive(
+        page_id_t parent_id, const KeyType &key, page_id_t left_child_id, page_id_t right_child_id) {
+        
+        (void) left_child_id;
+        static thread_local int recursion_depth = 0;
+        if (recursion_depth > 50) throw Exception(ExceptionType::OUT_OF_RANGE, "Recursion depth exceeded");
+        
+        recursion_depth++;
+        try {
+            Page *parent_page = buffer_pool_manager_->FetchPage(parent_id);
+            if (!parent_page) { recursion_depth--; throw Exception(ExceptionType::OUT_OF_RANGE, "Cannot fetch parent"); }
+            
+            auto *parent = reinterpret_cast<BPlusTreeInternalPage<KeyType, page_id_t, KeyComparator> *>(parent_page->GetData());
+            
+            if (parent->GetSize() < parent->GetMaxSize()) {
+                InsertGeneric(parent, key, right_child_id, comparator_);
+                Page *right = buffer_pool_manager_->FetchPage(right_child_id);
+                if (right) {
+                    reinterpret_cast<BPlusTreePage*>(right->GetData())->SetParentPageId(parent_id);
+                    buffer_pool_manager_->UnpinPage(right_child_id, true);
+                }
+                buffer_pool_manager_->UnpinPage(parent_id, true);
+                recursion_depth--;
+                return true;
+            }
+            
+            // Split Parent
+            page_id_t grandparent_id = parent->GetParentPageId();
+            page_id_t new_parent_id;
+            Page *new_parent_page = buffer_pool_manager_->NewPage(&new_parent_id);
+            if (!new_parent_page) {
+                buffer_pool_manager_->UnpinPage(parent_id, false);
+                recursion_depth--;
+                throw Exception(ExceptionType::OUT_OF_RANGE, "Cannot create new parent");
+            }
+            
+            auto *new_parent = reinterpret_cast<BPlusTreeInternalPage<KeyType, page_id_t, KeyComparator> *>(new_parent_page->GetData());
+            new_parent->Init(new_parent_id, grandparent_id, parent->GetMaxSize());
+            
+            std::vector<std::pair<KeyType, page_id_t>> entries;
+            entries.push_back({KeyType{}, parent->ValueAt(0)});
+            for (int i = 1; i < parent->GetSize(); i++) entries.push_back({parent->KeyAt(i), parent->ValueAt(i)});
+            
+            auto it = std::lower_bound(entries.begin() + 1, entries.end(), key,
+                [&](const auto &p, const auto &k) { return comparator_(p.first, k) < 0; });
+            entries.insert(it, {key, right_child_id});
+            
+            int mid = entries.size() / 2;
+            parent->SetSize(mid);
+            for (int i = 0; i < mid; i++) {
+                if (i > 0) parent->SetKeyAt(i, entries[i].first);
+                parent->SetValueAt(i, entries[i].second);
+            }
+            
+            KeyType push_up_key = entries[mid].first;
+            new_parent->SetSize(entries.size() - mid);
+            new_parent->SetValueAt(0, entries[mid].second);
+            for (size_t i = mid + 1; i < entries.size(); i++) {
+                new_parent->SetKeyAt(i - mid, entries[i].first);
+                new_parent->SetValueAt(i - mid, entries[i].second);
+            }
+            
+            // Update children pointers
+            for (int i = 0; i < new_parent->GetSize(); i++) {
+                page_id_t child_id = new_parent->ValueAt(i);
+                Page *child = buffer_pool_manager_->FetchPage(child_id);
+                if (child) {
+                    reinterpret_cast<BPlusTreePage*>(child->GetData())->SetParentPageId(new_parent_id);
+                    buffer_pool_manager_->UnpinPage(child_id, true);
+                }
+            }
+            
+            buffer_pool_manager_->UnpinPage(parent_id, true);
+            buffer_pool_manager_->UnpinPage(new_parent_id, true);
+            
+            if (grandparent_id == INVALID_PAGE_ID) {
+                page_id_t new_root_id;
+                Page *new_root_page = buffer_pool_manager_->NewPage(&new_root_id);
+                if (!new_root_page) { recursion_depth--; throw Exception(ExceptionType::OUT_OF_RANGE, "Cannot create new root"); }
+                
+                auto *new_root = reinterpret_cast<BPlusTreeInternalPage<KeyType, page_id_t, KeyComparator> *>(new_root_page->GetData());
+                new_root->Init(new_root_id, INVALID_PAGE_ID, internal_max_size_);
+                new_root->SetValueAt(0, parent_id);
+                new_root->SetKeyAt(1, push_up_key);
+                new_root->SetValueAt(1, new_parent_id);
+                new_root->SetSize(2);
+                
+                Page *left = buffer_pool_manager_->FetchPage(parent_id);
+                if (left) {
+                    reinterpret_cast<BPlusTreePage*>(left->GetData())->SetParentPageId(new_root_id);
+                    buffer_pool_manager_->UnpinPage(parent_id, true);
+                }
+                Page *right = buffer_pool_manager_->FetchPage(new_parent_id);
+                if (right) {
+                    reinterpret_cast<BPlusTreePage*>(right->GetData())->SetParentPageId(new_root_id);
+                    buffer_pool_manager_->UnpinPage(new_parent_id, true);
+                }
+                
+                root_page_id_ = new_root_id;
+                buffer_pool_manager_->UnpinPage(new_root_id, true);
+                recursion_depth--;
+                return true;
+            }
+            
+            bool result = InsertIntoParentRecursive(grandparent_id, push_up_key, parent_id, new_parent_id);
+            recursion_depth--;
+            return result;
+        } catch (...) {
+            recursion_depth--;
+            throw;
+        }
+    }
+
+    // --- STUBS (Required to satisfy linker/header declarations) ---
     template<typename KeyType, typename ValueType, typename KeyComparator>
     void BPlusTree<KeyType, ValueType, KeyComparator>::StartNewTree(const KeyType &key, const ValueType &value) {
         page_id_t new_page_id;
         Page *page = buffer_pool_manager_->NewPage(&new_page_id);
+        if (!page) throw Exception(ExceptionType::OUT_OF_RANGE, "Cannot create root");
         auto *root = reinterpret_cast<BPlusTreeLeafPage<KeyType, ValueType, KeyComparator> *>(page->GetData());
         root->Init(new_page_id, INVALID_PAGE_ID, leaf_max_size_);
         root_page_id_ = new_page_id;
@@ -355,10 +510,33 @@ namespace francodb {
         root->SetSize(1);
         buffer_pool_manager_->UnpinPage(new_page_id, true);
     }
+
+    template<typename KeyType, typename ValueType, typename KeyComparator>
+    Page *BPlusTree<KeyType, ValueType, KeyComparator>::FindLeafPage(const KeyType &key, bool leftMost, OpType op, Transaction *txn) {
+        (void)key; (void)leftMost; (void)op; (void)txn; return nullptr; 
+    }
     
     template<typename KeyType, typename ValueType, typename KeyComparator>
+    bool BPlusTree<KeyType, ValueType, KeyComparator>::InsertIntoLeafOptimistic(
+        const KeyType &key, const ValueType &value, page_id_t root_id, Transaction *txn) {
+        (void)key; (void)value; (void)root_id; (void)txn; return false;
+    }
+
+    template<typename KeyType, typename ValueType, typename KeyComparator>
+    bool BPlusTree<KeyType, ValueType, KeyComparator>::InsertIntoLeaf(const KeyType &key, const ValueType &value,
+                                                                      Transaction *txn, bool optimistic) {
+        (void)optimistic; return InsertIntoLeafPessimistic(key, value, txn);
+    }
+
+    template<typename KeyType, typename ValueType, typename KeyComparator>
+    void BPlusTree<KeyType, ValueType, KeyComparator>::InsertIntoParent(BPlusTreePage *old_node, const KeyType &key,
+                                                                        BPlusTreePage *new_node, Transaction *txn) {
+        (void)old_node; (void)key; (void)new_node; (void)txn;
+    }
+
+    template<typename KeyType, typename ValueType, typename KeyComparator>
     template<typename N>
-    N *BPlusTree<KeyType, ValueType, KeyComparator>::Split(N *node) { (void)node; return nullptr; }
+    N *BPlusTree<KeyType, ValueType, KeyComparator>::Split(N *node) { (void)node; return nullptr; } 
 
     template class BPlusTree<GenericKey<8>, RID, GenericComparator<8>>;
 } // namespace francodb

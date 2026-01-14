@@ -4,6 +4,8 @@
 #include "execution/executors/abstract_executor.h"
 #include "parser/statement.h"
 #include "storage/table/tuple.h"
+#include "catalog/index_info.h"
+#include "storage/index/index_key.h"
 
 namespace francodb {
 
@@ -23,7 +25,13 @@ public:
         (void)tuple;
         if (is_finished_) return false;
 
-        std::vector<std::pair<RID, Tuple>> updates_to_apply;
+        // Store old RID, old tuple (for index removal), and new tuple (for index insertion)
+        struct UpdateInfo {
+            RID old_rid;
+            Tuple old_tuple;
+            Tuple new_tuple;
+        };
+        std::vector<UpdateInfo> updates_to_apply;
         
         // 1. SCAN PHASE
         page_id_t curr_page_id = table_info_->first_page_id_;
@@ -41,7 +49,7 @@ public:
                     if (EvaluatePredicate(old_tuple)) {
                         // FOUND MATCH! Prepare the NEW tuple.
                         Tuple new_tuple = CreateUpdatedTuple(old_tuple);
-                        updates_to_apply.push_back({rid, new_tuple});
+                        updates_to_apply.push_back({rid, old_tuple, new_tuple});
                     }
                 }
             }
@@ -50,15 +58,60 @@ public:
             curr_page_id = next;
         }
 
-        // 2. APPLY PHASE (Delete Old, Insert New)
+        // 2. APPLY PHASE (Update indexes, Delete Old, Insert New)
+        // IMPORTANT: Verify tuple still exists before updating (handles concurrent deletes)
         int count = 0;
-        for (const auto &pair : updates_to_apply) {
-            // A. Delete Old
-            table_info_->table_heap_->MarkDelete(pair.first, nullptr);
+        for (const auto &update : updates_to_apply) {
+            // Verify the tuple still exists (might have been deleted by another thread)
+            Tuple verify_tuple;
+            if (!table_info_->table_heap_->GetTuple(update.old_rid, &verify_tuple, nullptr)) {
+                // Tuple was already deleted by another thread, skip this update
+                continue;
+            }
             
-            // B. Insert New
+            // Verify it still matches the predicate (tuple might have been updated)
+            if (!EvaluatePredicate(verify_tuple)) {
+                // Tuple no longer matches predicate, skip this update
+                continue;
+            }
+            
+            // A. Remove old tuple from indexes
+            auto indexes = exec_ctx_->GetCatalog()->GetTableIndexes(plan_->table_name_);
+            for (auto *index : indexes) {
+                int col_idx = table_info_->schema_.GetColIdx(index->col_name_);
+                Value old_key_val = update.old_tuple.GetValue(table_info_->schema_, col_idx);
+                
+                GenericKey<8> old_key;
+                old_key.SetFromValue(old_key_val);
+                
+                index->b_plus_tree_->Remove(old_key, nullptr);
+            }
+            
+            // B. Delete Old tuple from table (only if not already deleted)
+            bool deleted = table_info_->table_heap_->MarkDelete(update.old_rid, nullptr);
+            if (!deleted) {
+                // Tuple was already deleted, skip to next
+                continue;
+            }
+            
+            // C. Insert New tuple into table
             RID new_rid;
-            table_info_->table_heap_->InsertTuple(pair.second, &new_rid, nullptr);
+            bool inserted = table_info_->table_heap_->InsertTuple(update.new_tuple, &new_rid, nullptr);
+            if (!inserted) {
+                // Failed to insert, skip index update
+                continue;
+            }
+            
+            // D. Add new tuple to indexes
+            for (auto *index : indexes) {
+                int col_idx = table_info_->schema_.GetColIdx(index->col_name_);
+                Value new_key_val = update.new_tuple.GetValue(table_info_->schema_, col_idx);
+                
+                GenericKey<8> new_key;
+                new_key.SetFromValue(new_key_val);
+                
+                index->b_plus_tree_->Insert(new_key, new_rid, nullptr);
+            }
             
             count++;
         }

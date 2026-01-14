@@ -78,6 +78,22 @@ namespace francodb {
     template <typename KeyType, typename ValueType, typename KeyComparator>
     bool BPlusTreeLeafPage<KeyType, ValueType, KeyComparator>::Lookup(const KeyType &key, ValueType &value, const KeyComparator &comparator) const {
         int size = GetSize();
+        int max_size = GetMaxSize();
+        
+        // Bounds checking: validate size is reasonable
+        if (size < 0 || size > max_size || max_size <= 0) {
+            return false; // Invalid size, cannot lookup
+        }
+        
+        // Additional safety: ensure size doesn't exceed what could fit in a page
+        // PAGE_SIZE is 4096, header is ~24 bytes, next_page_id_ is 4 bytes
+        // So we have ~4068 bytes for data. Each MappingType is sizeof(KeyType) + sizeof(ValueType)
+        // For GenericKey<8> + RID, that's ~8 + 8 = 16 bytes per entry
+        // So max reasonable entries is ~254. Add some margin.
+        if (size > 300) {
+            return false; // Suspiciously large size, likely corruption
+        }
+        
         for (int i = 0; i < size; i++) {
             if (comparator(array_[i].first, key) == 0) { // Found match
                 value = array_[i].second;

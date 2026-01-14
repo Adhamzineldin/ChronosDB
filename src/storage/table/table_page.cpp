@@ -120,9 +120,17 @@ namespace francodb {
 
         // Check if deleted
         if (slot.size == 0 || (slot.meta & TUPLE_DELETED)) {
-            // <--- NEW CHECK
             return false;
         }
+        
+        // Bounds checking: validate slot.offset and slot.size are within page bounds
+        if (slot.offset < SIZE_HEADER || slot.offset >= PAGE_SIZE) {
+            return false; // Invalid offset
+        }
+        if (slot.size == 0 || slot.size > PAGE_SIZE || slot.offset + slot.size > PAGE_SIZE) {
+            return false; // Invalid size or would exceed page bounds
+        }
+        
         // Read Data
         tuple->DeserializeFrom(GetData() + slot.offset, slot.size);
         tuple->SetRid(rid);

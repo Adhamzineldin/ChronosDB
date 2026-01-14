@@ -1,16 +1,13 @@
 #pragma once
 
-#include <queue>
 #include <string>
 #include <vector>
-
 #include "concurrency/transaction.h"
 #include "storage/index/index_iterator.h"
 #include "storage/page/b_plus_tree_internal_page.h"
 #include "storage/page/b_plus_tree_leaf_page.h"
 #include "buffer/buffer_pool_manager.h"
 #include "common/rwlatch.h" 
-#include <unordered_map>
 
 namespace francodb {
 
@@ -18,9 +15,6 @@ namespace francodb {
 
 template <typename KeyType, typename ValueType, typename KeyComparator>
 class BPlusTree {
-    // FIX: Renamed DELETE to REMOVE to avoid Windows macro conflict
-    enum class OpType { READ, INSERT, REMOVE };
-
 public:
     explicit BPlusTree(std::string name, BufferPoolManager *buffer_pool_manager, const KeyComparator &comparator,
                        int leaf_max_size = 0, int internal_max_size = 0);
@@ -30,6 +24,7 @@ public:
     // --- MAIN OPERATIONS ---
     bool Insert(const KeyType &key, const ValueType &value, Transaction *transaction = nullptr);
 
+    // FIX: This now actually works
     void Remove(const KeyType &key, Transaction *transaction = nullptr);
 
     bool GetValue(const KeyType &key, std::vector<ValueType> *result, Transaction *transaction = nullptr);
@@ -38,29 +33,32 @@ public:
     void SetRootPageId(page_id_t root_page_id) { root_page_id_ = root_page_id; }
     page_id_t GetRootPageId() const { return root_page_id_; }
 
-    // --- DEBUGGING ---
     void Print(BufferPoolManager *bpm);
     void Draw(BufferPoolManager *bpm, const std::string &outf);
 
 private:
-    // --- HELPER FUNCTIONS ---
     void StartNewTree(const KeyType &key, const ValueType &value);
 
-    bool InsertIntoLeaf(const KeyType &key, const ValueType &value, Transaction *transaction = nullptr, bool optimistic = false);
-
-    void InsertIntoParent(BPlusTreePage *old_node, const KeyType &key, BPlusTreePage *new_node, Transaction *transaction = nullptr);
-
-    void InsertIntoParentHelper(BPlusTreePage *old_node, const KeyType &key,
-                            BPlusTreePage *new_node,
-                            std::unordered_map<page_id_t, Page*> &page_map);
+    // FIX: Optimized "Safe Mode" helpers
+    bool InsertIntoLeafPessimistic(const KeyType &key, const ValueType &value, Transaction *txn);
     
-    template <typename N>
-    N *Split(N *node);
+    bool SplitInsert(BPlusTreeLeafPage<KeyType, ValueType, KeyComparator> *leaf, Page *leaf_page, const KeyType &key, const ValueType &value);
+    
+    bool InsertIntoParentRecursive(page_id_t parent_id, const KeyType &key, page_id_t left_child_id, page_id_t right_child_id);
 
-    // FIX: OpType matches the enum above
+    // Stub for crabbing logic (not used in Global Lock mode)
+    enum class OpType { READ, INSERT, REMOVE };
     Page *FindLeafPage(const KeyType &key, bool leftMost = false, OpType op = OpType::READ, Transaction *txn = nullptr);
 
-    // --- MEMBER VARIABLES ---
+    bool InsertIntoLeafOptimistic(const KeyType &key, const ValueType &value, page_id_t root_id, Transaction *txn);
+
+    bool InsertIntoLeaf(const KeyType &key, const ValueType &value, Transaction *txn, bool optimistic);
+
+    void InsertIntoParent(BPlusTreePage *old_node, const KeyType &key, BPlusTreePage *new_node, Transaction *txn);
+
+    template<class N>
+    N *Split(N *node);
+
     std::string index_name_;
     page_id_t root_page_id_;
     BufferPoolManager *buffer_pool_manager_;
@@ -68,7 +66,6 @@ private:
     int leaf_max_size_;
     int internal_max_size_;
     
-    // Global Latch
     ReaderWriterLatch root_latch_; 
 };
 

@@ -169,13 +169,21 @@ namespace francodb {
                 if (cond.op == "=") {
                     auto indexes = catalog_->GetTableIndexes(stmt->table_name_);
                     for (auto *idx: indexes) {
-                        if (idx->col_name_ == cond.column) {
-                            use_index = true;
-                            index_col_name = idx->name_;
-                            index_search_value = cond.value;
-                            executor = new IndexScanExecutor(exec_ctx_, stmt, idx, index_search_value);
-                            std::cout << "[OPTIMIZER] Using Index: " << idx->name_ << std::endl;
-                            break;
+                        if (idx->col_name_ == cond.column && idx->b_plus_tree_ != nullptr) {
+                            // Try to use index, but fall back to seq scan if it fails
+                            try {
+                                use_index = true;
+                                index_col_name = idx->name_;
+                                index_search_value = cond.value;
+                                executor = new IndexScanExecutor(exec_ctx_, stmt, idx, index_search_value);
+                                std::cout << "[OPTIMIZER] Using Index: " << idx->name_ << std::endl;
+                                break;
+                            } catch (...) {
+                                // If index scan creation fails, fall back to sequential scan
+                                use_index = false;
+                                executor = nullptr;
+                                break;
+                            }
                         }
                     }
                 }
@@ -188,7 +196,19 @@ namespace francodb {
             }
 
             // --- EXECUTION WITH BEAUTIFUL FORMATTING ---
-            executor->Init();
+            try {
+                executor->Init();
+            } catch (...) {
+                // If index scan Init() fails, fall back to sequential scan
+                if (use_index) {
+                    delete executor;
+                    executor = new SeqScanExecutor(exec_ctx_, stmt);
+                    std::cout << "[OPTIMIZER] Index scan failed, falling back to Sequential Scan" << std::endl;
+                    executor->Init();
+                } else {
+                    throw; // Re-throw if it's not an index scan issue
+                }
+            }
             Tuple t;
             const Schema *output_schema = executor->GetOutputSchema();
             
