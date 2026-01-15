@@ -19,7 +19,7 @@ void TestDiskRecycling() {
     auto catalog = std::make_unique<Catalog>(bpm.get());
 
     // 1. Create Table A and fill it with data to create at least 3 pages
-    std::vector<Column> cols = {Column("data", TypeId::VARCHAR, 100)};
+    std::vector<Column> cols = {Column("data", TypeId::VARCHAR, 100, FALSE)};
     Schema schema(cols);
     catalog->CreateTable("TableA", schema);
     TableMetadata *metaA = catalog->GetTable("TableA");
