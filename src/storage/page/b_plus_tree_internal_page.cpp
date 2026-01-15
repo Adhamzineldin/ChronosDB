@@ -72,7 +72,7 @@ namespace francodb {
         if (max_size <= 0) {
             // Calculate default max_size: (PAGE_SIZE - 24) / (sizeof(KeyType) + sizeof(ValueType))
             // For GenericKey<8> + page_id_t: (4096 - 24) / (8 + 4) = 4072 / 12 = 339
-            constexpr int default_max_size = (4096 - 24) / (sizeof(KeyType) + sizeof(ValueType));
+            constexpr int default_max_size = (PAGE_SIZE - 28) / (sizeof(KeyType) + sizeof(ValueType));
             max_size = default_max_size;
         }
         

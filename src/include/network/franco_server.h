@@ -35,6 +35,7 @@ namespace francodb {
         AuthManager* GetAuthManager() { return auth_manager_.get(); }
 
     private:
+        void InitializeSystemResources();
         void HandleClient(uintptr_t client_socket);
         void AutoSaveLoop();
         ProtocolType DetectProtocol(const std::string& initial_data);
@@ -55,6 +56,7 @@ namespace francodb {
         uintptr_t listen_sock_ = 0;
         std::map<uintptr_t, std::thread> client_threads_;
         std::thread auto_save_thread_;
+        std::atomic<bool> is_running_{false};
     };
 
 }

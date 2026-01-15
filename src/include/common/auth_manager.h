@@ -35,6 +35,8 @@ namespace francodb {
         AuthManager(BufferPoolManager* system_bpm, Catalog* system_catalog);
         ~AuthManager();
 
+        bool CheckUserExists(const std::string &username);
+
         // Initialize system database with default admin user
         void InitializeSystemDatabase();
 

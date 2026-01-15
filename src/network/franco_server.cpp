@@ -33,76 +33,38 @@ typedef int socket_t;
 #include <thread>
 
 // Helper to check system db corruption
-static bool IsFileCorrupt(const std::string& path) {
-    if (!std::filesystem::exists(path)) return false; 
-    return std::filesystem::file_size(path) == 0;     
-}
+// static bool IsFileCorrupt(const std::string& path) {
+//     if (!std::filesystem::exists(path)) return false; 
+//     return std::filesystem::file_size(path) == 0;     
+// }
 
 namespace francodb {
     FrancoServer::FrancoServer(BufferPoolManager* bpm, Catalog* catalog)
-        : bpm_(bpm), catalog_(catalog) {
-        
-        // Force immediate logging
-        std::cout.setf(std::ios::unitbuf);
-        std::cerr.setf(std::ios::unitbuf);
-
-        std::cout << "[DEBUG] Step 1: Winsock..." << std::endl;
-#ifdef _WIN32
-        WSADATA wsa;
-        WSAStartup(MAKEWORD(2, 2), &wsa);
-#endif
-
-        auto& config = ConfigManager::GetInstance();
-        std::string data_dir = config.GetDataDirectory();
-        
-        std::filesystem::path system_dir = std::filesystem::path(data_dir) / "system";
-        std::filesystem::create_directories(system_dir);
-        std::filesystem::path system_db_path = system_dir / "francodb.db";
-
-        // FIX: Remove corrupt DB on startup to break crash loops
-        if (IsFileCorrupt(system_db_path.string())) {
-            std::cout << "[WARN] System DB corrupt. Resetting..." << std::endl;
-            std::filesystem::remove(system_db_path);
-        }
-
-        std::cout << "[DEBUG] Step 2: System DiskManager..." << std::endl;
-        system_disk_ = std::make_unique<DiskManager>(system_db_path.string());
-        if (config.IsEncryptionEnabled() && !config.GetEncryptionKey().empty()) {
-            system_disk_->SetEncryptionKey(config.GetEncryptionKey());
-        }
-        
-        std::cout << "[DEBUG] Step 3: System BPM..." << std::endl;
-        system_bpm_ = std::make_unique<BufferPoolManager>(BUFFER_POOL_SIZE, system_disk_.get());
-        
-        std::cout << "[DEBUG] Step 4: System Catalog..." << std::endl;
-        system_catalog_ = std::make_unique<Catalog>(system_bpm_.get());
-        
-        // FIX: Only load if we suspect the constructor didn't do it
-        // Or better: Wrap it in try-catch and ignore "Already Loaded" errors
-        std::cout << "[DEBUG] Step 5: Loading System Catalog..." << std::endl;
+    : bpm_(bpm), catalog_(catalog) {
+    
         try {
-            // Check if tables already exist (implies constructor loaded it)
-            if (system_catalog_->GetAllTableNames().empty()) {
-                system_catalog_->LoadCatalog();
-            } else {
-                std::cout << "[INFO] Catalog already loaded by constructor. Skipping manual load." << std::endl;
-            }
-        } catch (...) {
-            std::cout << "[WARN] LoadCatalog skipped or failed (New DB?)." << std::endl;
-        }
+            InitializeSystemResources();
         
-        std::cout << "[DEBUG] Step 6: AuthManager..." << std::endl;
-        auth_manager_ = std::make_unique<AuthManager>(system_bpm_.get(), system_catalog_.get());
+            // Step 8: Registry
+            registry_ = std::make_unique<DatabaseRegistry>();
+            registry_->RegisterExternal("default", bpm_, catalog_);
         
-        std::cout << "[DEBUG] Step 7: Saving State..." << std::endl;
-        system_catalog_->SaveCatalog();
-        system_bpm_->FlushAllPages();
+        } catch (const std::exception& e) {
+            std::cerr << "[CRITICAL] System DB Corrupt. Self-healing..." << std::endl;
+        
+            // Cleanup pointers
+            auth_manager_.reset();
+            system_catalog_.reset();
+            system_bpm_.reset();
+            system_disk_.reset();
 
-        std::cout << "[DEBUG] Step 8: Registry..." << std::endl;
-        registry_ = std::make_unique<DatabaseRegistry>();
-        registry_->RegisterExternal("default", bpm_, catalog_);
-        
-        std::cout << "[INFO] Server Startup Complete." << std::endl;
+            // Delete the file
+            auto& config = ConfigManager::GetInstance();
+            std::filesystem::remove(std::filesystem::path(config.GetDataDirectory()) / "system" / "francodb.db");
+
+            // Try one more time with a clean slate
+            InitializeSystemResources();
+        }
     }
 
     FrancoServer::~FrancoServer() {
@@ -117,6 +79,9 @@ namespace francodb {
     }
 
     void FrancoServer::Start(int port) {
+        
+        is_running_ = true;
+        
         socket_t s = socket(AF_INET, SOCK_STREAM, 0);
         if (s == INVALID_SOCK) {
             std::cerr << "[ERROR] Failed to create socket" << std::endl;
@@ -149,7 +114,7 @@ namespace francodb {
 
         std::cout << "[READY] FrancoDB Server listening on port " << port << "..." << std::endl;
 
-        while (running_) {
+        while (running_ && is_running_) {
             sockaddr_in client_addr{};
             int len = sizeof(client_addr);
 #ifdef _WIN32
@@ -199,6 +164,7 @@ namespace francodb {
         if (bpm_) bpm_->FlushAllPages();
         
         running_ = false;
+        is_running_ = false;
         if (listen_sock_ != 0) {
 #ifdef _WIN32
             closesocket((socket_t)listen_sock_);
@@ -221,6 +187,34 @@ namespace francodb {
                 if (system_catalog_) system_catalog_->SaveCatalog();
             }
         }
+    }
+    
+    void FrancoServer::InitializeSystemResources() {
+        auto& config = ConfigManager::GetInstance();
+        std::string data_dir = config.GetDataDirectory();
+        std::filesystem::path system_dir = std::filesystem::path(data_dir) / "system";
+        std::filesystem::path system_db_path = system_dir / "francodb.db.francodb";
+
+        // DEFENSIVE: If file is 1KB or less, it's likely just a corrupted header.
+        if (std::filesystem::exists(system_db_path) && std::filesystem::file_size(system_db_path) < 4096) {
+            std::cout << "[RECOVERY] System DB is too small (" 
+                      << std::filesystem::file_size(system_db_path) 
+                      << " bytes). Wiping for safety." << std::endl;
+            std::filesystem::remove(system_db_path);
+        }
+
+        
+
+        // Step 2 & 3: Disk & BPM
+        system_disk_ = std::make_unique<DiskManager>(system_db_path.string());
+        if (config.IsEncryptionEnabled()) system_disk_->SetEncryptionKey(config.GetEncryptionKey());
+        system_bpm_ = std::make_unique<BufferPoolManager>(BUFFER_POOL_SIZE, system_disk_.get());
+    
+        // Step 4: Catalog
+        system_catalog_ = std::make_unique<Catalog>(system_bpm_.get());
+    
+        // Step 5 & 6: Auth
+        auth_manager_ = std::make_unique<AuthManager>(system_bpm_.get(), system_catalog_.get());
     }
 
     // src/network/franco_server.cpp

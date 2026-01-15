@@ -59,9 +59,9 @@ if(WIN32 AND EXISTS "${SERVICE_SRC}")
 endif()
 
 # 6. TESTS
-#if(EXISTS "${TEST_DIR}")
-#    add_subdirectory(test)
-#endif()
+if(EXISTS "${TEST_DIR}")
+    add_subdirectory(test)
+endif()
 
 # =========================================================
 # 7. AUTOMATIC DLL COPY (The Magic Fix)

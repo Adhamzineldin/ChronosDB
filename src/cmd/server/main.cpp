@@ -29,6 +29,7 @@ namespace fs = std::filesystem;
 
 // GLOBAL SERVER POINTER (For Signal Handler)
 std::unique_ptr<FrancoServer> g_Server;
+std::atomic<bool> g_ShutdownInProgress(false);
 
 std::string GetExecutableDir() {
 #ifdef _WIN32
@@ -71,16 +72,26 @@ void SetupServiceLogging(const std::string& exe_dir) {
 // ---------------------------------------------------------
 #ifdef _WIN32
 BOOL WINAPI ConsoleHandler(DWORD signal) {
-    if (signal == CTRL_C_EVENT || signal == CTRL_BREAK_EVENT || signal == CTRL_CLOSE_EVENT || signal == CTRL_SHUTDOWN_EVENT) {
-        std::cout << "\n[SYSTEM] Shutdown signal received (" << signal << "). Flushing data..." << std::endl;
+    if (signal == CTRL_C_EVENT || signal == CTRL_BREAK_EVENT || 
+        signal == CTRL_CLOSE_EVENT || signal == CTRL_SHUTDOWN_EVENT) {
+        
+        // Prevent double-shutdown if multiple signals arrive
+        if (g_ShutdownInProgress.exchange(true)) return TRUE;
+
+        std::cerr << "\n[SYSTEM] Graceful shutdown initiated (Signal: " << signal << ")..." << std::endl;
         
         if (g_Server) {
-            g_Server->Shutdown(); // This saves Catalog and Flushes Pages safely
+            // 1. Tell the network listener to stop accepting connections
+            g_Server->Shutdown(); 
+            
+            // 2. Note: The main thread will continue to g_Server.reset(), 
+            // which calls the destructor to flush the rest of the data.
         } else {
-            std::cout << "[SYSTEM] Server pointer is null, force exiting." << std::endl;
+            std::cerr << "[SYSTEM] Server not initialized, exiting." << std::endl;
+            std::exit(0);
         }
         return TRUE;
-    }
+        }
     return FALSE;
 }
 #endif
