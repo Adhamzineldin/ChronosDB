@@ -1,5 +1,6 @@
 // network/franco_server.cpp (updated)
 // Platform networking headers
+#include "network/packet.h"
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
@@ -303,89 +304,45 @@ namespace francodb {
 
     void FrancoServer::HandleClient(uintptr_t client_socket) {
         socket_t sock = (socket_t)client_socket;
-        char buffer[net::MAX_PACKET_SIZE];
-        
-        // Read initial bytes to detect protocol
-        memset(buffer, 0, net::MAX_PACKET_SIZE);
-        int peek_bytes = recv(sock, buffer, 4, MSG_PEEK);
-        
-        ProtocolType protocol_type = ProtocolType::TEXT; // Default
-        if (peek_bytes >= 2) {
-            // Simple detection logic
-            if (buffer[0] == '{' || strncmp(buffer, "POST", 4) == 0) {
-                protocol_type = ProtocolType::JSON;
-            } else if (buffer[0] == 0x01 || buffer[0] == 0x02) { // Binary markers
-                protocol_type = ProtocolType::BINARY;
-            }
-        }
-        
-        // Create appropriate handler and initial engine (default db)
-        auto handler = CreateHandler(protocol_type, client_socket);
         
         while (running_) {
-            memset(buffer, 0, net::MAX_PACKET_SIZE);
-            int bytes = recv(sock, buffer, net::MAX_PACKET_SIZE - 1, 0);
-            if (bytes <= 0) break;
+            // 1. READ HEADER (5 Bytes)
+            PacketHeader header;
+            int bytes_read = recv(sock, (char*)&header, sizeof(header), MSG_WAITALL);
+            
+            if (bytes_read <= 0) break; // Client disconnected
 
-            std::string request(buffer, bytes);
+            // Convert length back from network order
+            uint32_t payload_len = ntohl(header.length);
 
-            // Normalize simple text exit/quit for text clients
-            std::string trimmed = request;
-            trimmed.erase(std::remove(trimmed.begin(), trimmed.end(), '\n'), trimmed.end());
-            trimmed.erase(std::remove(trimmed.begin(), trimmed.end(), '\r'), trimmed.end());
-
-            if (trimmed == "exit" || trimmed == "quit") {
-                std::string goodbye = "Goodbye!\n";
-                send(sock, goodbye.c_str(), goodbye.size(), 0);
-                break;
+            // 2. READ PAYLOAD
+            // Allocate exact size or use a safe buffer check
+            if (payload_len > net::MAX_PACKET_SIZE) { 
+                // Handle error: packet too big
+                break; 
             }
+            
+            std::vector<char> payload(payload_len);
+            recv(sock, payload.data(), payload_len, MSG_WAITALL);
+            
+            std::string sql(payload.begin(), payload.end());
 
-            std::string response = handler->ProcessRequest(request);
-
-            // After processing, see if session requested a different DB
-            if (handler->GetSession()->is_authenticated) {
-                const std::string &db = handler->GetSession()->current_db;
-
-                // If session is still on the default database, keep using the original bpm_/catalog_
-                // and skip any registry-based switch. The default DB is already bound to the handler.
-                if (!db.empty() && db != "default") {
-                    auto entry = registry_->GetOrCreate(db);
-                    if (entry && entry->catalog && entry->bpm) {
-                        // Rebuild handler with an engine bound to that db
-                        auto current_session = handler->GetSession();
-                        handler.reset();
-                        auto engine = std::make_unique<ExecutionEngine>(entry->bpm.get(), entry->catalog.get());
-                        switch (protocol_type) {
-                            case ProtocolType::JSON:
-                                handler = std::make_unique<ApiConnectionHandler>(engine.release(), auth_manager_.get());
-                                break;
-                            case ProtocolType::BINARY:
-                                handler = std::make_unique<BinaryConnectionHandler>(engine.release(), auth_manager_.get());
-                                break;
-                            case ProtocolType::TEXT:
-                            default:
-                                handler = std::make_unique<ClientConnectionHandler>(engine.release(), auth_manager_.get());
-                                break;
-                        }
-                        // Restore session info
-                        handler->GetSession()->is_authenticated = current_session->is_authenticated;
-                        handler->GetSession()->current_user = current_session->current_user;
-                        handler->GetSession()->current_db = db;
-                    } else {
-                        response = "ERROR: Failed to switch database\n";
-                    }
-                }
+            // 3. PROCESS BASED ON TYPE
+            ProtocolType proto_mode;
+            switch (header.type) {
+                case MsgType::CMD_JSON:   proto_mode = ProtocolType::JSON; break;
+                case MsgType::CMD_BINARY: proto_mode = ProtocolType::BINARY; break;
+                default:                  proto_mode = ProtocolType::TEXT; break;
             }
+            
+            // Create Handler on the fly (or reuse one and just set the mode)
+            auto handler = CreateHandler(proto_mode, client_socket);
+            std::string response = handler->ProcessRequest(sql);
 
             send(sock, response.c_str(), response.size(), 0);
         }
         
-        // Cleanup
-#ifdef _WIN32
-        closesocket(sock);
-#else
-        close(sock);
-#endif
+        // ... cleanup ...
     }
     
     std::unique_ptr<ConnectionHandler> FrancoServer::CreateHandler(

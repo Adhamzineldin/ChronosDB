@@ -1,5 +1,9 @@
-// Example: Using FrancoDB Client in Node.js
+// Example: Using FrancoDB Client in Node.js (Packet Protocol)
 const net = require('net');
+
+// Protocol Constants
+const CMD_TEXT = 'Q'.charCodeAt(0);
+const CMD_JSON = 'J'.charCodeAt(0);
 
 class FrancoDBClient {
     constructor(host = 'localhost', port = 2501) {
@@ -8,61 +12,64 @@ class FrancoDBClient {
         this.socket = null;
         this.connected = false;
     }
-    
+
     connect(username = '', password = '', database = '') {
         return new Promise((resolve, reject) => {
             this.socket = new net.Socket();
-            
-            this.socket.connect(this.port, this.host, () => {
+
+            this.socket.connect(this.port, this.host, async () => {
                 this.connected = true;
-                
-                // Login if credentials provided
+
+                // Login
                 if (username && password) {
-                    const loginCmd = `LOGIN ${username} ${password};\n`;
-                    this.query(loginCmd).then(response => {
-                        if (!response.includes('LOGIN OK')) {
-                            this.disconnect();
-                            reject(new Error('Login failed'));
-                            return;
-                        }
-                        
-                        // Use database if provided
-                        if (database) {
-                            this.query(`USE ${database};\n`).then(() => {
-                                resolve(true);
-                            });
-                        } else {
-                            resolve(true);
-                        }
-                    });
-                } else {
-                    resolve(true);
+                    const res = await this.query(`LOGIN ${username} ${password};\n`);
+                    if (!res.includes('LOGIN OK')) {
+                        this.disconnect();
+                        return reject(new Error('Login failed'));
+                    }
                 }
+
+                // Use DB
+                if (database) {
+                    await this.query(`USE ${database};\n`);
+                }
+                resolve(true);
             });
-            
-            this.socket.on('error', (err) => {
-                reject(err);
-            });
+
+            this.socket.on('error', (err) => reject(err));
         });
     }
-    
-    query(sql) {
+
+    query(sql, mode = 'text') {
         return new Promise((resolve, reject) => {
-            if (!this.connected) {
-                reject(new Error('Not connected'));
-                return;
-            }
-            
-            let response = '';
-            this.socket.once('data', (data) => {
-                response = data.toString();
-                resolve(response);
-            });
-            
-            this.socket.write(sql);
+            if (!this.connected) return reject(new Error('Not connected'));
+
+            // 1. Determine Type
+            let msgType = CMD_TEXT;
+            if (mode === 'json') msgType = CMD_JSON;
+
+            // 2. Prepare Buffers
+            const payload = Buffer.from(sql, 'utf-8');
+            const header = Buffer.alloc(5);
+
+            // 3. Write Header
+            header.writeUInt8(msgType, 0);       // Byte 0: Type
+            header.writeUInt32BE(payload.length, 1); // Byte 1-4: Length (Big Endian)
+
+            // 4. Send Packet
+            const packet = Buffer.concat([header, payload]);
+
+            // 5. Wait for Response (Simple one-shot listener)
+            const onData = (data) => {
+                this.socket.removeListener('data', onData);
+                resolve(data.toString().trim());
+            };
+
+            this.socket.on('data', onData);
+            this.socket.write(packet);
         });
     }
-    
+
     disconnect() {
         if (this.socket) {
             this.socket.end();
@@ -74,23 +81,21 @@ class FrancoDBClient {
 // Example usage
 async function main() {
     const client = new FrancoDBClient('localhost', 2501);
-    
+
     try {
         await client.connect('maayn', 'root', 'mydb');
-        console.log('Connected to FrancoDB!');
-        
-        // Create table
-        let result = await client.query('2e3mel gadwal users (id rakam asasi, name gomla, age rakam);\\n');
-        console.log('Create table:', result);
-        
-        // Insert data
-        result = await client.query("emla gowa users elkeyam (1, 'Alice', 25);\\n");
-        console.log('Insert:', result);
-        
-        // Query data
-        result = await client.query('2e5tar * men users lama age > 20;\\n');
-        console.log('Query result:', result);
-        
+        console.log('Connected!');
+
+        // JSON Query
+        const jsonStr = await client.query('2e5tar * men users;', 'json');
+        console.log('JSON Output:', jsonStr);
+
+        // Parse it if valid JSON
+        try {
+            const jsonObj = JSON.parse(jsonStr);
+            console.log('Parsed Rows:', jsonObj.data?.rows);
+        } catch(e) {}
+
         client.disconnect();
     } catch (error) {
         console.error('Error:', error);

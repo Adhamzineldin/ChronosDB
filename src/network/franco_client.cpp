@@ -1,4 +1,5 @@
 // Platform networking headers MUST come before any header that may include <windows.h>
+#include "network/packet.h"
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <winsock2.h>
@@ -185,22 +186,31 @@ namespace francodb {
     }
 
     std::string FrancoClient::Query(const std::string& sql) {
-        if (!is_connected_) return "ERROR: Not connected to server.";
+        if (!is_connected_) return "ERROR: Not connected.";
 
-        // Send
-        send((socket_t)sock_, sql.c_str(), sql.size(), 0);
-
-        // Receive
-        char buffer[net::MAX_PACKET_SIZE];
-        memset(buffer, 0, net::MAX_PACKET_SIZE);
-        int bytes_received = recv((socket_t)sock_, buffer, net::MAX_PACKET_SIZE - 1, 0);
-
-        if (bytes_received <= 0) {
-            is_connected_ = false;
-            return "ERROR: Lost connection to server.";
+        // 1. Determine Type
+        MsgType type;
+        switch (protocol_type_) {
+            case ProtocolType::JSON:   type = MsgType::CMD_JSON; break;
+            case ProtocolType::BINARY: type = MsgType::CMD_BINARY; break;
+            default:                   type = MsgType::CMD_TEXT; break;
         }
 
-        return std::string(buffer);
+        // 2. Prepare Header
+        PacketHeader header;
+        header.type = type;
+        header.length = htonl(sql.size()); // Convert host-to-network long (Big Endian standard)
+
+        // 3. Send Header (5 bytes)
+        send((socket_t)sock_, (char*)&header, sizeof(header), 0);
+
+        // 4. Send Payload (SQL)
+        send((socket_t)sock_, sql.c_str(), sql.size(), 0);
+
+        // 5. Receive Response (Existing logic...)
+        char buffer[net::MAX_PACKET_SIZE];
+        int bytes = recv((socket_t)sock_, buffer, net::MAX_PACKET_SIZE, 0);
+        return std::string(buffer, bytes > 0 ? bytes : 0);
     }
 
     void FrancoClient::Disconnect() {
