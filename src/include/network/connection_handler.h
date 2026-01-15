@@ -1,8 +1,7 @@
-// network/connection_handler.h
 #pragma once
 
 #include <memory>
-
+#include <string>
 #include "network/protocol.h"
 #include "execution/execution_engine.h"
 #include "common/session_context.h"
@@ -10,41 +9,32 @@
 
 namespace francodb {
 
-    class ConnectionHandler {
-    protected:
-        std::unique_ptr<ProtocolSerializer> protocol_;
+    class ClientConnectionHandler {
+    private:
         ExecutionEngine *engine_;
         std::shared_ptr<SessionContext> session_;
         AuthManager *auth_manager_;
+        
+        // The current output format (Default: TEXT)
+        ProtocolType response_format_ = ProtocolType::TEXT;
+
+        // Helper to format the result based on response_format_
+        std::string SerializeResponse(const ExecutionResult& result);
+        std::string SerializeError(const std::string& message);
 
     public:
-        ConnectionHandler(ProtocolType protocol_type, ExecutionEngine *engine, AuthManager *auth_manager);
-        virtual ~ConnectionHandler() = default;
+        // Constructor
+        ClientConnectionHandler(ExecutionEngine *engine, AuthManager *auth_manager);
+        virtual ~ClientConnectionHandler() = default;
 
-        virtual std::string ProcessRequest(const std::string &request) = 0;
-        virtual ProtocolType GetProtocolType() const = 0;
+        // The main processing loop
+        std::string ProcessRequest(const std::string &request);
 
+        // Switch modes on the fly (Text -> JSON -> Binary)
+        void SetResponseFormat(ProtocolType type) { response_format_ = type; }
+
+        // Accessor for Session (to keep it alive)
         std::shared_ptr<SessionContext> GetSession() const { return session_; }
     };
 
-    class ClientConnectionHandler : public ConnectionHandler {
-    public:
-        explicit ClientConnectionHandler(ExecutionEngine *engine, AuthManager *auth_manager);
-        std::string ProcessRequest(const std::string &request) override;
-        ProtocolType GetProtocolType() const override { return ProtocolType::TEXT; }
-    };
-
-    class ApiConnectionHandler : public ConnectionHandler {
-    public:
-        explicit ApiConnectionHandler(ExecutionEngine *engine, AuthManager *auth_manager);
-        std::string ProcessRequest(const std::string &request) override;
-        ProtocolType GetProtocolType() const override { return ProtocolType::JSON; }
-    };
-
-    class BinaryConnectionHandler : public ConnectionHandler {
-    public:
-        explicit BinaryConnectionHandler(ExecutionEngine *engine, AuthManager *auth_manager);
-        std::string ProcessRequest(const std::string &request) override;
-        ProtocolType GetProtocolType() const override { return ProtocolType::BINARY; }
-    };
 }

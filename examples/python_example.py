@@ -65,7 +65,7 @@ class FrancoDBClient:
             self.sock.sendall(header + payload)
             
             # 5. Receive Response (Basic implementation)
-            response = self.sock.recv(4096).decode()
+            response = self.sock.recv(65536).decode()
             return response.strip()
             
         except Exception as e:

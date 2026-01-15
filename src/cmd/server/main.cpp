@@ -43,20 +43,29 @@ std::string GetExecutableDir() {
 }
 
 // FIX: Robust Logging Setup with Retry Logic
+// src/cmd/server/main_server.cpp
+
+// FIX: Point to ../log/francodb_server.log
 void SetupServiceLogging(const std::string& exe_dir) {
-    fs::path log_path = fs::path(exe_dir) / "francodb_server.log";
+    // 1. Calculate Log Path (.../FrancoDB/log/francodb_server.log)
+    fs::path bin_path = exe_dir;
+    fs::path log_dir = bin_path.parent_path() / "log";
     
-    // Try up to 5 times to grab the file lock (fixes Fast Restart crashes)
+    if (!fs::exists(log_dir)) {
+        fs::create_directories(log_dir);
+    }
+
+    fs::path log_path = log_dir / "francodb_server.log";
+    
+    // Try up to 5 times to grab the file lock
     for (int i = 0; i < 5; i++) {
         FILE* fp = freopen(log_path.string().c_str(), "a", stdout);
         if (fp) {
             freopen(log_path.string().c_str(), "a", stderr);
-            // Force "Unit Buffering" (Flush after every insertion)
             std::cout.setf(std::ios::unitbuf);
             std::cerr.setf(std::ios::unitbuf);
             return;
         }
-        // Wait 100ms before retrying
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 }

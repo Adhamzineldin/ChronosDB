@@ -41,6 +41,12 @@ static bool IsFileCorrupt(const std::string& path) {
 namespace francodb {
     FrancoServer::FrancoServer(BufferPoolManager* bpm, Catalog* catalog)
         : bpm_(bpm), catalog_(catalog) {
+        
+        // Force immediate logging
+        std::cout.setf(std::ios::unitbuf);
+        std::cerr.setf(std::ios::unitbuf);
+
+        std::cout << "[DEBUG] Step 1: Winsock..." << std::endl;
 #ifdef _WIN32
         WSADATA wsa;
         WSAStartup(MAKEWORD(2, 2), &wsa);
@@ -53,34 +59,50 @@ namespace francodb {
         std::filesystem::create_directories(system_dir);
         std::filesystem::path system_db_path = system_dir / "francodb.db";
 
-        // FIX: Check for System DB Corruption
+        // FIX: Remove corrupt DB on startup to break crash loops
         if (IsFileCorrupt(system_db_path.string())) {
             std::cout << "[WARN] System DB corrupt. Resetting..." << std::endl;
             std::filesystem::remove(system_db_path);
         }
 
+        std::cout << "[DEBUG] Step 2: System DiskManager..." << std::endl;
         system_disk_ = std::make_unique<DiskManager>(system_db_path.string());
-        
         if (config.IsEncryptionEnabled() && !config.GetEncryptionKey().empty()) {
             system_disk_->SetEncryptionKey(config.GetEncryptionKey());
         }
         
+        std::cout << "[DEBUG] Step 3: System BPM..." << std::endl;
         system_bpm_ = std::make_unique<BufferPoolManager>(BUFFER_POOL_SIZE, system_disk_.get());
+        
+        std::cout << "[DEBUG] Step 4: System Catalog..." << std::endl;
         system_catalog_ = std::make_unique<Catalog>(system_bpm_.get());
         
+        // FIX: Only load if we suspect the constructor didn't do it
+        // Or better: Wrap it in try-catch and ignore "Already Loaded" errors
+        std::cout << "[DEBUG] Step 5: Loading System Catalog..." << std::endl;
         try {
-            system_catalog_->LoadCatalog();
+            // Check if tables already exist (implies constructor loaded it)
+            if (system_catalog_->GetAllTableNames().empty()) {
+                system_catalog_->LoadCatalog();
+            } else {
+                std::cout << "[INFO] Catalog already loaded by constructor. Skipping manual load." << std::endl;
+            }
         } catch (...) {
-            std::cout << "[INFO] Creating new System Catalog." << std::endl;
+            std::cout << "[WARN] LoadCatalog skipped or failed (New DB?)." << std::endl;
         }
         
+        std::cout << "[DEBUG] Step 6: AuthManager..." << std::endl;
         auth_manager_ = std::make_unique<AuthManager>(system_bpm_.get(), system_catalog_.get());
         
+        std::cout << "[DEBUG] Step 7: Saving State..." << std::endl;
         system_catalog_->SaveCatalog();
         system_bpm_->FlushAllPages();
 
+        std::cout << "[DEBUG] Step 8: Registry..." << std::endl;
         registry_ = std::make_unique<DatabaseRegistry>();
         registry_->RegisterExternal("default", bpm_, catalog_);
+        
+        std::cout << "[INFO] Server Startup Complete." << std::endl;
     }
 
     FrancoServer::~FrancoServer() {
@@ -201,33 +223,60 @@ namespace francodb {
         }
     }
 
+    // src/network/franco_server.cpp
+
     void FrancoServer::HandleClient(uintptr_t client_socket) {
         socket_t sock = (socket_t)client_socket;
         
-        // Create Handler ONCE to persist session
+        // 1. Create the Handler ONCE (The Session starts here)
+        // We only use ClientConnectionHandler now, because it handles ALL formats.
         auto engine = std::make_unique<ExecutionEngine>(bpm_, catalog_);
         auto handler = std::make_unique<ClientConnectionHandler>(engine.release(), auth_manager_.get());
 
         while (running_) {
-            // 1. READ HEADER (5 Bytes)
+            // 2. READ HEADER (5 Bytes)
             PacketHeader header;
             int bytes_read = recv(sock, (char*)&header, sizeof(header), MSG_WAITALL);
             
-            if (bytes_read <= 0) break; 
+            if (bytes_read <= 0) break; // Client disconnected
 
+            // Convert length back from network order
             uint32_t payload_len = ntohl(header.length);
-            if (payload_len > net::MAX_PACKET_SIZE) break;
+            
+            // Safety check: Don't allocate 4GB if a hacker sends a fake header
+            if (payload_len > net::MAX_PACKET_SIZE) {
+                // If using a logger: LogDebug("Packet too large");
+                break;
+            }
             
             std::vector<char> payload(payload_len);
             recv(sock, payload.data(), payload_len, MSG_WAITALL);
             
             std::string sql(payload.begin(), payload.end());
 
-            // 2. PROCESS (Using Packet Type to determine output format if needed)
-            // For now, we just pass SQL to the existing handler
+            // 3. SET THE MODE (Context Switch)
+            // This is the magic. We tell the SAME handler: "Reply in JSON for this one."
+            switch (header.type) {
+                case MsgType::CMD_JSON:
+                    handler->SetResponseFormat(ProtocolType::JSON);
+                    break;
+                case MsgType::CMD_BINARY:
+                    handler->SetResponseFormat(ProtocolType::BINARY);
+                    break;
+                case MsgType::CMD_TEXT:
+                default:
+                    handler->SetResponseFormat(ProtocolType::TEXT);
+                    break;
+            }
+
+            // 4. PROCESS REQUEST
+            // The handler executes the SQL using the existing session (User/DB)
+            // and returns the string in the format we just set.
             std::string response = handler->ProcessRequest(sql);
 
-            // 3. SEND RESPONSE (For now, raw text)
+            // 5. SEND RESPONSE
+            // In a real binary protocol, we would send a PacketHeader back here too.
+            // For now, we just send the response body.
             send(sock, response.c_str(), response.size(), 0);
         }
         

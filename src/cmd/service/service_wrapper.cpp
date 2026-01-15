@@ -8,7 +8,9 @@
 #include <vector>
 #include <fstream>
 #include <chrono>
+#include <ctime>  // <--- Added missing header
 
+// 1. GLOBAL VARIABLES
 static TCHAR g_ServiceName[] = TEXT("FrancoDBService");
 SERVICE_STATUS g_ServiceStatus;
 SERVICE_STATUS_HANDLE g_StatusHandle = NULL;
@@ -17,14 +19,46 @@ PROCESS_INFORMATION g_ServerProcess = {0};
 std::atomic<bool> g_Running(false);
 std::thread g_WorkerThread;
 
+// 2. HELPER: GetExeDir (MUST BE DEFINED FIRST)
+std::string GetExeDir() {
+    TCHAR buffer[MAX_PATH];
+    // Use GetModuleFileNameW to ensure we handle paths correctly on all Windows versions
+    GetModuleFileName(NULL, buffer, MAX_PATH);
+    return std::filesystem::path(buffer).parent_path().string();
+}
+
+// 3. LOGGER: LogDebug (DEPENDS ON GetExeDir)
 void LogDebug(const std::string& msg) {
-    std::ofstream log("C:\\francodb_service_debug.txt", std::ios::app);
+    // 1. Get Bin Directory (.../FrancoDB/bin)
+    std::string binStr = GetExeDir();
+    std::filesystem::path binDir(binStr);
+    
+    // 2. Go up one level and into 'log' (.../FrancoDB/log)
+    std::filesystem::path logDir = binDir.parent_path() / "log";
+    
+    // 3. Create directory if missing
+    if (!std::filesystem::exists(logDir)) {
+        try {
+            std::filesystem::create_directories(logDir);
+        } catch (...) {
+            return; // Failed to create dir, give up silently
+        }
+    }
+
+    std::filesystem::path logFile = logDir / "francodb_service.log";
+
+    std::ofstream log(logFile, std::ios::app);
     if (log.is_open()) {
         auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-        log << std::ctime(&now) << " - " << msg << "\n";
+        // Remove newline from ctime if present
+        std::string timeStr = std::ctime(&now);
+        if (!timeStr.empty() && timeStr.back() == '\n') timeStr.pop_back(); 
+        
+        log << "[" << timeStr << "] " << msg << "\n";
     }
 }
 
+// 4. SERVICE HELPERS
 void ReportStatus(DWORD currentState, DWORD win32ExitCode, DWORD waitHint) {
     static DWORD checkPoint = 1;
     g_ServiceStatus.dwCurrentState = currentState;
@@ -44,12 +78,7 @@ void ReportStatus(DWORD currentState, DWORD win32ExitCode, DWORD waitHint) {
     SetServiceStatus(g_StatusHandle, &g_ServiceStatus);
 }
 
-std::string GetExeDir() {
-    TCHAR buffer[MAX_PATH];
-    GetModuleFileName(NULL, buffer, MAX_PATH);
-    return std::filesystem::path(buffer).parent_path().string();
-}
-
+// 5. SERVER PROCESS MANAGER
 bool StartServerProcess() {
     std::filesystem::path binDir = GetExeDir();
     std::filesystem::path serverExe = binDir / "francodb_server.exe";
@@ -67,7 +96,7 @@ bool StartServerProcess() {
 
     ZeroMemory(&g_ServerProcess, sizeof(g_ServerProcess));
 
-    // FIX: Pass --service flag
+    // Pass --service flag so the server knows to redirect output
     std::wstring cmdLine = L"\"" + serverExe.wstring() + L"\" --service";
     std::vector<wchar_t> cmdLineBuffer(cmdLine.begin(), cmdLine.end());
     cmdLineBuffer.push_back(0);
@@ -110,8 +139,9 @@ void WorkerThread() {
             
             LogDebug("Server exited with code: " + std::to_string(exitCode));
 
-            if (exitCode == 3221225781) { 
-                LogDebug("FATAL: Missing DLLs. Stopping Service.");
+            // Check for Missing DLLs
+            if (exitCode == 3221225781 || exitCode == 0xC0000135) { 
+                LogDebug("FATAL: Missing DLLs (0xC0000135). Stopping Service.");
                 g_Running = false;
                 SetEvent(g_ServiceStopEvent);
                 return;
@@ -147,6 +177,7 @@ void WorkerThread() {
     StopServerProcess();
 }
 
+// 6. MAIN SERVICE ENTRY POINTS
 VOID WINAPI ServiceCtrlHandler(DWORD CtrlCode) {
     switch (CtrlCode) {
         case SERVICE_CONTROL_STOP:
