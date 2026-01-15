@@ -75,7 +75,7 @@ namespace francodb {
         bool ReadMetadata(std::string &data);
         
         // Set encryption key (if encryption is enabled)
-        void SetEncryptionKey(const std::string& key) { encryption_key_ = key; encryption_enabled_ = !key.empty(); }
+        void SetEncryptionKey(const std::string& key);
         bool IsEncryptionEnabled() const { return encryption_enabled_; }
 
     private:
