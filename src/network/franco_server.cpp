@@ -195,6 +195,9 @@ namespace francodb {
         std::filesystem::path system_dir = std::filesystem::path(data_dir) / "system";
         std::filesystem::path system_db_path = system_dir / "francodb.db.francodb";
 
+        // Ensure the system directory exists
+        std::filesystem::create_directories(system_dir);
+
         // DEFENSIVE: If file is 1KB or less, it's likely just a corrupted header.
         if (std::filesystem::exists(system_db_path) && std::filesystem::file_size(system_db_path) < 4096) {
             std::cout << "[RECOVERY] System DB is too small (" 
