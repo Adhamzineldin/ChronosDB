@@ -39,9 +39,9 @@ class FrancoDBClient:
             print(f"Connection error: {e}")
             return False
     
-    def query(self, sql, mode='text'):
+    def query(self, fql, mode='text'):
         """
-        Execute SQL query.
+        Execute fql query.
         mode can be: 'text', 'json', 'binary'
         """
         if not self.connected:
@@ -54,7 +54,7 @@ class FrancoDBClient:
             elif mode == 'binary': msg_type = CMD_BINARY
             
             # 2. Encode Payload
-            payload = sql.encode('utf-8')
+            payload = fql.encode('utf-8')
             length = len(payload)
             
             # 3. Pack Header: [Type (1 byte)] [Length (4 bytes, Big Endian)]

@@ -84,6 +84,9 @@ int main(int argc, char* argv[]) {
     if (!connected) {
         // No argument provided - go directly to manual entry (skip connection string prompt)
         std::string password;
+        std::string host;
+        std::string port_str;
+        int port = net::DEFAULT_PORT;
         std::cout << "\nUsername: ";
         if (!std::getline(std::cin, username)) {
             std::cerr << "\n[INFO] Connection cancelled." << std::endl;
@@ -94,8 +97,26 @@ int main(int argc, char* argv[]) {
             std::cerr << "\n[INFO] Connection cancelled." << std::endl;
             return 0;
         }
-        
-        if (!db_client.Connect(net::DEFAULT_SERVER_IP, net::DEFAULT_PORT, username, password)) {
+        std::cout << "Host (empty = default): ";
+        if (!std::getline(std::cin, host)) {
+            std::cerr << "\n[INFO] Connection cancelled." << std::endl;
+            return 0;
+        }
+        if (host.empty()) host = net::DEFAULT_SERVER_IP;
+        std::cout << "Port (empty = default): ";
+        if (!std::getline(std::cin, port_str)) {
+            std::cerr << "\n[INFO] Connection cancelled." << std::endl;
+            return 0;
+        }
+        if (!port_str.empty()) {
+            try {
+                port = std::stoi(port_str);
+            } catch (...) {
+                std::cerr << "[WARN] Invalid port, using default." << std::endl;
+                port = net::DEFAULT_PORT;
+            }
+        }
+        if (!db_client.Connect(host, port, username, password)) {
             std::cerr << "[FATAL] Could not connect/authenticate to FrancoDB server." << std::endl;
             return 1;
         }
