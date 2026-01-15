@@ -16,10 +16,10 @@ namespace francodb {
     /**
      * Both Internal and Leaf pages inherit from this.
      *
-     * UPDATED HEADER FORMAT (28 Bytes):
-     * ---------------------------------------------------------------------------------------------------------
-     * | Checksum (4) | PageType (4) | LSN (4) | CurrentSize (4) | MaxSize (4) | ParentPageId (4) | PageId (4) |
-     * ---------------------------------------------------------------------------------------------------------
+     * UPDATED HEADER FORMAT (24 Bytes):
+     * --------------------------------------------------------------------------------------------
+     * | PageType (4) | LSN (4) | CurrentSize (4) | MaxSize (4) | ParentPageId (4) | PageId (4) |
+     * --------------------------------------------------------------------------------------------
      */
     class BPlusTreePage {
     public:
@@ -42,13 +42,12 @@ namespace francodb {
         page_id_t GetPageId() const;
 
     private:
-        uint32_t checksum_;      // Bytes 0-3
-        IndexPageType page_type_; // Bytes 4-7
-        int lsn_;                // Bytes 8-11
-        int size_;               // Bytes 12-15
-        int max_size_;           // Bytes 16-19
-        page_id_t parent_page_id_; // Bytes 20-23
-        page_id_t page_id_;      // Bytes 24-27
+        IndexPageType page_type_;
+        int lsn_;
+        int size_;
+        int max_size_;
+        page_id_t parent_page_id_;
+        page_id_t page_id_; // <--- ADDED THIS
     };
 
 } // namespace francodb

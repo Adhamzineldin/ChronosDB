@@ -11,9 +11,9 @@ namespace francodb {
 
     /**
      * Slotted Page Layout:
-     * -------------------------------------------------------------------------------
-     * | Checksum (4) | Header | Slot[0] | Slot[1] | ... | ... | Tuple[1] | Tuple[0] |
-     * -------------------------------------------------------------------------------
+     * ---------------------------------------------------------
+     * | Header | Slot[0] | Slot[1] | ... | ... | Tuple[1] | Tuple[0] |
+     * ---------------------------------------------------------
      *
      * Header:
      * - PrevPageId (4B)
@@ -56,12 +56,13 @@ namespace francodb {
         uint32_t GetTupleCount();
 
     private:
-        static constexpr size_t OFFSET_CHECKSUM   = 0; 
-        static constexpr size_t OFFSET_PREV_PAGE  = 4; // Was 0
-        static constexpr size_t OFFSET_NEXT_PAGE  = 8; // Was 4
-        static constexpr size_t OFFSET_FREE_SPACE = 12; // Was 8
-        static constexpr size_t OFFSET_TUPLE_COUNT= 16; // Was 12
-        static constexpr size_t SIZE_HEADER       = 20; // Was 16
+        // Helper to write/read header fields
+        // Standard offsets for header fields
+        static constexpr size_t OFFSET_PREV_PAGE = 0;
+        static constexpr size_t OFFSET_NEXT_PAGE = 4;
+        static constexpr size_t OFFSET_FREE_SPACE = 8;
+        static constexpr size_t OFFSET_TUPLE_COUNT = 12;
+        static constexpr size_t SIZE_HEADER = 16;
 
         // Slot structure (4 bytes offset, 4 bytes size)
         struct Slot {
