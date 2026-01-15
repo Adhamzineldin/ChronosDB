@@ -9,10 +9,10 @@
 #include <chrono>
 #include <memory>
 
-// FIX: Include winsock2.h BEFORE any other windows headers
 #ifdef _WIN32
-#include <winsock2.h>
 #include <windows.h>
+// --- FIX 1: Include Winsock Headers ---
+#include <winsock2.h>
 #pragma comment(lib, "ws2_32.lib") 
 #else
 #include <unistd.h>
@@ -26,7 +26,6 @@
 #include "common/config.h"
 #include "common/franco_net_config.h"
 #include "common/config_manager.h"
-#include "common/auth_manager.h"
 
 using namespace francodb;
 namespace fs = std::filesystem;
@@ -73,6 +72,8 @@ BOOL WINAPI ConsoleHandler(DWORD signal) {
 
         std::cerr << "\n[SYSTEM] Graceful shutdown initiated..." << std::endl;
         
+        // Note: We do NOT destroy the server here anymore to avoid 
+        // the "libwinpthread" crash. We just stop the listener.
         if (g_Server) {
             g_Server->Shutdown(); 
         }
@@ -82,7 +83,9 @@ BOOL WINAPI ConsoleHandler(DWORD signal) {
 }
 #endif
 
-int main(int argc, char* argv[]) {
+int main(int argc, char* argv[])
+{
+    // --- FIX 2: Initialize Windows Networking (Winsock) ---
 #ifdef _WIN32
     WSADATA wsaData;
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
@@ -140,35 +143,55 @@ int main(int argc, char* argv[]) {
         auto bpm = std::make_unique<BufferPoolManager>(BUFFER_POOL_SIZE, disk_manager.get());
         auto catalog = std::make_unique<Catalog>(bpm.get());
         
+        
         try { 
             if (catalog->GetAllTableNames().empty()) catalog->LoadCatalog(); 
         } catch (...) {}
         
-        // Initialize Auth Manager (Global)
-        g_auth_manager = new AuthManager(bpm.get(), catalog.get());
-
         std::cout << "[INFO] Initializing Server Logic..." << std::endl;
         g_Server = std::make_unique<FrancoServer>(bpm.get(), catalog.get());
         
         std::cout << "[INFO] Starting Network Listener on port " << port << "..." << std::endl;
-        g_Server->Start(port);
+      
         
-        // CLEAN SHUTDOWN
-        delete g_auth_manager;
-        g_Server.reset(); 
+        g_Server->Start(port);
+    
+        
+        // CLEAN SHUTDOWN - Proper order!
+        g_Server.reset();  // Destroy server first
+    
+        // Now safe to destroy AuthManager
+        if (g_auth_manager) {
+            delete g_auth_manager;
+            g_auth_manager = nullptr;
+        }
+            
 
-    } catch (const std::exception &e) {
-        std::cerr << "[CRASH] Critical Failure: " << e.what() << std::endl;
-        if (g_Server) g_Server.reset();
-        #ifdef _WIN32
+        } catch (const std::exception &e) {
+            std::cerr << "[CRASH] Critical Failure: " << e.what() << std::endl;
+        
+            // --- FIX 3: Force destruction BEFORE return ---
+            // This ensures the server is destroyed while libwinpthread is still loaded.
+            if (g_Server) {
+                std::cerr << "[SHUTDOWN] Emergency cleanup..." << std::endl;
+                g_Server.reset();
+            }
+        
+            if (g_auth_manager) {
+                delete g_auth_manager;
+                g_auth_manager = nullptr;
+            }
+
+#ifdef _WIN32
+            WSACleanup();
+#endif
+            return 1;
+        }
+
+        // --- FIX 4: Cleanup Winsock ---
+#ifdef _WIN32
         WSACleanup();
-        #endif
-        return 1;
-    }
-
-    #ifdef _WIN32
-    WSACleanup();
-    #endif
+#endif
 
     return 0;
 }

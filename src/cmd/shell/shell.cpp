@@ -217,30 +217,40 @@ int main(int argc, char* argv[]) {
     std::string input;
     while (connected) {
         std::cout << username << "@" << current_db << "> ";
-        std::cout.flush(); // Ensure prompt prints before waiting for input
+        std::cout.flush(); 
         
         if (!std::getline(std::cin, input)) break;
         if (input == "exit" || input == "quit") break;
         if (input.empty()) continue;
 
-        // --- [FIX] RESTORED PROMPT UPDATE LOGIC ---
-        // Check if command is "USE <db>" to update the prompt immediately
+        // --- [FIXED] PROMPT UPDATE LOGIC ---
         std::string upper_input = input;
         std::transform(upper_input.begin(), upper_input.end(), upper_input.begin(), ::toupper);
         
+        // Detect which keyword was used (USE or 2ESTA5DEM)
+        size_t prefix_len = 0;
         if (upper_input.rfind("USE ", 0) == 0) {
-            std::string new_db = input.substr(4);
-            // Remove trailing semicolon if present
+            prefix_len = 4;
+        } else if (upper_input.rfind("2ESTA5DEM ", 0) == 0) {
+            prefix_len = 10;
+        }
+
+        // If a DB change command was detected
+        if (prefix_len > 0) {
+            std::string new_db = input.substr(prefix_len);
+            
+            // Remove trailing semicolon
             if (!new_db.empty() && new_db.back() == ';') {
                 new_db.pop_back();
             }
-            // Remove extra whitespace
-            size_t first = new_db.find_first_not_of(' ');
+            
+            // Trim whitespace
+            size_t first = new_db.find_first_not_of(" \t\n\r");
             if (std::string::npos != first) {
-                 size_t last = new_db.find_last_not_of(' ');
-                 current_db = new_db.substr(first, (last - first + 1));
-            } else {
-                 current_db = new_db;
+                size_t last = new_db.find_last_not_of(" \t\n\r");
+                current_db = new_db.substr(first, (last - first + 1));
+            } else if (!new_db.empty()) {
+                current_db = new_db;
             }
         }
         // ------------------------------------------
