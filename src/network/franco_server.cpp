@@ -45,25 +45,30 @@ namespace francodb {
         try {
             InitializeSystemResources();
         
-            // Step 8: Registry
+            // Registry
             registry_ = std::make_unique<DatabaseRegistry>();
             registry_->RegisterExternal("default", bpm_, catalog_);
-        
+            
+            // Thread Pool
+            unsigned int cores = std::thread::hardware_concurrency();
+            int pool_size = (cores > 0) ? cores : 4;
+            thread_pool_ = std::make_unique<ThreadPool>(pool_size);
+            
         } catch (const std::exception& e) {
             std::cerr << "[CRITICAL] System DB Corrupt. Self-healing..." << std::endl;
         
-            // Cleanup pointers
             auth_manager_.reset();
             system_catalog_.reset();
             system_bpm_.reset();
             system_disk_.reset();
 
-            // Delete the file
             auto& config = ConfigManager::GetInstance();
             std::filesystem::remove(std::filesystem::path(config.GetDataDirectory()) / "system" / "francodb.db");
 
-            // Try one more time with a clean slate
             InitializeSystemResources();
+            
+            unsigned int cores = std::thread::hardware_concurrency();
+            thread_pool_ = std::make_unique<ThreadPool>(cores > 0 ? cores : 4);
         }
     }
 
@@ -79,7 +84,6 @@ namespace francodb {
     }
 
     void FrancoServer::Start(int port) {
-        
         is_running_ = true;
         
         socket_t s = socket(AF_INET, SOCK_STREAM, 0);
@@ -112,11 +116,14 @@ namespace francodb {
         
         auto_save_thread_ = std::thread(&FrancoServer::AutoSaveLoop, this);
 
-        std::cout << "[READY] FrancoDB Server listening on port " << port << "..." << std::endl;
+        std::cout << "[READY] FrancoDB Server listening on port " << port << " (Pool Active)..." << std::endl;
 
         while (running_ && is_running_) {
             sockaddr_in client_addr{};
             int len = sizeof(client_addr);
+            
+            // Note: ThreadPool handles tasks fast, so blocking accept is usually okay.
+            // Keeping select() logic for clean shutdown support.
 #ifdef _WIN32
             fd_set readSet;
             FD_ZERO(&readSet);
@@ -127,8 +134,7 @@ namespace francodb {
             int selectResult = select(0, &readSet, nullptr, nullptr, &timeout);
             if (selectResult > 0 && FD_ISSET(s, &readSet)) {
 #else
-            socklen_t slen = sizeof(client_addr);
-             fd_set readSet;
+            fd_set readSet;
             FD_ZERO(&readSet);
             FD_SET(s, &readSet);
             timeval timeout;
@@ -140,8 +146,11 @@ namespace francodb {
                 socket_t client_sock = accept(s, (struct sockaddr*)&client_addr, &len);
                 if (client_sock != INVALID_SOCK && running_) {
                     uintptr_t client_id = (uintptr_t)client_sock;
-                    client_threads_[client_id] = std::thread(&FrancoServer::HandleClient, this, client_id);
-                    client_threads_[client_id].detach();
+                    
+                    // Push client to Thread Pool
+                    thread_pool_->Enqueue([this, client_id] {
+                        this->HandleClient(client_id);
+                    });
                 }
             }
         }
@@ -153,9 +162,9 @@ namespace francodb {
 #endif
     }
 
+
     void FrancoServer::Shutdown() {
         std::cout << "[SHUTDOWN] Flushing buffers..." << std::endl;
-        
         if (auth_manager_) auth_manager_->SaveUsers();
         if (system_catalog_) system_catalog_->SaveCatalog();
         if (system_bpm_) system_bpm_->FlushAllPages();
@@ -175,9 +184,10 @@ namespace francodb {
         }
     }
 
+
     void FrancoServer::AutoSaveLoop() {
         while (running_) {
-            for (int i = 0; i < 300 && running_; ++i) { // 30s
+            for (int i = 0; i < 300 && running_; ++i) { 
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
             if (running_) {
@@ -195,85 +205,110 @@ namespace francodb {
         std::filesystem::path system_dir = std::filesystem::path(data_dir) / "system";
         std::filesystem::path system_db_path = system_dir / "francodb.db.francodb";
 
-        // Ensure the system directory exists
         std::filesystem::create_directories(system_dir);
 
-        // DEFENSIVE: If file is 1KB or less, it's likely just a corrupted header.
         if (std::filesystem::exists(system_db_path) && std::filesystem::file_size(system_db_path) < 4096) {
-            std::cout << "[RECOVERY] System DB is too small (" 
-                      << std::filesystem::file_size(system_db_path) 
-                      << " bytes). Wiping for safety." << std::endl;
+            std::cout << "[RECOVERY] System DB is too small. Wiping." << std::endl;
             std::filesystem::remove(system_db_path);
         }
 
-        
-
-        // Step 2 & 3: Disk & BPM
         system_disk_ = std::make_unique<DiskManager>(system_db_path.string());
         if (config.IsEncryptionEnabled()) system_disk_->SetEncryptionKey(config.GetEncryptionKey());
         system_bpm_ = std::make_unique<BufferPoolManager>(BUFFER_POOL_SIZE, system_disk_.get());
-    
-        // Step 4: Catalog
         system_catalog_ = std::make_unique<Catalog>(system_bpm_.get());
-    
-        // Step 5 & 6: Auth
         auth_manager_ = std::make_unique<AuthManager>(system_bpm_.get(), system_catalog_.get());
     }
+    
+    
+    
+    
+    std::string FrancoServer::DispatchCommand(const std::string& sql, ClientConnectionHandler* handler) {
+        std::string upper_sql = sql;
+        std::transform(upper_sql.begin(), upper_sql.end(), upper_sql.begin(), ::toupper);
+
+        // 1. WHOAMI
+        if (upper_sql.find("WHOAMI") != std::string::npos) {
+            return "Current User: " + (handler->IsAuthenticated() ? handler->GetCurrentUser() : "Guest");
+        }
+
+        // 2. SHOW DATABASES (SECURE VERSION)
+        if (upper_sql.find("SHOW DATABASES") != std::string::npos || upper_sql.find("WARINI DATABASE") != std::string::npos) {
+            
+            if (!handler->IsAuthenticated()) {
+                return "ERROR: Authentication required.";
+            }
+
+            std::string user = handler->GetCurrentUser();
+            std::stringstream ss;
+            ss << "--- AVAILABLE DATABASES ---\n";
+            
+            // Always check if user can see 'default'
+            if (auth_manager_->HasDatabaseAccess(user, "default")) {
+                ss << "default\n";
+            }
+
+            // Scan Data Directory for other DBs
+            auto& config = ConfigManager::GetInstance();
+            std::filesystem::path data_path(config.GetDataDirectory());
+            
+            if (std::filesystem::exists(data_path)) {
+                for (const auto& entry : std::filesystem::directory_iterator(data_path)) {
+                    if (entry.is_directory()) {
+                        std::string db_name = entry.path().filename().string();
+                        // Skip system folder (internal use only)
+                        if (db_name == "system" || db_name == "default") continue;
+
+                        // ASK AUTH MANAGER: Does this user have access?
+                        if (auth_manager_->HasDatabaseAccess(user, db_name)) {
+                            ss << db_name << "\n";
+                        }
+                    }
+                }
+            }
+            return ss.str();
+        }
+
+        // 3. CREATE USER (Delegate to Handler/Auth logic if parser supports it, 
+        //    otherwise rely on ProcessRequest to handle standard SQL statements)
+        
+        // 4. Default: Send to Volcano Engine / Connection Handler
+        return handler->ProcessRequest(sql);
+    }
+
+
 
     // src/network/franco_server.cpp
 
     void FrancoServer::HandleClient(uintptr_t client_socket) {
         socket_t sock = (socket_t)client_socket;
         
-        // 1. Create the Handler ONCE (The Session starts here)
-        // We only use ClientConnectionHandler now, because it handles ALL formats.
-        auto engine = std::make_unique<ExecutionEngine>(bpm_, catalog_);
+        auto engine = std::make_unique<ExecutionEngine>(bpm_, catalog_, auth_manager_.get());
         auto handler = std::make_unique<ClientConnectionHandler>(engine.release(), auth_manager_.get());
 
         while (running_) {
-            // 2. READ HEADER (5 Bytes)
             PacketHeader header;
             int bytes_read = recv(sock, (char*)&header, sizeof(header), MSG_WAITALL);
             
-            if (bytes_read <= 0) break; // Client disconnected
+            if (bytes_read <= 0) break;
 
-            // Convert length back from network order
             uint32_t payload_len = ntohl(header.length);
-            
-            // Safety check: Don't allocate 4GB if a hacker sends a fake header
-            if (payload_len > net::MAX_PACKET_SIZE) {
-                // If using a logger: LogDebug("Packet too large");
-                break;
-            }
+            // Safety check against DOS attacks (Max 10MB packet)
+            if (payload_len > 1024 * 1024 * 10) break;
             
             std::vector<char> payload(payload_len);
             recv(sock, payload.data(), payload_len, MSG_WAITALL);
             
             std::string sql(payload.begin(), payload.end());
 
-            // 3. SET THE MODE (Context Switch)
-            // This is the magic. We tell the SAME handler: "Reply in JSON for this one."
             switch (header.type) {
-                case MsgType::CMD_JSON:
-                    handler->SetResponseFormat(ProtocolType::JSON);
-                    break;
-                case MsgType::CMD_BINARY:
-                    handler->SetResponseFormat(ProtocolType::BINARY);
-                    break;
-                case MsgType::CMD_TEXT:
-                default:
-                    handler->SetResponseFormat(ProtocolType::TEXT);
-                    break;
+                case MsgType::CMD_JSON: handler->SetResponseFormat(ProtocolType::JSON); break;
+                case MsgType::CMD_BINARY: handler->SetResponseFormat(ProtocolType::BINARY); break;
+                default: handler->SetResponseFormat(ProtocolType::TEXT); break;
             }
 
-            // 4. PROCESS REQUEST
-            // The handler executes the SQL using the existing session (User/DB)
-            // and returns the string in the format we just set.
-            std::string response = handler->ProcessRequest(sql);
+            // [FIX] Use DispatchCommand instead of direct ProcessRequest
+            std::string response = DispatchCommand(sql, handler.get());
 
-            // 5. SEND RESPONSE
-            // In a real binary protocol, we would send a PacketHeader back here too.
-            // For now, we just send the response body.
             send(sock, response.c_str(), response.size(), 0);
         }
         
@@ -283,4 +318,6 @@ namespace francodb {
         close(sock);
 #endif
     }
+
+
 }

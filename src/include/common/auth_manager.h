@@ -9,20 +9,19 @@
 #include "parser/statement.h" // Needed for StatementType
 
 namespace francodb {
-    
     class AuthManager; // Forward declaration
     class ExecutionEngine; // Forward declaration
 
     // GLOBAL POINTER DECLARATION (Extern)
-    extern AuthManager* g_auth_manager;
+    extern AuthManager *g_auth_manager;
 
     // RBAC Roles
     enum class UserRole {
-        SUPERADMIN, 
-        ADMIN,      
-        USER,       
-        READONLY,   
-        DENIED      
+        SUPERADMIN,
+        ADMIN,
+        NORMAL,
+        READONLY,
+        DENIED, 
     };
 
     struct UserInfo {
@@ -33,41 +32,51 @@ namespace francodb {
 
     class AuthManager {
     public:
-        AuthManager(BufferPoolManager* system_bpm, Catalog* system_catalog);
+        AuthManager(BufferPoolManager *system_bpm, Catalog *system_catalog);
+
         ~AuthManager();
 
         bool CheckUserExists(const std::string &username);
+
         void InitializeSystemDatabase();
-        
+
         // Authentication
-        bool Authenticate(const std::string& username, const std::string& password, UserRole& out_role);
-        
+        bool Authenticate(const std::string &username, const std::string &password, UserRole &out_role);
+
         // User Management
-        bool CreateUser(const std::string& username, const std::string& password, UserRole role);
-        bool DeleteUser(const std::string& username);
-        bool SetUserRole(const std::string& username, UserRole new_role);
-        UserRole GetUserRole(const std::string& username);
-        UserRole GetUserRole(const std::string& username, const std::string& db_name);
-        bool SetUserRole(const std::string& username, const std::string& db_name, UserRole role);
+        bool CreateUser(const std::string &username, const std::string &password, UserRole role);
+
+        bool DeleteUser(const std::string &username);
+
+        bool SetUserRole(const std::string &username, UserRole new_role);
+
+        UserRole GetUserRole(const std::string &username);
+
+        UserRole GetUserRole(const std::string &username, const std::string &db_name);
+
+        bool SetUserRole(const std::string &username, const std::string &db_name, UserRole role);
+
         std::vector<UserInfo> GetAllUsers();
 
         // Permission Checking
         bool HasPermission(UserRole role, StatementType stmt_type);
-        bool HasDatabaseAccess(const std::string& username, const std::string& db_name);
-        bool IsSuperAdmin(const std::string& username);
-        
+
+        bool HasDatabaseAccess(const std::string &username, const std::string &db_name);
+
+        bool IsSuperAdmin(const std::string &username);
+
         void SaveUsers();
 
     private:
-        std::string HashPassword(const std::string& password);
+        std::string HashPassword(const std::string &password);
+
         void LoadUsers();
 
-        BufferPoolManager* system_bpm_;
-        Catalog* system_catalog_;
-        ExecutionEngine* system_engine_; // Owns a private engine for system queries
-        
+        BufferPoolManager *system_bpm_;
+        Catalog *system_catalog_;
+        ExecutionEngine *system_engine_; // Owns a private engine for system queries
+
         std::unordered_map<std::string, UserInfo> users_cache_;
         bool initialized_;
     };
-
 } // namespace francodb

@@ -53,8 +53,8 @@ std::unique_ptr<Statement> Parser::ParseQuery() {
             Advance(); // Eat USER
             return ParseAlterUserRole();
         }
-        // Otherwise it's UPDATE table (need to restore token for ParseUpdate)
-        // ParseUpdate expects to start with table name, so we're good
+        // Otherwise it's UPDATE table.
+        // NOTE: We already ate '3ADEL', so ParseUpdate should start at TableName
         return ParseUpdate();
     } 
     // 5. DELETE
@@ -77,9 +77,9 @@ std::unique_ptr<Statement> Parser::ParseQuery() {
     }
     // 7. ROLLBACK TRANSACTION
     else if (current_token_.type == TokenType::ROLLBACK) {
-        Advance(); // Eat 'ERGA3'
+        Advance(); // Eat '2ERGA3'
         if (!Match(TokenType::SEMICOLON))
-            throw Exception(ExceptionType::PARSER, "Expected ; after ERGA3");
+            throw Exception(ExceptionType::PARSER, "Expected ; after 2ERGA3");
         return std::make_unique<RollbackStatement>();
     }
     // 8. COMMIT TRANSACTION
@@ -135,13 +135,11 @@ std::unique_ptr<Statement> Parser::ParseQuery() {
 std::unique_ptr<CreateStatement> Parser::ParseCreateTable() {
     auto stmt = std::make_unique<CreateStatement>();
 
-    // 1. Parse Table Name
     if (current_token_.type != TokenType::IDENTIFIER) 
         throw Exception(ExceptionType::PARSER, "Expected table name");
     stmt->table_name_ = current_token_.text;
     Advance();
 
-    // 2. Parse Columns
     if (!Match(TokenType::L_PAREN)) throw Exception(ExceptionType::PARSER, "Expected (");
 
     while (current_token_.type != TokenType::R_PAREN) {
@@ -155,9 +153,8 @@ std::unique_ptr<CreateStatement> Parser::ParseCreateTable() {
         if (Match(TokenType::INT_TYPE)) type = TypeId::INTEGER;
         else if (Match(TokenType::STRING_TYPE)) {
             type = TypeId::VARCHAR;
-            // Optional: Check for length specification like GOMLA(100)
             if (current_token_.type == TokenType::L_PAREN) {
-                Advance(); // Eat (
+                Advance(); 
                 if (current_token_.type == TokenType::NUMBER) {
                     length = std::stoi(current_token_.text);
                     Advance();
@@ -165,7 +162,7 @@ std::unique_ptr<CreateStatement> Parser::ParseCreateTable() {
                 if (!Match(TokenType::R_PAREN)) 
                     throw Exception(ExceptionType::PARSER, "Expected ) after string length");
             } else {
-                length = 255; // Default VARCHAR length
+                length = 255;
             }
         }
         else if (Match(TokenType::BOOL_TYPE)) type = TypeId::BOOLEAN;
@@ -173,15 +170,12 @@ std::unique_ptr<CreateStatement> Parser::ParseCreateTable() {
         else if (Match(TokenType::DECIMAL_TYPE)) type = TypeId::DECIMAL;
         else throw Exception(ExceptionType::PARSER, "Unknown type for column " + col_name);
 
-        // Check for PRIMARY KEY (ASASI keyword after type)
-        // Format: id RAKAM ASASI or id MIFTAH ASASI
         bool is_primary_key = false;
         if (current_token_.type == TokenType::PRIMARY_KEY) {
-            Advance(); // Eat ASASI (tokenized as PRIMARY_KEY)
+            Advance();
             is_primary_key = true;
         }
 
-        // Create column with PRIMARY KEY flag
         if (type == TypeId::VARCHAR) {
             stmt->columns_.emplace_back(col_name, type, length, is_primary_key);
         } else {
@@ -202,25 +196,20 @@ std::unique_ptr<CreateStatement> Parser::ParseCreateTable() {
 
 // Pre-condition: '2E3MEL' and 'FEHRIS' are already consumed.
 // Expects: IndexName 3ALA TableName ( Column ) ;
-std::unique_ptr<CreateIndexStatement> Parser::ParseCreateIndex() {
+    std::unique_ptr<CreateIndexStatement> Parser::ParseCreateIndex() {
     auto stmt = std::make_unique<CreateIndexStatement>();
     
-    // 1. Index Name
     if (current_token_.type != TokenType::IDENTIFIER) throw Exception(ExceptionType::PARSER, "Expected Index Name");
     stmt->index_name_ = current_token_.text;
     Advance();
 
-    // 2. ON (3ALA)
     if (!Match(TokenType::ON)) throw Exception(ExceptionType::PARSER, "Expected 3ALA (ON)");
 
-    // 3. Table Name
     if (current_token_.type != TokenType::IDENTIFIER) throw Exception(ExceptionType::PARSER, "Expected Table Name");
     stmt->table_name_ = current_token_.text;
     Advance();
 
-    // 4. ( Column )
     if (!Match(TokenType::L_PAREN)) throw Exception(ExceptionType::PARSER, "Expected (");
-    
     if (current_token_.type != TokenType::IDENTIFIER) throw Exception(ExceptionType::PARSER, "Expected Column Name");
     stmt->column_name_ = current_token_.text;
     Advance();
@@ -231,65 +220,61 @@ std::unique_ptr<CreateIndexStatement> Parser::ParseCreateIndex() {
     return stmt;
 }
 
-std::unique_ptr<CreateDatabaseStatement> Parser::ParseCreateDatabase() {
+    std::unique_ptr<CreateDatabaseStatement> Parser::ParseCreateDatabase() {
     auto stmt = std::make_unique<CreateDatabaseStatement>();
     if (current_token_.type != TokenType::IDENTIFIER)
-        throw Exception(ExceptionType::PARSER, "Expected database name after DATABASE");
+        throw Exception(ExceptionType::PARSER, "Expected database name");
     stmt->db_name_ = current_token_.text;
     Advance();
     if (!Match(TokenType::SEMICOLON))
-        throw Exception(ExceptionType::PARSER, "Expected ; at end of CREATE DATABASE");
+        throw Exception(ExceptionType::PARSER, "Expected ;");
     return stmt;
 }
 
-std::unique_ptr<UseDatabaseStatement> Parser::ParseUseDatabase() {
+    std::unique_ptr<UseDatabaseStatement> Parser::ParseUseDatabase() {
     Advance(); // Eat USE
     auto stmt = std::make_unique<UseDatabaseStatement>();
     if (current_token_.type != TokenType::IDENTIFIER)
-        throw Exception(ExceptionType::PARSER, "Expected database name after USE");
+        throw Exception(ExceptionType::PARSER, "Expected database name");
     stmt->db_name_ = current_token_.text;
     Advance();
     if (!Match(TokenType::SEMICOLON))
-        throw Exception(ExceptionType::PARSER, "Expected ; at end of USE");
+        throw Exception(ExceptionType::PARSER, "Expected ;");
     return stmt;
 }
 
-std::unique_ptr<LoginStatement> Parser::ParseLogin() {
+    std::unique_ptr<LoginStatement> Parser::ParseLogin() {
     Advance(); // Eat LOGIN
     auto stmt = std::make_unique<LoginStatement>();
 
-    // Username
     if (current_token_.type != TokenType::IDENTIFIER && current_token_.type != TokenType::STRING_LIT)
-        throw Exception(ExceptionType::PARSER, "Expected username after LOGIN");
+        throw Exception(ExceptionType::PARSER, "Expected username");
     stmt->username_ = current_token_.text;
     Advance();
 
-    // Password
-    if (current_token_.type != TokenType::IDENTIFIER && current_token_.type != TokenType::STRING_LIT)
-        throw Exception(ExceptionType::PARSER, "Expected password after username");
+    if (current_token_.type != TokenType::IDENTIFIER && current_token_.type != TokenType::STRING_LIT && current_token_.type != TokenType::NUMBER)
+        throw Exception(ExceptionType::PARSER, "Expected password");
     stmt->password_ = current_token_.text;
     Advance();
 
     if (!Match(TokenType::SEMICOLON))
-        throw Exception(ExceptionType::PARSER, "Expected ; at end of LOGIN");
+        throw Exception(ExceptionType::PARSER, "Expected ;");
     return stmt;
 }
 
-std::unique_ptr<WhoAmIStatement> Parser::ParseWhoAmI() {
-    Advance(); // Eat WHOAMI
-    if (!Match(TokenType::SEMICOLON))
-        throw Exception(ExceptionType::PARSER, "Expected ; after WHOAMI");
+    std::unique_ptr<WhoAmIStatement> Parser::ParseWhoAmI() {
+    Advance(); 
+    if (!Match(TokenType::SEMICOLON)) throw Exception(ExceptionType::PARSER, "Expected ;");
     return std::make_unique<WhoAmIStatement>();
 }
 
-std::unique_ptr<ShowStatusStatement> Parser::ParseShowStatus() {
-    Advance(); // Eat STATUS
-    if (!Match(TokenType::SEMICOLON))
-        throw Exception(ExceptionType::PARSER, "Expected ; after STATUS");
+    std::unique_ptr<ShowStatusStatement> Parser::ParseShowStatus() {
+    Advance(); 
+    if (!Match(TokenType::SEMICOLON)) throw Exception(ExceptionType::PARSER, "Expected ;");
     return std::make_unique<ShowStatusStatement>();
 }
 
-std::unique_ptr<CreateUserStatement> Parser::ParseCreateUser() {
+    std::unique_ptr<CreateUserStatement> Parser::ParseCreateUser() {
     auto stmt = std::make_unique<CreateUserStatement>();
     
     // Username
@@ -300,87 +285,103 @@ std::unique_ptr<CreateUserStatement> Parser::ParseCreateUser() {
     
     // PASS keyword
     if (!Match(TokenType::PASS))
-        throw Exception(ExceptionType::PARSER, "Expected PASS after username");
+        throw Exception(ExceptionType::PARSER, "Expected PASSWORD (PASS) keyword");
     
     // Password
-    if (current_token_.type != TokenType::IDENTIFIER && current_token_.type != TokenType::STRING_LIT)
-        throw Exception(ExceptionType::PARSER, "Expected password after PASS");
+    if (current_token_.type != TokenType::IDENTIFIER && current_token_.type != TokenType::STRING_LIT && current_token_.type != TokenType::NUMBER)
+        throw Exception(ExceptionType::PARSER, "Expected password value");
     stmt->password_ = current_token_.text;
     Advance();
     
     // ROLE keyword
     if (!Match(TokenType::ROLE))
-        throw Exception(ExceptionType::PARSER, "Expected ROLE after password");
+        throw Exception(ExceptionType::PARSER, "Expected ROLE keyword");
     
-    // Role (ADMIN/USER/READONLY)
-    if (current_token_.type != TokenType::IDENTIFIER)
-        throw Exception(ExceptionType::PARSER, "Expected role (ADMIN/USER/READONLY) after ROLE");
-    stmt->role_ = current_token_.text;
-    Advance();
+    // [FIX] Handle Specific Role Tokens
+    std::string role_str;
+    switch (current_token_.type) {
+        case TokenType::ROLE_SUPERADMIN: role_str = "SUPERADMIN"; break;
+        case TokenType::ROLE_ADMIN:      role_str = "ADMIN"; break;
+        case TokenType::ROLE_NORMAL:     role_str = "NORMAL"; break;
+        case TokenType::ROLE_READONLY:   role_str = "READONLY"; break;
+        case TokenType::ROLE_DENIED:     role_str = "DENIED"; break;
+        case TokenType::IDENTIFIER:      role_str = current_token_.text; break; // Fallback
+        default:
+            throw Exception(ExceptionType::PARSER, "Expected valid Role (SUPERADMIN, ADMIN, NORMAL, READONLY)");
+    }
+    stmt->role_ = role_str;
+    Advance(); // Consume role token
     
     if (!Match(TokenType::SEMICOLON))
-        throw Exception(ExceptionType::PARSER, "Expected ; at end of CREATE USER");
+        throw Exception(ExceptionType::PARSER, "Expected ;");
     return stmt;
 }
 
-std::unique_ptr<AlterUserRoleStatement> Parser::ParseAlterUserRole() {
+    std::unique_ptr<AlterUserRoleStatement> Parser::ParseAlterUserRole() {
     auto stmt = std::make_unique<AlterUserRoleStatement>();
-    // USER keyword already consumed by caller
+    
     // Username
     if (current_token_.type != TokenType::IDENTIFIER && current_token_.type != TokenType::STRING_LIT)
         throw Exception(ExceptionType::PARSER, "Expected username after USER");
     stmt->username_ = current_token_.text;
     Advance();
+    
     // ROLE keyword
     if (!Match(TokenType::ROLE))
-        throw Exception(ExceptionType::PARSER, "Expected ROLE after username");
-    // New role
-    if (current_token_.type != TokenType::IDENTIFIER)
-        throw Exception(ExceptionType::PARSER, "Expected role (ADMIN/USER/READONLY) after ROLE");
-    stmt->role_ = current_token_.text;
+        throw Exception(ExceptionType::PARSER, "Expected ROLE keyword");
+    
+    // [FIX] Handle Specific Role Tokens
+    std::string role_str;
+    switch (current_token_.type) {
+        case TokenType::ROLE_SUPERADMIN: role_str = "SUPERADMIN"; break;
+        case TokenType::ROLE_ADMIN:      role_str = "ADMIN"; break;
+        case TokenType::ROLE_NORMAL:     role_str = "NORMAL"; break;
+        case TokenType::ROLE_READONLY:   role_str = "READONLY"; break;
+        case TokenType::ROLE_DENIED:     role_str = "DENIED"; break;
+        case TokenType::IDENTIFIER:      role_str = current_token_.text; break;
+        default:
+            throw Exception(ExceptionType::PARSER, "Expected valid Role (SUPERADMIN, ADMIN, NORMAL, READONLY)");
+    }
+    stmt->role_ = role_str;
     Advance();
+
     // Optional: IN <db>
-    if (current_token_.type == TokenType::IN_OP) {
-        Advance();
+    if (Match(TokenType::IN_OP)) { // FE
         if (current_token_.type != TokenType::IDENTIFIER)
-            throw Exception(ExceptionType::PARSER, "Expected database name after IN (FE)");
+            throw Exception(ExceptionType::PARSER, "Expected database name after IN");
         stmt->db_name_ = current_token_.text;
         Advance();
     }
+    
     if (!Match(TokenType::SEMICOLON))
-        throw Exception(ExceptionType::PARSER, "Expected ; at end of ALTER USER ROLE");
+        throw Exception(ExceptionType::PARSER, "Expected ;");
     return stmt;
 }
 
-std::unique_ptr<DeleteUserStatement> Parser::ParseDeleteUser() {
+    std::unique_ptr<DeleteUserStatement> Parser::ParseDeleteUser() {
     auto stmt = std::make_unique<DeleteUserStatement>();
-    // USER keyword already consumed by caller
     // Username
     if (current_token_.type != TokenType::IDENTIFIER && current_token_.type != TokenType::STRING_LIT)
-        throw Exception(ExceptionType::PARSER, "Expected username after USER");
+        throw Exception(ExceptionType::PARSER, "Expected username");
     stmt->username_ = current_token_.text;
     Advance();
     if (!Match(TokenType::SEMICOLON))
-        throw Exception(ExceptionType::PARSER, "Expected ; at end of DELETE USER");
+        throw Exception(ExceptionType::PARSER, "Expected ;");
     return stmt;
 }
 
-std::unique_ptr<ShowDatabasesStatement> Parser::ParseShowDatabases() {
-    // DATABASES already consumed by caller
-    if (!Match(TokenType::SEMICOLON))
-        throw Exception(ExceptionType::PARSER, "Expected ; after SHOW DATABASES");
+    std::unique_ptr<ShowDatabasesStatement> Parser::ParseShowDatabases() {
+    if (!Match(TokenType::SEMICOLON)) throw Exception(ExceptionType::PARSER, "Expected ;");
     return std::make_unique<ShowDatabasesStatement>();
 }
 
-std::unique_ptr<ShowTablesStatement> Parser::ParseShowTables() {
-    // TABLE already consumed by caller
-    if (!Match(TokenType::SEMICOLON))
-        throw Exception(ExceptionType::PARSER, "Expected ; after SHOW TABLES");
+    std::unique_ptr<ShowTablesStatement> Parser::ParseShowTables() {
+    if (!Match(TokenType::SEMICOLON)) throw Exception(ExceptionType::PARSER, "Expected ;");
     return std::make_unique<ShowTablesStatement>();
 }
 
 // EMLA GOWA users ELKEYAM (1, 'Ahmed', AH, 10.5);
-std::unique_ptr<InsertStatement> Parser::ParseInsert() {
+    std::unique_ptr<InsertStatement> Parser::ParseInsert() {
     auto stmt = std::make_unique<InsertStatement>();
     Advance(); // EMLA
 
@@ -403,7 +404,7 @@ std::unique_ptr<InsertStatement> Parser::ParseInsert() {
 }
 
 // 2E5TAR ...
-std::unique_ptr<SelectStatement> Parser::ParseSelect() {
+    std::unique_ptr<SelectStatement> Parser::ParseSelect() {
     auto stmt = std::make_unique<SelectStatement>();
     Advance(); // 2E5TAR
 
@@ -429,16 +430,16 @@ std::unique_ptr<SelectStatement> Parser::ParseSelect() {
 }
 
 // 2EMSA7 ... (called after DELETE_CMD token is already consumed)
-std::unique_ptr<Statement> Parser::ParseDelete() {
+    std::unique_ptr<Statement> Parser::ParseDelete() {
     if (Match(TokenType::TABLE)) {
-        // DROP TABLE
+        // DROP TABLE (2EMSA7 GADWAL)
         auto stmt = std::make_unique<DropStatement>();
         stmt->table_name_ = current_token_.text;
         Advance();
         if (!Match(TokenType::SEMICOLON)) throw Exception(ExceptionType::PARSER, "Expected ;");
         return stmt;
     } else if (Match(TokenType::FROM)) {
-        // DELETE FROM
+        // DELETE FROM (2EMSA7 MEN)
         auto stmt = std::make_unique<DeleteStatement>();
         stmt->table_name_ = current_token_.text;
         Advance();
@@ -451,10 +452,9 @@ std::unique_ptr<Statement> Parser::ParseDelete() {
 
 // 3ADEL ...
 // 3ADEL table 5ALY col = val LAMA ...
-std::unique_ptr<UpdateStatement> Parser::ParseUpdate() {
+    std::unique_ptr<UpdateStatement> Parser::ParseUpdate() {
     auto stmt = std::make_unique<UpdateStatement>();
-    Advance(); // Eat 3ADEL (UPDATE)
-    
+    // [FIX] Do NOT Advance() here. '3ADEL' was already consumed by ParseQuery dispatch.
 
     if (current_token_.type != TokenType::IDENTIFIER) 
         throw Exception(ExceptionType::PARSER, "Expected Table Name after 3ADEL");
@@ -478,7 +478,7 @@ std::unique_ptr<UpdateStatement> Parser::ParseUpdate() {
 
 // --- HELPERS ---
 
-Value Parser::ParseValue() {
+    Value Parser::ParseValue() {
     if (current_token_.type == TokenType::NUMBER) {
         Value v(TypeId::INTEGER, std::stoi(current_token_.text));
         Advance();
@@ -503,7 +503,7 @@ Value Parser::ParseValue() {
     throw Exception(ExceptionType::PARSER, "Expected value, found: " + current_token_.text);
 }
 
-std::vector<WhereCondition> Parser::ParseWhereClause() {
+    std::vector<WhereCondition> Parser::ParseWhereClause() {
     std::vector<WhereCondition> conditions;
     if (!Match(TokenType::WHERE)) return conditions;
 
@@ -517,14 +517,13 @@ std::vector<WhereCondition> Parser::ParseWhereClause() {
         if (Match(TokenType::IN_OP)) {
             cond.op = "IN";
             if (!Match(TokenType::L_PAREN)) throw Exception(ExceptionType::PARSER, "Expected ( after FE");
-            // Parse list of values
             while (current_token_.type != TokenType::R_PAREN) {
                 cond.in_values.push_back(ParseValue());
                 if (current_token_.type == TokenType::COMMA) Advance();
                 else if (current_token_.type != TokenType::R_PAREN)
                     throw Exception(ExceptionType::PARSER, "Expected , or ) in IN clause");
             }
-            Advance(); // Eat )
+            Advance(); 
         } else if (Match(TokenType::EQUALS)) {
             cond.value = ParseValue();
             cond.op = "=";

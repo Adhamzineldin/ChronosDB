@@ -8,17 +8,19 @@
 #include <thread>
 #include <utility>
 
+// [FIX] Include the new ThreadPool
+#include "common/thread_pool.h"
+
 #include "buffer/buffer_pool_manager.h"
 #include "catalog/catalog.h"
 #include "execution/execution_engine.h"
 #include "network/connection_handler.h"
 #include "common/auth_manager.h"
 #include "network/database_registry.h"
-#include "network/protocol.h"  // Ensure we see the definition from here
+#include "network/protocol.h"
+#include "parser/parser.h" // Ensure you have this for StatementType
 
 namespace francodb {
-
-    // REMOVED: enum class ProtocolType definition (it is already in protocol.h)
 
     class FrancoServer {
     public:
@@ -29,7 +31,6 @@ namespace francodb {
         void Shutdown();
         void RequestShutdown() { running_ = false; }
         
-        // Accessors for System components (needed for main.cpp)
         BufferPoolManager* GetSystemBpm() { return system_bpm_.get(); }
         Catalog* GetSystemCatalog() { return system_catalog_.get(); }
         AuthManager* GetAuthManager() { return auth_manager_.get(); }
@@ -38,8 +39,9 @@ namespace francodb {
         void InitializeSystemResources();
         void HandleClient(uintptr_t client_socket);
         void AutoSaveLoop();
-        ProtocolType DetectProtocol(const std::string& initial_data);
-        std::pair<Catalog*, BufferPoolManager*> GetOrCreateDb(const std::string &db_name);
+        
+        // [FIX] New Dispatcher to route System vs Data commands
+        std::string DispatchCommand(const std::string& sql, ClientConnectionHandler* handler);
 
         // Core Components
         BufferPoolManager* bpm_;
@@ -52,9 +54,13 @@ namespace francodb {
         std::unique_ptr<AuthManager> auth_manager_;
         std::unique_ptr<DatabaseRegistry> registry_;
 
+        // [FIX] Thread Pool replaces the raw thread map
+        std::unique_ptr<ThreadPool> thread_pool_;
+
         std::atomic<bool> running_{false};
         uintptr_t listen_sock_ = 0;
-        std::map<uintptr_t, std::thread> client_threads_;
+        
+        // Removed: std::map<uintptr_t, std::thread> client_threads_;
         std::thread auto_save_thread_;
         std::atomic<bool> is_running_{false};
     };

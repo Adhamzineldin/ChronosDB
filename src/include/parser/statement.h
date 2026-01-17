@@ -7,7 +7,10 @@
 #include "common/value.h"
 
 namespace francodb {
-    enum class StatementType { CREATE, INSERT, SELECT, DELETE_CMD, UPDATE_CMD, DROP, CREATE_INDEX, BEGIN, ROLLBACK, COMMIT, CREATE_DB, USE_DB, LOGIN, CREATE_USER, ALTER_USER_ROLE, DELETE_USER, SHOW_USERS, SHOW_DATABASES, SHOW_TABLES, SHOW_STATUS, WHOAMI };
+    enum class StatementType {
+        CREATE, INSERT, SELECT, DELETE_CMD, UPDATE_CMD, DROP, CREATE_INDEX, BEGIN, ROLLBACK, COMMIT, CREATE_DB, USE_DB,
+        LOGIN, CREATE_USER, ALTER_USER_ROLE, DELETE_USER, SHOW_USERS, SHOW_DATABASES, SHOW_TABLES, SHOW_STATUS, WHOAMI
+    };
 
     enum class LogicType { NONE, AND, OR };
 
@@ -22,7 +25,7 @@ namespace francodb {
     struct WhereCondition {
         std::string column;
         std::string op; // "=", ">", "<", ">=", "<=", or "IN"
-        Value value;  // For =, >, <, >=, <= operators
+        Value value; // For =, >, <, >=, <= operators
         std::vector<Value> in_values; // For "IN" operator
         LogicType next_logic; // Does "WE" or "AW" come after this?
     };
@@ -83,27 +86,27 @@ namespace francodb {
 
         std::vector<WhereCondition> where_clause_; // Upgrade
     };
-    
+
     struct CreateIndexStatement : public Statement {
         StatementType GetType() const override { return StatementType::CREATE_INDEX; }
-    
+
         std::string index_name_;
         std::string table_name_;
         std::string column_name_; // Single column index for simplicity
     };
-    
+
     /** BED2 (BEGIN TRANSACTION) */
     class BeginStatement : public Statement {
     public:
         StatementType GetType() const override { return StatementType::BEGIN; }
     };
-    
+
     /** ERGA3 (ROLLBACK TRANSACTION) */
     class RollbackStatement : public Statement {
     public:
         StatementType GetType() const override { return StatementType::ROLLBACK; }
     };
-    
+
     /** KAMEL (COMMIT TRANSACTION) */
     class CommitStatement : public Statement {
     public:

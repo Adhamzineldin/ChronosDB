@@ -10,14 +10,13 @@
 #include <filesystem>
 
 namespace francodb {
-
     ClientConnectionHandler::ClientConnectionHandler(ExecutionEngine *engine, AuthManager *auth_manager)
         : engine_(engine),
           session_(std::make_shared<SessionContext>()),
           auth_manager_(auth_manager) {
     }
 
-    std::string ClientConnectionHandler::SerializeResponse(const ExecutionResult& result) {
+    std::string ClientConnectionHandler::SerializeResponse(const ExecutionResult &result) {
         // Create temporary instances to format the output
         if (response_format_ == ProtocolType::JSON) {
             JsonProtocol p;
@@ -31,7 +30,7 @@ namespace francodb {
         }
     }
 
-    std::string ClientConnectionHandler::SerializeError(const std::string& message) {
+    std::string ClientConnectionHandler::SerializeError(const std::string &message) {
         return SerializeResponse(ExecutionResult::Error(message));
     }
 
@@ -39,7 +38,7 @@ namespace francodb {
         std::string sql = request;
         sql.erase(std::remove(sql.begin(), sql.end(), '\n'), sql.end());
         sql.erase(std::remove(sql.begin(), sql.end(), '\r'), sql.end());
-        
+
         if (sql.empty()) return "";
         if (sql == "exit" || sql == "quit") return "Goodbye!\n";
 
@@ -50,21 +49,28 @@ namespace francodb {
 
             if (!stmt) return SerializeError("Failed to parse query");
 
-            // --- LOGIN ---
+            // --- LOGIN HANDLING ---
             if (stmt->GetType() == StatementType::LOGIN) {
                 auto *login = dynamic_cast<LoginStatement *>(stmt.get());
                 if (!login) return SerializeError("Invalid LOGIN");
-                
+
                 UserRole login_role;
                 if (auth_manager_->Authenticate(login->username_, login->password_, login_role)) {
                     session_->is_authenticated = true;
                     session_->current_user = login->username_;
                     session_->current_db = "default";
+
+                    // Set initial role
                     session_->role = auth_manager_->GetUserRole(session_->current_user, session_->current_db);
+
+                    // Force superadmin role if applicable
                     if (login_role == UserRole::SUPERADMIN) session_->role = UserRole::SUPERADMIN;
 
-                    std::string role_str = (session_->role == UserRole::SUPERADMIN) ? "SUPERADMIN" : 
-                                           (session_->role == UserRole::ADMIN) ? "ADMIN" : "USER";
+                    std::string role_str = (session_->role == UserRole::SUPERADMIN)
+                                               ? "SUPERADMIN"
+                                               : (session_->role == UserRole::ADMIN)
+                                                     ? "ADMIN"
+                                                     : "USER";
                     return SerializeResponse(ExecutionResult::Message("LOGIN OK (Role: " + role_str + ")"));
                 }
                 return SerializeError("Authentication failed");
@@ -77,42 +83,56 @@ namespace francodb {
             if (stmt->GetType() == StatementType::USE_DB) {
                 auto *use_db = dynamic_cast<UseDatabaseStatement *>(stmt.get());
                 if (!use_db) return SerializeError("Invalid USE");
-                
+
                 if (!auth_manager_->HasDatabaseAccess(session_->current_user, use_db->db_name_)) {
                     return SerializeError("Access denied to " + use_db->db_name_);
                 }
+
+                // Update Session
                 session_->current_db = use_db->db_name_;
                 session_->role = auth_manager_->GetUserRole(session_->current_user, session_->current_db);
-                if (auth_manager_->IsSuperAdmin(session_->current_user)) session_->role = UserRole::SUPERADMIN;
+
+                if (auth_manager_->IsSuperAdmin(session_->current_user)) {
+                    session_->role = UserRole::SUPERADMIN;
+                }
+
                 return SerializeResponse(ExecutionResult::Message("Using database: " + use_db->db_name_));
             }
 
-            // --- CREATE DB ---
+            // --- CREATE DB (Kept here for now) ---
             if (stmt->GetType() == StatementType::CREATE_DB) {
-                if (!auth_manager_->HasPermission(session_->role, StatementType::CREATE_DB)) 
+                if (!auth_manager_->HasPermission(session_->role, StatementType::CREATE_DB))
                     return SerializeError("Permission denied.");
                 auto *create_db = dynamic_cast<CreateDatabaseStatement *>(stmt.get());
-                
+
                 try {
                     std::filesystem::create_directories("data");
+                    // Note: This just creates the file, doesn't register it in Registry yet (Phase 2 feature)
                     DiskManager new_db("data/" + create_db->db_name_);
-                    UserRole creator_role = (session_->role == UserRole::SUPERADMIN) ? UserRole::SUPERADMIN : UserRole::ADMIN;
+
+                    // Grant creator ADMIN rights
+                    UserRole creator_role = (session_->role == UserRole::SUPERADMIN)
+                                                ? UserRole::SUPERADMIN
+                                                : UserRole::ADMIN;
                     auth_manager_->SetUserRole(session_->current_user, create_db->db_name_, creator_role);
-                    return SerializeResponse(ExecutionResult::Message("CREATE DATABASE " + create_db->db_name_ + " OK"));
+
+                    return SerializeResponse(
+                        ExecutionResult::Message("CREATE DATABASE " + create_db->db_name_ + " OK"));
                 } catch (const std::exception &e) {
                     return SerializeError("Failed: " + std::string(e.what()));
                 }
             }
 
-            // --- GENERAL QUERY ---
+            // --- GENERAL EXECUTION ---
+            // Refresh role just in case permissions changed mid-session
             session_->role = auth_manager_->GetUserRole(session_->current_user, session_->current_db);
-            if (!auth_manager_->HasPermission(session_->role, stmt->GetType())) {
-                return SerializeError("Permission denied.");
-            }
 
-            ExecutionResult res = engine_->Execute(stmt.get());
+            // [FIX] Pass the full session context to the engine
+            // The Engine now handles dispatching system commands like WHOAMI or SHOW TABLES
+            // using the session data we pass here.
+            ExecutionResult res = engine_->Execute(stmt.get(), session_.get());
+
             return SerializeResponse(res);
-
         } catch (const std::exception &e) {
             return SerializeError("SYSTEM ERROR: " + std::string(e.what()));
         }

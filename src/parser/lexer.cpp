@@ -5,47 +5,78 @@
 
 namespace francodb {
     static const std::map<std::string, TokenType> kKeywords = {
+        // --- COMMANDS ---
         {"2E5TAR", TokenType::SELECT},
         {"MEN", TokenType::FROM},
         {"LAMA", TokenType::WHERE},
         {"2E3MEL", TokenType::CREATE},
         {"DATABASE", TokenType::DATABASE},
-        {"MOSTA5DEM", TokenType::USER},
-        {"USER", TokenType::USER},
-        {"3ABD", TokenType::USER},
-        {"WAZEFA", TokenType::ROLE},
-        {"WARENY", TokenType::SHOW},  // Arabic: WARENY = SHOW
-        {"ANAMEEN", TokenType::WHOAMI},
-        {"7ALAH", TokenType::STATUS},
         {"DATABASES", TokenType::DATABASES},
-        {"PASSWORD", TokenType::PASS},
-        {"2EMSA7",  TokenType::DELETE_CMD}, 
-        {"5ALY",    TokenType::UPDATE_SET},
-        {"3ADEL",  TokenType::UPDATE_CMD},
         {"GADWAL", TokenType::TABLE},
         {"2ESTA5DEM", TokenType::USE},
         {"USE", TokenType::USE},
         {"LOGIN", TokenType::LOGIN},
-        {"EMLA", TokenType::INSERT},
-        {"GOWA", TokenType::INTO},
+        
+        // --- USER MGMT ---
+        {"MOSTA5DEM", TokenType::USER},
+        {"USER", TokenType::USER},
+        {"3ABD", TokenType::USER}, // "Slave" (Funny/Franco style for user)
+        {"WAZEFA", TokenType::ROLE},
+        {"ROLE",   TokenType::ROLE},
+        {"DOWR",   TokenType::ROLE},
+        {"PASSWORD", TokenType::PASS},
+        {"WARENY", TokenType::SHOW},
+        {"SHOW",   TokenType::SHOW},
+        {"ANAMEEN", TokenType::WHOAMI},
+        {"WHOAMI",  TokenType::WHOAMI},
+        {"7ALAH",   TokenType::STATUS},
+        {"STATUS",  TokenType::STATUS},
+
+        // --- DATA MODIFICATION ---
+        {"2EMSA7",  TokenType::DELETE_CMD}, 
+        {"5ALY",    TokenType::UPDATE_SET},
+        {"3ADEL",   TokenType::UPDATE_CMD},
+        {"EMLA",    TokenType::INSERT},
+        {"GOWA",    TokenType::INTO},
         {"ELKEYAM", TokenType::VALUES},
+
+        // --- ROLES (NEW) ---
+        {"SUPERADMIN", TokenType::ROLE_SUPERADMIN},
+        {"ADMIN",      TokenType::ROLE_ADMIN},
+        {"MODEER",     TokenType::ROLE_ADMIN},    // Arabic for Manager
+        {"NORMAL",     TokenType::ROLE_NORMAL},
+        {"3ADI",       TokenType::ROLE_NORMAL},   // Arabic for Normal
+        {"READONLY",   TokenType::ROLE_READONLY},
+        {"MOSHAHED",   TokenType::ROLE_READONLY}, // Arabic for Viewer/Watcher
+        {"DENIED",     TokenType::ROLE_DENIED},
+        {"MAMNO3",     TokenType::ROLE_DENIED},   // Arabic for Forbidden
+
+        // --- TYPES ---
         {"RAKAM", TokenType::INT_TYPE},
         {"GOMLA", TokenType::STRING_TYPE},
-        {"WE",     TokenType::AND},
-        {"AW",     TokenType::OR},
-        {"BOOL", TokenType::BOOL_TYPE},
-        {"TARE5",  TokenType::DATE_TYPE},
-        {"AH",      TokenType::TRUE_LIT},  // True
-        {"LA",      TokenType::FALSE_LIT},
-        {"KASR",    TokenType::DECIMAL_TYPE},
+        {"BOOL",  TokenType::BOOL_TYPE},
+        {"TARE5", TokenType::DATE_TYPE},
+        {"KASR",  TokenType::DECIMAL_TYPE},
+        
+        // --- VALUES ---
+        {"AH",    TokenType::TRUE_LIT},
+        {"LA",    TokenType::FALSE_LIT},
+
+        // --- LOGIC / OPS ---
+        {"WE",    TokenType::AND},
+        {"AW",    TokenType::OR},
+        {"FE",    TokenType::IN_OP},
+        {"3ALA",  TokenType::ON},
+        
+        // --- INDEX / PK ---
         {"FEHRIS", TokenType::INDEX},
-        {"3ALA",   TokenType::ON},
-        {"ASASI", TokenType::PRIMARY_KEY},  // PRIMARY KEY keyword (used after RAKAM or MIFTAH)
-        {"MOFTA7", TokenType::PRIMARY_KEY}, // Alternative: MIFTAH ASASI (but we'll use ASASI separately)
-        {"2EBDA2", TokenType::BEGIN_TXN},     // BEGIN transaction
-        {"2ERGA3", TokenType::ROLLBACK},     // ROLLBACK transaction
-        {"2AKED", TokenType::COMMIT},       // COMMIT transaction
-        {"FE", TokenType::IN_OP}, // Arabic: FE = IN
+        {"ASASI",  TokenType::PRIMARY_KEY},
+        {"MOFTA7", TokenType::PRIMARY_KEY},
+
+        // --- TRANSACTIONS ---
+        {"2EBDA2", TokenType::BEGIN_TXN},
+        {"2ERGA3", TokenType::ROLLBACK},
+        {"2AKED",  TokenType::COMMIT}
     };
 
     Token Lexer::NextToken() {
