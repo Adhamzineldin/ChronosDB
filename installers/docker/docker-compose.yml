@@ -1,0 +1,94 @@
+version: '3.8'
+
+services:
+  francodb:
+    # Build from project root with Dockerfile in installers/docker
+    build:
+      context: ../..
+      dockerfile: installers/docker/Dockerfile
+    
+    # Container name for easy reference
+    container_name: francodb-server
+    
+    # Port mapping: host:container
+    ports:
+      - "2501:2501"
+    
+    # Volume mappings for data persistence
+    volumes:
+      # Data directory - persistent storage
+      - francodb_data:/opt/francodb/data
+      # Configuration directory (optional - map from project root)
+      - ../../francodb.conf:/opt/francodb/etc/francodb.conf:ro
+      # Logs directory
+      - francodb_logs:/opt/francodb/log
+    
+    # Environment variables
+    environment:
+      # Server configuration
+      FRANCODB_PORT: "2501"
+      FRANCODB_BIND_ADDRESS: "0.0.0.0"
+      
+      # Logging
+      FRANCODB_LOG_LEVEL: "INFO"
+      
+      # Performance
+      FRANCODB_BUFFER_POOL_SIZE: "1024"
+      FRANCODB_AUTOSAVE_INTERVAL: "30"
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 512M
+    
+    # Restart policy - restart unless manually stopped
+    restart: unless-stopped
+    
+    # Health check configuration
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:2501/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # Network configuration
+    networks:
+      - francodb-net
+
+# Named volumes for persistence
+volumes:
+  francodb_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ../../data
+  
+  francodb_logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ../../log
+
+# Custom network
+networks:
+  francodb-net:
+    driver: bridge

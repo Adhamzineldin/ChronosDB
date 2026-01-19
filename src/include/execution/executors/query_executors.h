@@ -4,6 +4,7 @@
 #include "parser/advanced_statements.h"
 #include <vector>
 #include <map>
+#include <set>
 #include <memory>
 
 namespace francodb {
@@ -99,8 +100,8 @@ public:
           child_executor_(std::move(child_executor)),
           limit_(limit),
           offset_(offset),
-          txn_(txn),
-          current_count_(0) {}
+          current_count_(0),
+          txn_(txn) {}
 
     void Init() override;
     bool Next(Tuple *tuple) override;
