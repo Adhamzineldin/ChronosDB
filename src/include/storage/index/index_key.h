@@ -7,7 +7,7 @@ namespace francodb {
     // A fixed-size key container for B+Tree
     template <size_t KeySize>
     struct GenericKey {
-        char data[KeySize];
+        char data[KeySize] = {};  // Initialize all to zero via in-class initializer
 
         void SetFromValue(const Value& v) {
             std::memset(data, 0, KeySize); // Clear garbage
@@ -17,6 +17,12 @@ namespace francodb {
             } else if (v.GetTypeId() == TypeId::DECIMAL) {
                 double val = v.GetAsDouble();
                 std::memcpy(data, &val, sizeof(double));
+            } else if (v.GetTypeId() == TypeId::VARCHAR) {
+                // For VARCHAR, store the string directly (up to KeySize bytes)
+                std::string val = v.GetAsString();
+                size_t len = std::min(val.length(), KeySize - 1);
+                std::memcpy(data, val.c_str(), len);
+                data[len] = '\0'; // Null-terminate for string comparison
             }
         }
 

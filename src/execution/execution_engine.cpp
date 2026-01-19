@@ -178,17 +178,34 @@ namespace francodb {
         auto rs = std::make_shared<ResultSet>();
         const Schema *output_schema = executor->GetOutputSchema();
 
-        // 1. Column Headers
-        for (const auto &col: output_schema->GetColumns()) {
-            rs->column_names.push_back(col.GetName());
+        // 1. Column Headers - Only return selected columns
+        std::vector<uint32_t> column_indices;
+        
+        if (stmt->select_all_) {
+            // SELECT * - return all columns
+            for (uint32_t i = 0; i < output_schema->GetColumnCount(); i++) {
+                rs->column_names.push_back(output_schema->GetColumn(i).GetName());
+                column_indices.push_back(i);
+            }
+        } else {
+            // SELECT specific columns
+            for (const auto &col_name : stmt->columns_) {
+                int col_idx = output_schema->GetColIdx(col_name);
+                if (col_idx < 0) {
+                    delete executor;
+                    return ExecutionResult::Error("Column not found: " + col_name);
+                }
+                rs->column_names.push_back(col_name);
+                column_indices.push_back(static_cast<uint32_t>(col_idx));
+            }
         }
 
-        // 2. Rows
+        // 2. Rows - Only return selected columns
         Tuple t;
         while (executor->Next(&t)) {
             std::vector<std::string> row_strings;
-            for (uint32_t i = 0; i < output_schema->GetColumnCount(); ++i) {
-                row_strings.push_back(ValueToString(t.GetValue(*output_schema, i)));
+            for (uint32_t col_idx : column_indices) {
+                row_strings.push_back(ValueToString(t.GetValue(*output_schema, col_idx)));
             }
             rs->AddRow(row_strings);
         }

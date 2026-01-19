@@ -15,6 +15,51 @@ void InsertExecutor::Init() {
     if (table_info_ == nullptr) {
         throw Exception(ExceptionType::EXECUTION, "Table not found: " + plan_->table_name_);
     }
+    
+    // 2. SCHEMA VALIDATION: Check column count
+    if (plan_->values_.size() != table_info_->schema_.GetColumnCount()) {
+        throw Exception(ExceptionType::EXECUTION, 
+            "Column count mismatch: expected " + 
+            std::to_string(table_info_->schema_.GetColumnCount()) + 
+            " but got " + std::to_string(plan_->values_.size()));
+    }
+    
+    // 3. SCHEMA VALIDATION: Check types and NULL values
+    for (uint32_t i = 0; i < plan_->values_.size(); i++) {
+        const Column &col = table_info_->schema_.GetColumn(i);
+        const Value &val = plan_->values_[i];
+        
+        // Check if NULL value (represented by empty string or special marker)
+        if (val.GetTypeId() == TypeId::VARCHAR && val.GetAsString().empty()) {
+            throw Exception(ExceptionType::EXECUTION, 
+                "NULL values not allowed: column '" + col.GetName() + "'");
+        }
+        
+        // Check type compatibility
+        if (val.GetTypeId() != col.GetType()) {
+            // Allow string to integer/decimal conversion attempts, but validate
+            if (col.GetType() == TypeId::INTEGER && val.GetTypeId() == TypeId::VARCHAR) {
+                try {
+                    std::stoi(val.GetAsString());
+                } catch (...) {
+                    throw Exception(ExceptionType::EXECUTION, 
+                        "Type mismatch for column '" + col.GetName() + 
+                        "': expected INTEGER");
+                }
+            } else if (col.GetType() == TypeId::DECIMAL && val.GetTypeId() == TypeId::VARCHAR) {
+                try {
+                    std::stod(val.GetAsString());
+                } catch (...) {
+                    throw Exception(ExceptionType::EXECUTION, 
+                        "Type mismatch for column '" + col.GetName() + 
+                        "': expected DECIMAL");
+                }
+            } else {
+                throw Exception(ExceptionType::EXECUTION, 
+                    "Type mismatch for column '" + col.GetName() + "'");
+            }
+        }
+    }
 }
 
 bool InsertExecutor::Next(Tuple *tuple) {
