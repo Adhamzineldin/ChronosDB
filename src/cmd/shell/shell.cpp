@@ -223,7 +223,7 @@ int main(int argc, char* argv[]) {
         if (input == "exit" || input == "quit") break;
         if (input.empty()) continue;
 
-        // --- [FIXED] PROMPT UPDATE LOGIC ---
+        // --- [FIXED] PROMPT UPDATE LOGIC - Only update on success ---
         std::string upper_input = input;
         std::transform(upper_input.begin(), upper_input.end(), upper_input.begin(), ::toupper);
         
@@ -235,7 +235,8 @@ int main(int argc, char* argv[]) {
             prefix_len = 10;
         }
 
-        // If a DB change command was detected
+        std::string potential_new_db = "";
+        // If a DB change command was detected, extract the database name
         if (prefix_len > 0) {
             std::string new_db = input.substr(prefix_len);
             
@@ -248,14 +249,27 @@ int main(int argc, char* argv[]) {
             size_t first = new_db.find_first_not_of(" \t\n\r");
             if (std::string::npos != first) {
                 size_t last = new_db.find_last_not_of(" \t\n\r");
-                current_db = new_db.substr(first, (last - first + 1));
+                potential_new_db = new_db.substr(first, (last - first + 1));
             } else if (!new_db.empty()) {
-                current_db = new_db;
+                potential_new_db = new_db;
+            }
+        }
+
+        // Execute the query
+        std::string result = db_client.Query(input);
+        std::cout << result << std::endl;
+        
+        // Only update current_db if the USE command was successful
+        if (!potential_new_db.empty()) {
+            // Check if result indicates success (doesn't contain ERROR)
+            std::string upper_result = result;
+            std::transform(upper_result.begin(), upper_result.end(), upper_result.begin(), ::toupper);
+            if (upper_result.find("ERROR") == std::string::npos && 
+                upper_result.find("FAILED") == std::string::npos) {
+                current_db = potential_new_db;
             }
         }
         // ------------------------------------------
-
-        std::cout << db_client.Query(input) << std::endl;
     }
 
     db_client.Disconnect();

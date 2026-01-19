@@ -16,6 +16,45 @@ void UpdateExecutor::Init() {
     if (table_info_ == nullptr) {
         throw Exception(ExceptionType::EXECUTION, "Table not found: " + plan_->table_name_);
     }
+    
+    // SCHEMA VALIDATION: Check if target column exists
+    int col_idx = table_info_->schema_.GetColIdx(plan_->target_column_);
+    if (col_idx < 0) {
+        throw Exception(ExceptionType::EXECUTION, 
+            "Column not found: '" + plan_->target_column_ + "'");
+    }
+    
+    // SCHEMA VALIDATION: Check type compatibility and NULL values
+    const Column &col = table_info_->schema_.GetColumn(col_idx);
+    const Value &val = plan_->new_value_;
+    
+    // Check if NULL value
+    if (val.GetTypeId() == TypeId::VARCHAR && val.GetAsString().empty()) {
+        throw Exception(ExceptionType::EXECUTION, 
+            "NULL values not allowed: column '" + col.GetName() + "'");
+    }
+    
+    // Check type compatibility
+    if (val.GetTypeId() != col.GetType()) {
+        if (col.GetType() == TypeId::INTEGER && val.GetTypeId() == TypeId::VARCHAR) {
+            try {
+                std::stoi(val.GetAsString());
+            } catch (...) {
+                throw Exception(ExceptionType::EXECUTION, 
+                    "Type mismatch for column '" + col.GetName() + "': expected INTEGER");
+            }
+        } else if (col.GetType() == TypeId::DECIMAL && val.GetTypeId() == TypeId::VARCHAR) {
+            try {
+                std::stod(val.GetAsString());
+            } catch (...) {
+                throw Exception(ExceptionType::EXECUTION, 
+                    "Type mismatch for column '" + col.GetName() + "': expected DECIMAL");
+            }
+        } else {
+            throw Exception(ExceptionType::EXECUTION, 
+                "Type mismatch for column '" + col.GetName() + "'");
+        }
+    }
 }
 
 bool UpdateExecutor::Next(Tuple *tuple) {
