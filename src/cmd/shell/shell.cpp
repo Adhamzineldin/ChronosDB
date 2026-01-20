@@ -10,6 +10,7 @@
 
 #include "network/franco_client.h"
 #include "common/franco_net_config.h"
+#include "parser/lexer.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -19,6 +20,159 @@
 
 using namespace francodb;
 namespace fs = std::filesystem;
+
+// -----------------------------------------------------------------------------
+// DYNAMIC SYNTAX HELPER
+// -----------------------------------------------------------------------------
+void DisplayDynamicSyntax() {
+    std::cout << "\n" << std::string(80, '=') << std::endl;
+    std::cout << "                      FRANCO DB SYNTAX REFERENCE" << std::endl;
+    std::cout << std::string(80, '=') << std::endl;
+    
+    // Get keywords from lexer
+    const auto& keywords = Lexer::GetKeywords();
+    
+    // Categorize keywords by token type
+    std::map<std::string, std::vector<std::pair<std::string, std::string>>> categories;
+    
+    for (const auto& [franco, type] : keywords) {
+        std::string category;
+        std::string english = Lexer::GetTokenTypeName(type);
+        
+        // Categorize based on token type
+        switch(type) {
+            case TokenType::SELECT:
+            case TokenType::FROM:
+            case TokenType::WHERE:
+            case TokenType::CREATE:
+            case TokenType::DELETE_CMD:
+            case TokenType::UPDATE_CMD:
+            case TokenType::UPDATE_SET:
+            case TokenType::INSERT:
+            case TokenType::INTO:
+            case TokenType::VALUES:
+                category = "BASIC COMMANDS";
+                break;
+                
+            case TokenType::DATABASE:
+            case TokenType::DATABASES:
+            case TokenType::TABLE:
+            case TokenType::USE:
+            case TokenType::SHOW:
+                category = "DATABASE OPERATIONS";
+                break;
+                
+            case TokenType::USER:
+            case TokenType::ROLE:
+            case TokenType::PASS:
+            case TokenType::WHOAMI:
+            case TokenType::STATUS:
+            case TokenType::LOGIN:
+                category = "USER MANAGEMENT";
+                break;
+                
+            case TokenType::ROLE_SUPERADMIN:
+            case TokenType::ROLE_ADMIN:
+            case TokenType::ROLE_NORMAL:
+            case TokenType::ROLE_READONLY:
+            case TokenType::ROLE_DENIED:
+                category = "USER ROLES";
+                break;
+                
+            case TokenType::INT_TYPE:
+            case TokenType::STRING_TYPE:
+            case TokenType::BOOL_TYPE:
+            case TokenType::DATE_TYPE:
+            case TokenType::DECIMAL_TYPE:
+                category = "DATA TYPES";
+                break;
+                
+            case TokenType::TRUE_LIT:
+            case TokenType::FALSE_LIT:
+                category = "BOOLEAN VALUES";
+                break;
+                
+            case TokenType::AND:
+            case TokenType::OR:
+            case TokenType::IN_OP:
+            case TokenType::ON:
+                category = "LOGICAL OPERATORS";
+                break;
+                
+            case TokenType::INDEX:
+            case TokenType::PRIMARY_KEY:
+                category = "INDEX & CONSTRAINTS";
+                break;
+                
+            case TokenType::BEGIN_TXN:
+            case TokenType::COMMIT:
+            case TokenType::ROLLBACK:
+                category = "TRANSACTIONS";
+                break;
+                
+            default:
+                category = "OTHER";
+                break;
+        }
+        
+        categories[category].push_back({franco, english});
+    }
+    
+    // Display categorized keywords
+    std::vector<std::string> order = {
+        "BASIC COMMANDS",
+        "DATABASE OPERATIONS",
+        "USER MANAGEMENT",
+        "USER ROLES",
+        "DATA TYPES",
+        "BOOLEAN VALUES",
+        "LOGICAL OPERATORS",
+        "INDEX & CONSTRAINTS",
+        "TRANSACTIONS"
+    };
+    
+    for (const auto& cat : order) {
+        if (categories.find(cat) != categories.end()) {
+            std::cout << "\n[" << cat << "]" << std::endl;
+            
+            // Sort by Franco keyword for consistent display
+            auto& items = categories[cat];
+            std::sort(items.begin(), items.end());
+            
+            for (const auto& [franco, english] : items) {
+                std::cout << "  " << std::left << std::setw(18) << franco 
+                         << std::setw(18) << english 
+                         << "- Franco keyword" << std::endl;
+            }
+        }
+    }
+    
+    // Additional operators
+    std::cout << "\n[COMPARISON OPERATORS]" << std::endl;
+    std::cout << "  =                  =                - Equals" << std::endl;
+    std::cout << "  >                  >                - Greater than" << std::endl;
+    std::cout << "  <                  <                - Less than" << std::endl;
+    std::cout << "  >=                 >=               - Greater than or equal" << std::endl;
+    std::cout << "  <=                 <=               - Less than or equal" << std::endl;
+    
+    std::cout << "\n[SHELL COMMANDS]" << std::endl;
+    std::cout << "  syntax / help      -                Display this syntax guide" << std::endl;
+    std::cout << "  clear / cls        -                Clear screen" << std::endl;
+    std::cout << "  exit / quit        -                Exit shell" << std::endl;
+    
+    std::cout << "\n[EXAMPLE QUERIES]" << std::endl;
+    std::cout << "  2E3MEL GADWAL users (id RAKAM ASASI, name GOMLA);" << std::endl;
+    std::cout << "  EMLA GOWA users ELKEYAM (1, 'Ahmed');" << std::endl;
+    std::cout << "  2E5TAR * MEN users LAMA id = 1;" << std::endl;
+    std::cout << "  3ADEL GOWA users 5ALY name = 'Ali' LAMA id = 1;" << std::endl;
+    std::cout << "  2EMSA7 MEN users LAMA id = 1;" << std::endl;
+    std::cout << "  2E3MEL FEHRIS idx_name 3ALA users (name);" << std::endl;
+    
+    std::cout << "\n" << std::string(80, '=') << std::endl;
+    std::cout << "TIP: Franco keywords are case-insensitive. Use what you prefer!" << std::endl;
+    std::cout << "     Total keywords available: " << keywords.size() << std::endl;
+    std::cout << std::string(80, '=') << std::endl << std::endl;
+}
 
 // -----------------------------------------------------------------------------
 // HELPER FUNCTIONS
@@ -230,6 +384,12 @@ int main(int argc, char* argv[]) {
             #else
                 system("clear");
             #endif
+            continue;
+        }
+
+        // --- SYNTAX HELP COMMAND ---
+        if (input == "syntax" || input == "help" || input == "SYNTAX" || input == "HELP") {
+            DisplayDynamicSyntax();
             continue;
         }
 

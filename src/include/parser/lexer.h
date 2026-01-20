@@ -2,6 +2,7 @@
 
 #include <string>
 #include <vector>
+#include <map>
 #include "parser/token.h"
 
 namespace francodb {
@@ -12,6 +13,12 @@ namespace francodb {
 
         Token NextToken();
         std::vector<Token> Tokenize();
+        
+        // Static method to access keywords map for dynamic help generation
+        static const std::map<std::string, TokenType>& GetKeywords();
+        
+        // Helper to get English name for a token type
+        static std::string GetTokenTypeName(TokenType type);
 
     private:
         void SkipWhitespace();

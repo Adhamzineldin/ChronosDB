@@ -4,6 +4,7 @@
 #include <algorithm>
 
 namespace francodb {
+    // Keywords map - accessible via GetKeywords() static method
     static const std::map<std::string, TokenType> kKeywords = {
         // --- COMMANDS ---
         {"2E5TAR", TokenType::SELECT},
@@ -211,5 +212,75 @@ namespace francodb {
         }
         tokens.push_back(tok); // Add EOF
         return tokens;
+    }
+
+    // Static method to access keywords map
+    const std::map<std::string, TokenType>& Lexer::GetKeywords() {
+        return kKeywords;
+    }
+
+    // Helper to get English name for a token type
+    std::string Lexer::GetTokenTypeName(TokenType type) {
+        switch(type) {
+            // Commands
+            case TokenType::SELECT: return "SELECT";
+            case TokenType::FROM: return "FROM";
+            case TokenType::WHERE: return "WHERE";
+            case TokenType::CREATE: return "CREATE";
+            case TokenType::DATABASE: return "DATABASE";
+            case TokenType::DATABASES: return "DATABASES";
+            case TokenType::TABLE: return "TABLE";
+            case TokenType::USE: return "USE";
+            case TokenType::LOGIN: return "LOGIN";
+            case TokenType::DELETE_CMD: return "DELETE";
+            case TokenType::UPDATE_SET: return "SET";
+            case TokenType::UPDATE_CMD: return "UPDATE";
+            case TokenType::INSERT: return "INSERT";
+            case TokenType::INTO: return "INTO";
+            case TokenType::VALUES: return "VALUES";
+            
+            // User Management
+            case TokenType::USER: return "USER";
+            case TokenType::ROLE: return "ROLE";
+            case TokenType::PASS: return "PASSWORD";
+            case TokenType::SHOW: return "SHOW";
+            case TokenType::WHOAMI: return "WHOAMI";
+            case TokenType::STATUS: return "STATUS";
+            
+            // Roles
+            case TokenType::ROLE_SUPERADMIN: return "SUPERADMIN";
+            case TokenType::ROLE_ADMIN: return "ADMIN";
+            case TokenType::ROLE_NORMAL: return "NORMAL";
+            case TokenType::ROLE_READONLY: return "READONLY";
+            case TokenType::ROLE_DENIED: return "DENIED";
+            
+            // Types
+            case TokenType::INT_TYPE: return "INT";
+            case TokenType::STRING_TYPE: return "VARCHAR/STRING";
+            case TokenType::BOOL_TYPE: return "BOOL";
+            case TokenType::DATE_TYPE: return "DATE";
+            case TokenType::DECIMAL_TYPE: return "DECIMAL/FLOAT";
+            
+            // Boolean Values
+            case TokenType::TRUE_LIT: return "TRUE";
+            case TokenType::FALSE_LIT: return "FALSE";
+            
+            // Logical Operators
+            case TokenType::AND: return "AND";
+            case TokenType::OR: return "OR";
+            case TokenType::IN_OP: return "IN";
+            case TokenType::ON: return "ON";
+            
+            // Index & Constraints
+            case TokenType::INDEX: return "INDEX";
+            case TokenType::PRIMARY_KEY: return "PRIMARY KEY";
+            
+            // Transactions
+            case TokenType::BEGIN_TXN: return "BEGIN";
+            case TokenType::COMMIT: return "COMMIT";
+            case TokenType::ROLLBACK: return "ROLLBACK";
+            
+            default: return "UNKNOWN";
+        }
     }
 } // namespace francodb
