@@ -29,6 +29,9 @@ namespace francodb {
         bool IsPrimaryKey() const { return is_primary_key_; }
         bool IsNullable() const { return is_nullable_; }
         bool IsUnique() const { return is_unique_; }
+        bool IsAutoIncrement() const { return is_auto_increment_; }
+        const std::string& GetCheckConstraint() const { return check_constraint_; }
+        bool HasCheckConstraint() const { return !check_constraint_.empty(); }
         
         // Optional: Default value support
         const std::optional<Value>& GetDefaultValue() const { return default_value_; }
@@ -40,6 +43,8 @@ namespace francodb {
         void SetNullable(bool is_nullable) { is_nullable_ = is_nullable; }
         void SetUnique(bool is_unique) { is_unique_ = is_unique; }
         void SetDefaultValue(const Value& value) { default_value_ = value; }
+        void SetAutoIncrement(bool auto_inc) { is_auto_increment_ = auto_inc; }
+        void SetCheckConstraint(const std::string& check) { check_constraint_ = check; }
         
         std::string ToString() const;
         
@@ -54,7 +59,9 @@ namespace francodb {
         bool is_primary_key_;              // PRIMARY KEY constraint
         bool is_nullable_;                 // NULLABLE constraint (default: true)
         bool is_unique_;                   // UNIQUE constraint
+        bool is_auto_increment_ = false;   // AUTO_INCREMENT constraint
         std::optional<Value> default_value_;  // DEFAULT value (optional)
+        std::string check_constraint_;     // CHECK constraint expression
     };
 
 } // namespace francodb

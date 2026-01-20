@@ -35,6 +35,7 @@ void TestExecutionEngine();
 void TestIndexExecution();
 void TestLexer();
 void TestParser();
+void TestEnterpriseFeatures(); // ENTERPRISE PARSER TESTS
 
 // Concurrency Tests
 void TestBasicExecution();
@@ -99,6 +100,7 @@ int main(int, char**) {
     std::cout << "\n╔═══ PARSER ═══╗" << std::endl;
     runner.RunTest("Parser", "Lexer", [] { TestLexer(); });
     runner.RunTest("Parser", "Parser", [] { TestParser(); });
+    TestEnterpriseFeatures(); // Run comprehensive enterprise tests
 
     // CONCURRENCY
     std::cout << "\n╔═══ CONCURRENCY ═══╗" << std::endl;

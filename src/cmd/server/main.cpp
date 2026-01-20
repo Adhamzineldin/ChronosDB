@@ -138,7 +138,7 @@ int main(int argc, char* argv[])
         
         // 2. INITIALIZE DB COMPONENTS
         std::cout << "[INFO] Initializing DB components..." << std::endl;
-        auto disk_manager = std::make_unique<DiskManager>((data_dir / "francodb.db").string());
+        auto disk_manager = std::make_unique<DiskManager>((data_dir / "disk_manager.francodb").string());
         if (config.IsEncryptionEnabled()) disk_manager->SetEncryptionKey(config.GetEncryptionKey());
         
         auto bpm = std::make_unique<BufferPoolManager>(BUFFER_POOL_SIZE, disk_manager.get());

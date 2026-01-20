@@ -17,10 +17,13 @@ namespace francodb {
 
     SessionContext *g_session_context = nullptr;
 
-    ExecutionEngine::ExecutionEngine(BufferPoolManager *bpm, Catalog *catalog, AuthManager *auth_manager)
-        : catalog_(catalog), bpm_(bpm), auth_manager_(auth_manager),
-          exec_ctx_(new ExecutorContext(catalog, bpm)),
-          current_transaction_(nullptr), next_txn_id_(1), in_explicit_transaction_(false) {
+    ExecutionEngine::ExecutionEngine(BufferPoolManager *bpm, Catalog *catalog,
+                                     AuthManager *auth_manager, DatabaseRegistry *db_registry)
+        : bpm_(bpm), catalog_(catalog), auth_manager_(auth_manager),
+          db_registry_(db_registry), exec_ctx_(nullptr),
+          current_transaction_(nullptr), next_txn_id_(1),
+          in_explicit_transaction_(false) {
+        exec_ctx_ = new ExecutorContext(bpm_, catalog_, nullptr);
     }
 
     ExecutionEngine::~ExecutionEngine() {
@@ -53,53 +56,88 @@ namespace francodb {
             ExecutionResult res;
             switch (stmt->GetType()) {
                 // --- DDL ---
-                case StatementType::CREATE_INDEX: res = ExecuteCreateIndex(dynamic_cast<CreateIndexStatement *>(stmt)); break;
-                case StatementType::CREATE: res = ExecuteCreate(dynamic_cast<CreateStatement *>(stmt)); break;
-                case StatementType::DROP: res = ExecuteDrop(dynamic_cast<DropStatement *>(stmt)); break;
-                
+                case StatementType::CREATE_INDEX: res = ExecuteCreateIndex(dynamic_cast<CreateIndexStatement *>(stmt));
+                    break;
+                case StatementType::CREATE: res = ExecuteCreate(dynamic_cast<CreateStatement *>(stmt));
+                    break;
+                case StatementType::DROP: res = ExecuteDrop(dynamic_cast<DropStatement *>(stmt));
+                    break;
+
                 // --- USER MANAGEMENT ---
-                case StatementType::CREATE_USER: 
-                    res = ExecuteCreateUser(dynamic_cast<CreateUserStatement *>(stmt)); 
+                case StatementType::CREATE_USER:
+                    res = ExecuteCreateUser(dynamic_cast<CreateUserStatement *>(stmt));
                     break;
                 case StatementType::ALTER_USER_ROLE: // [FIX] Added Case
-                    res = ExecuteAlterUserRole(dynamic_cast<AlterUserRoleStatement *>(stmt)); 
+                    res = ExecuteAlterUserRole(dynamic_cast<AlterUserRoleStatement *>(stmt));
                     break;
                 case StatementType::DELETE_USER:
                     res = ExecuteDeleteUser(dynamic_cast<DeleteUserStatement *>(stmt));
                     break;
 
                 // --- DML ---
-                case StatementType::INSERT: res = ExecuteInsert(dynamic_cast<InsertStatement *>(stmt)); break;
-                case StatementType::SELECT: res = ExecuteSelect(dynamic_cast<SelectStatement *>(stmt)); break;
-                case StatementType::DELETE_CMD: res = ExecuteDelete(dynamic_cast<DeleteStatement *>(stmt)); break;
-                case StatementType::UPDATE_CMD: res = ExecuteUpdate(dynamic_cast<UpdateStatement *>(stmt)); break;
+                case StatementType::INSERT: res = ExecuteInsert(dynamic_cast<InsertStatement *>(stmt));
+                    break;
+                case StatementType::SELECT: res = ExecuteSelect(dynamic_cast<SelectStatement *>(stmt));
+                    break;
+                case StatementType::DELETE_CMD: res = ExecuteDelete(dynamic_cast<DeleteStatement *>(stmt));
+                    break;
+                case StatementType::UPDATE_CMD: res = ExecuteUpdate(dynamic_cast<UpdateStatement *>(stmt));
+                    break;
 
                 // --- SYSTEM & METADATA ---
-                case StatementType::SHOW_DATABASES: res = ExecuteShowDatabases(dynamic_cast<ShowDatabasesStatement *>(stmt), session); break;
-                case StatementType::SHOW_TABLES: res = ExecuteShowTables(dynamic_cast<ShowTablesStatement *>(stmt), session); break;
-                case StatementType::SHOW_STATUS: res = ExecuteShowStatus(dynamic_cast<ShowStatusStatement *>(stmt), session); break;
-                case StatementType::WHOAMI: res = ExecuteWhoAmI(dynamic_cast<WhoAmIStatement *>(stmt), session); break;
-                case StatementType::SHOW_USERS: res = ExecuteShowUsers(dynamic_cast<ShowUsersStatement *>(stmt)); break;
+                case StatementType::SHOW_DATABASES: res = ExecuteShowDatabases(
+                                                        dynamic_cast<ShowDatabasesStatement *>(stmt), session);
+                    break;
+                case StatementType::SHOW_TABLES: res = ExecuteShowTables(dynamic_cast<ShowTablesStatement *>(stmt),
+                                                                         session);
+                    break;
+                case StatementType::SHOW_STATUS: res = ExecuteShowStatus(dynamic_cast<ShowStatusStatement *>(stmt),
+                                                                         session);
+                    break;
+                case StatementType::WHOAMI: res = ExecuteWhoAmI(dynamic_cast<WhoAmIStatement *>(stmt), session);
+                    break;
+                case StatementType::SHOW_USERS: res = ExecuteShowUsers(dynamic_cast<ShowUsersStatement *>(stmt));
+                    break;
 
                 // --- TRANSACTIONS ---
-                case StatementType::BEGIN: res = ExecuteBegin(); break;
-                case StatementType::ROLLBACK: res = ExecuteRollback(); break;
-                case StatementType::COMMIT: res = ExecuteCommit(); break;
-                
+                case StatementType::BEGIN: res = ExecuteBegin();
+                    break;
+                case StatementType::ROLLBACK: res = ExecuteRollback();
+                    break;
+                case StatementType::COMMIT: res = ExecuteCommit();
+                    break;
+
                 // --- DB MGMT ---
-                case StatementType::CREATE_DB:
-                     // Usually handled in connection handler, but if here:
-                     res = ExecutionResult::Message("Create DB should be handled by System/Handler level for now.");
-                     break;
-                case StatementType::USE_DB:
-                     res = ExecutionResult::Message("Use DB should be handled by Connection Handler.");
-                     break;
+                case StatementType::CREATE_DB: {
+                    auto *create_db = dynamic_cast<CreateDatabaseStatement *>(stmt);
+                    return ExecuteCreateDatabase(create_db, session);
+                }
+
+                case StatementType::USE_DB: {
+                    auto *use_db = dynamic_cast<UseDatabaseStatement *>(stmt);
+                    return ExecuteUseDatabase(use_db, session);
+                }
+
+                case StatementType::DROP_DB: {
+                    auto *drop_db = dynamic_cast<DropDatabaseStatement *>(stmt);
+                    return ExecuteDropDatabase(drop_db, session);
+                }
+
+                case StatementType::CREATE_TABLE: {
+                    // Check if database is selected
+                    if (session->current_db.empty()) {
+                        return ExecutionResult::Error("No database selected. Use 'USE DATABASE_NAME' first.");
+                    }
+                    auto *create = dynamic_cast<CreateStatement *>(stmt);
+                    return ExecuteCreate(create);
+                }
 
                 default: return ExecutionResult::Error("Unknown Statement Type in Engine.");
             }
 
             // Auto-commit
-            if (stmt->GetType() == StatementType::INSERT || stmt->GetType() == StatementType::UPDATE_CMD || stmt->GetType() == StatementType::DELETE_CMD) {
+            if (stmt->GetType() == StatementType::INSERT || stmt->GetType() == StatementType::UPDATE_CMD || stmt->
+                GetType() == StatementType::DELETE_CMD) {
                 AutoCommitIfNeeded();
             }
             return res;
@@ -180,7 +218,7 @@ namespace francodb {
 
         // 1. Column Headers - Only return selected columns
         std::vector<uint32_t> column_indices;
-        
+
         if (stmt->select_all_) {
             // SELECT * - return all columns
             for (uint32_t i = 0; i < output_schema->GetColumnCount(); i++) {
@@ -189,7 +227,7 @@ namespace francodb {
             }
         } else {
             // SELECT specific columns
-            for (const auto &col_name : stmt->columns_) {
+            for (const auto &col_name: stmt->columns_) {
                 int col_idx = output_schema->GetColIdx(col_name);
                 if (col_idx < 0) {
                     delete executor;
@@ -204,7 +242,7 @@ namespace francodb {
         Tuple t;
         while (executor->Next(&t)) {
             std::vector<std::string> row_strings;
-            for (uint32_t col_idx : column_indices) {
+            for (uint32_t col_idx: column_indices) {
                 row_strings.push_back(ValueToString(t.GetValue(*output_schema, col_idx)));
             }
             rs->AddRow(row_strings);
@@ -367,12 +405,18 @@ namespace francodb {
                 if (!roles_desc.empty()) roles_desc += ", ";
                 roles_desc += db + ":";
                 switch (role) {
-                    case UserRole::SUPERADMIN: roles_desc += "SUPER"; break;
-                    case UserRole::ADMIN: roles_desc += "ADMIN"; break;
-                    case UserRole::NORMAL: roles_desc += "NORMAL"; break;
-                    case UserRole::READONLY: roles_desc += "READONLY"; break;
-                    case UserRole::DENIED: roles_desc += "DENIED"; break;
-                    default: roles_desc += "UNKNOWN"; break;
+                    case UserRole::SUPERADMIN: roles_desc += "SUPER";
+                        break;
+                    case UserRole::ADMIN: roles_desc += "ADMIN";
+                        break;
+                    case UserRole::NORMAL: roles_desc += "NORMAL";
+                        break;
+                    case UserRole::READONLY: roles_desc += "READONLY";
+                        break;
+                    case UserRole::DENIED: roles_desc += "DENIED";
+                        break;
+                    default: roles_desc += "UNKNOWN";
+                        break;
                 }
             }
             rs->AddRow({user.username, roles_desc});
@@ -481,13 +525,12 @@ namespace francodb {
 
         return ExecutionResult::Data(rs);
     }
-    
-    
-    
+
+
     ExecutionResult ExecutionEngine::ExecuteAlterUserRole(AlterUserRoleStatement *stmt) {
         // 1. Convert String Role to Enum
         UserRole r = UserRole::NORMAL; // Default
-        
+
         std::string role_upper = stmt->role_;
         std::transform(role_upper.begin(), role_upper.end(), role_upper.begin(), ::toupper);
 
@@ -505,21 +548,144 @@ namespace francodb {
         if (auth_manager_->SetUserRole(stmt->username_, target_db, r)) {
             return ExecutionResult::Message("User role updated successfully for DB: " + target_db);
         }
-        
+
         return ExecutionResult::Error("Failed to update user role (User might not exist or is Root).");
     }
-    
+
     ExecutionResult ExecutionEngine::ExecuteDeleteUser(DeleteUserStatement *stmt) {
         // Safety: Prevent deleting the current user to avoid locking yourself out?
         // (Optional check, but AuthManager::DeleteUser handles Root protection already)
-        
+
         if (auth_manager_->DeleteUser(stmt->username_)) {
             return ExecutionResult::Message("User '" + stmt->username_ + "' deleted successfully.");
         }
         return ExecutionResult::Error("Failed to delete user (User might not exist or is Root).");
     }
-    
-    
-    
-    
+
+
+    ExecutionResult ExecutionEngine::ExecuteCreateDatabase(
+        CreateDatabaseStatement *stmt, SessionContext *session) {
+        // Check permissions
+        if (!auth_manager_->HasPermission(session->role, StatementType::CREATE_DB)) {
+            return ExecutionResult::Error("Permission denied: CREATE DATABASE requires ADMIN role");
+        }
+
+        try {
+            // Check if database already exists
+            if (db_registry_->Get(stmt->db_name_) != nullptr) {
+                return ExecutionResult::Error("Database '" + stmt->db_name_ + "' already exists");
+            }
+
+            // Create the database (this initializes DiskManager, BufferPool, Catalog)
+            auto entry = db_registry_->GetOrCreate(stmt->db_name_);
+
+            if (!entry) {
+                return ExecutionResult::Error("Failed to create database '" + stmt->db_name_ + "'");
+            }
+
+            // Grant creator ADMIN rights on this database
+            UserRole creator_role = (session->role == UserRole::SUPERADMIN)
+                                        ? UserRole::SUPERADMIN
+                                        : UserRole::ADMIN;
+            auth_manager_->SetUserRole(session->current_user, stmt->db_name_, creator_role);
+
+            return ExecutionResult::Message("Database '" + stmt->db_name_ + "' created successfully");
+        } catch (const std::exception &e) {
+            return ExecutionResult::Error("Failed to create database: " + std::string(e.what()));
+        }
+    }
+
+    // ====================================================================
+    // USE DATABASE
+    // ====================================================================
+    ExecutionResult ExecutionEngine::ExecuteUseDatabase(
+        UseDatabaseStatement *stmt, SessionContext *session) {
+        // Check access permissions
+        if (!auth_manager_->HasDatabaseAccess(session->current_user, stmt->db_name_)) {
+            return ExecutionResult::Error("Access denied to database '" + stmt->db_name_ + "'");
+        }
+
+        try {
+            // Get or load the database
+            auto entry = db_registry_->Get(stmt->db_name_);
+
+            if (!entry) {
+                return ExecutionResult::Error("Database '" + stmt->db_name_ + "' does not exist");
+            }
+
+            // CRITICAL: Update the execution engine's pointers
+            // Check if this is an external registration or owned entry
+            if (db_registry_->ExternalBpm(stmt->db_name_)) {
+                bpm_ = db_registry_->ExternalBpm(stmt->db_name_);
+                catalog_ = db_registry_->ExternalCatalog(stmt->db_name_);
+            } else {
+                bpm_ = entry->bpm.get();
+                catalog_ = entry->catalog.get();
+            }
+
+            // Update executor context
+            if (exec_ctx_) {
+                delete exec_ctx_;
+            }
+            exec_ctx_ = new ExecutorContext(bpm_, catalog_, current_transaction_);
+
+            // Update session context
+            session->current_db = stmt->db_name_;
+            session->role = auth_manager_->GetUserRole(session->current_user, stmt->db_name_);
+
+            if (auth_manager_->IsSuperAdmin(session->current_user)) {
+                session->role = UserRole::SUPERADMIN;
+            }
+
+            return ExecutionResult::Message("Now using database: " + stmt->db_name_);
+        } catch (const std::exception &e) {
+            return ExecutionResult::Error("Failed to switch database: " + std::string(e.what()));
+        }
+    }
+
+    // ====================================================================
+    // DROP DATABASE
+    // ====================================================================
+    ExecutionResult ExecutionEngine::ExecuteDropDatabase(
+        DropDatabaseStatement *stmt, SessionContext *session) {
+        // Check permissions
+        if (!auth_manager_->HasPermission(session->role, StatementType::DROP_DB)) {
+            return ExecutionResult::Error("Permission denied: DROP DATABASE requires ADMIN role");
+        }
+
+        try {
+            auto entry = db_registry_->Get(stmt->db_name_);
+
+            if (!entry) {
+                return ExecutionResult::Error("Database '" + stmt->db_name_ + "' does not exist");
+            }
+
+            // Prevent dropping currently active database
+            if (session->current_db == stmt->db_name_) {
+                return ExecutionResult::Error(
+                    "Cannot drop currently active database. Switch to another database first.");
+            }
+
+            // Flush and close the database
+            if (entry->bpm) {
+                entry->bpm->FlushAllPages();
+            }
+
+            // Remove from registry
+            auto &config = ConfigManager::GetInstance();
+            std::string data_dir = config.GetDataDirectory();
+            std::filesystem::path db_path = std::filesystem::path(data_dir) / stmt->db_name_;
+
+            // Delete the database file
+            if (std::filesystem::exists(db_path)) {
+                std::filesystem::remove(db_path);
+            }
+
+            // TODO: Remove from registry map (add Remove() method to DatabaseRegistry)
+
+            return ExecutionResult::Message("Database '" + stmt->db_name_ + "' dropped successfully");
+        } catch (const std::exception &e) {
+            return ExecutionResult::Error("Failed to drop database: " + std::string(e.what()));
+        }
+    }
 } // namespace francodb

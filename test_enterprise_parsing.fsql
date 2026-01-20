@@ -1,0 +1,71 @@
+-- FrancoDB Enterprise Features Parsing Test
+-- Test all new parser capabilities
+
+-- 1. DISTINCT Test
+2E5TAR MOTA3MEZ name MEN users;
+
+-- 2. Aggregate Functions Test
+2E5TAR COUNT(*) MEN users;
+2E5TAR department, COUNT(*) MEN employees;
+2E5TAR SUM(salary) MEN employees;
+2E5TAR AVG(age), MIN(age), MAX(age) MEN students;
+
+-- 3. JOIN Tests
+2E5TAR * MEN orders ENTEDAH customers;
+2E5TAR * MEN orders DA5ELY ENTEDAH customers 3ALA orders.customer_id = customers.id;
+2E5TAR * MEN employees SHMAL ENTEDAH departments 3ALA employees.dept_id = departments.id;
+2E5TAR * MEN students YAMEN ENTEDAH classes 3ALA students.class_id = classes.id;
+
+-- 4. GROUP BY Test
+2E5TAR department, COUNT(*) MEN employees MAGMO3A B department;
+2E5TAR city, AVG(salary) MEN employees MAGMO3A B city;
+
+-- 5. HAVING Test
+2E5TAR department, COUNT(*) MEN employees MAGMO3A B department LAKEN COUNT(*) > 5;
+
+-- 6. ORDER BY Test
+2E5TAR * MEN users RATEB B name;
+2E5TAR * MEN users RATEB B age NAZL;
+2E5TAR * MEN products RATEB B price TALE3, name;
+
+-- 7. LIMIT and OFFSET Test
+2E5TAR * MEN users 7ADD 10;
+2E5TAR * MEN users 7ADD 10 EBDA2MEN 20;
+2E5TAR * MEN products RATEB B price NAZL 7ADD 5;
+
+-- 8. Complex Query (Multiple Features)
+2E5TAR MOTA3MEZ department, COUNT(*) AS total 
+MEN employees 
+LAMA salary > 50000 
+MAGMO3A B department 
+LAKEN COUNT(*) > 3 
+RATEB B total NAZL 
+7ADD 10;
+
+-- 9. CREATE TABLE with Constraints
+2E3MEL GADWAL users (
+    id RAKAM MOFTA7 ASASI TAZAYED,
+    name GOMLA(100) MESH FADY,
+    email GOMLA(255) WAHED,
+    age RAKAM CHECK (age >= 18),
+    status GOMLA(20) DEFAULT 'active'
+);
+
+-- 10. CREATE TABLE with Foreign Key
+2E3MEL GADWAL orders (
+    id RAKAM MOFTA7 ASASI,
+    user_id RAKAM,
+    total KASR,
+    5AREGY MOFTA7 (user_id) YOSHEER users(id) 3END MA7W CASCADE
+);
+
+-- 11. CREATE TABLE with Multiple Constraints
+2E3MEL GADWAL products (
+    id RAKAM MOFTA7 ASASI TAZAYED,
+    name GOMLA(200) MESH FADY WAHED,
+    price KASR MESH FADY CHECK (price > 0),
+    stock RAKAM DEFAULT 0 CHECK (stock >= 0),
+    category_id RAKAM,
+    5AREGY MOFTA7 (category_id) YOSHEER categories(id) 3END MA7W RESTRICT
+);
+

@@ -42,6 +42,32 @@ namespace francodb {
         std::unique_ptr<WhoAmIStatement> ParseWhoAmI();
         std::unique_ptr<ShowStatusStatement> ParseShowStatus();
 
+        // ============ PHASE 2B: ENTERPRISE FEATURE HELPERS ============
+        
+        // Aggregate Functions
+        bool IsAggregateFunction();
+        std::pair<std::string, std::string> ParseAggregateFunction();
+        
+        // JOIN support
+        bool IsJoinKeyword();
+        SelectStatement::JoinClause ParseJoinClause();
+        std::string ParseJoinCondition();
+        
+        // GROUP BY
+        std::vector<std::string> ParseGroupByColumns();
+        
+        // ORDER BY
+        std::vector<SelectStatement::OrderByClause> ParseOrderByClause();
+        
+        // Numbers (for LIMIT/OFFSET)
+        int ParseNumber();
+        
+        // Enhanced CREATE TABLE
+        std::string ParseReferentialAction();
+        std::string ParseCheckExpression();
+
+        std::unique_ptr<DropDatabaseStatement> ParseDropDatabase();
+
         Lexer lexer_;
         Token current_token_;
     };

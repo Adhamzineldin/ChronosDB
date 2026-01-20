@@ -1,0 +1,140 @@
+-- FrancoDB Enterprise Features Demo Script (FrancoSQL)
+-- This file demonstrates all enterprise features in Franco language
+-- Execute with: run demo.fsql (or just: run demo)
+
+-- ============================================================================
+-- SECTION 1: SETUP - Create Database and Tables
+-- ============================================================================
+
+-- Create main users table with constraints
+2E3MEL GADWAL users (
+    id RAKAM MOFTA7 ASASI TAZAYED,
+    name GOMLA(100) MESH FADY,
+    email GOMLA(255) WAHED MESH FADY,
+    age RAKAM CHECK (age >= 18),
+    city GOMLA(50),
+    salary KASR DEFAULT 0.0
+);
+
+-- Create orders table with foreign key
+2E3MEL GADWAL orders (
+    order_id RAKAM MOFTA7 ASASI TAZAYED,
+    user_id RAKAM MESH FADY,
+    product_name GOMLA(100),
+    quantity RAKAM DEFAULT 1,
+    price KASR,
+    order_date TARE5,
+    5AREGY MOFTA7 (user_id) YOSHEER users(id) 3END MA7W CASCADE
+);
+
+-- Create products table
+2E3MEL GADWAL products (
+    id RAKAM MOFTA7 ASASI TAZAYED,
+    name GOMLA(200) MESH FADY WAHED,
+    category GOMLA(50),
+    price KASR CHECK (price > 0),
+    stock RAKAM DEFAULT 0 CHECK (stock >= 0)
+);
+
+-- Create indexes for better performance
+2E3MEL FEHRIS idx_users_email 3ALA users (email);
+2E3MEL FEHRIS idx_orders_user 3ALA orders (user_id);
+2E3MEL FEHRIS idx_products_category 3ALA products (category);
+
+-- ============================================================================
+-- SECTION 2: INSERT SAMPLE DATA
+-- ============================================================================
+
+-- Insert users
+EMLA GOWA users ELKEYAM (1, 'Ahmed', 'ahmed@example.com', 25, 'Cairo', 5000.0);
+EMLA GOWA users ELKEYAM (2, 'Sara', 'sara@example.com', 30, 'Alexandria', 6000.0);
+EMLA GOWA users ELKEYAM (3, 'Mohamed', 'mohamed@example.com', 28, 'Cairo', 5500.0);
+EMLA GOWA users ELKEYAM (4, 'Fatima', 'fatima@example.com', 35, 'Giza', 7000.0);
+EMLA GOWA users ELKEYAM (5, 'Omar', 'omar@example.com', 22, 'Cairo', 4500.0);
+
+-- Insert products
+EMLA GOWA products ELKEYAM (1, 'Laptop', 'Electronics', 15000.0, 50);
+EMLA GOWA products ELKEYAM (2, 'Mouse', 'Electronics', 200.0, 100);
+EMLA GOWA products ELKEYAM (3, 'Desk', 'Furniture', 3000.0, 20);
+EMLA GOWA products ELKEYAM (4, 'Chair', 'Furniture', 1500.0, 30);
+EMLA GOWA products ELKEYAM (5, 'Monitor', 'Electronics', 8000.0, 40);
+
+-- Insert orders
+EMLA GOWA orders ELKEYAM (1, 1, 'Laptop', 1, 15000.0, '2025-01-15');
+EMLA GOWA orders ELKEYAM (2, 1, 'Mouse', 2, 200.0, '2025-01-15');
+EMLA GOWA orders ELKEYAM (3, 2, 'Desk', 1, 3000.0, '2025-01-16');
+EMLA GOWA orders ELKEYAM (4, 3, 'Chair', 2, 1500.0, '2025-01-17');
+EMLA GOWA orders ELKEYAM (5, 4, 'Monitor', 1, 8000.0, '2025-01-18');
+
+-- ============================================================================
+-- SECTION 3: ENTERPRISE FEATURES DEMO
+-- ============================================================================
+
+-- 3.1 DISTINCT - Get unique cities
+2E5TAR MOTA3MEZ city MEN users;
+
+-- 3.2 AGGREGATE FUNCTIONS - Count users per city
+2E5TAR city, COUNT(*) MEN users MAGMO3A B city;
+
+-- 3.3 SUM and AVG - Calculate total and average salary by city
+2E5TAR city, SUM(salary), AVG(salary) MEN users MAGMO3A B city;
+
+-- 3.4 INNER JOIN - Get user orders with user details
+2E5TAR users.name, orders.product_name, orders.price 
+MEN users DA5ELY ENTEDAH orders 3ALA users.id = orders.user_id;
+
+-- 3.5 LEFT JOIN - Get all users even without orders
+2E5TAR users.name, orders.product_name 
+MEN users SHMAL ENTEDAH orders 3ALA users.id = orders.user_id;
+
+-- 3.6 GROUP BY with HAVING - Cities with more than 1 user
+2E5TAR city, COUNT(*) MEN users MAGMO3A B city LAKEN COUNT(*) > 1;
+
+-- 3.7 ORDER BY ASC - Sort users by salary ascending
+2E5TAR name, salary MEN users RATEB B salary TALE3;
+
+-- 3.8 ORDER BY DESC - Sort users by age descending
+2E5TAR name, age MEN users RATEB B age NAZL;
+
+-- 3.9 LIMIT - Get top 3 highest paid users
+2E5TAR name, salary MEN users RATEB B salary NAZL 7ADD 3;
+
+-- 3.10 LIMIT with OFFSET - Get users 2-4 by salary
+2E5TAR name, salary MEN users RATEB B salary NAZL 7ADD 3 EBDA2MEN 1;
+
+-- 3.11 Complex Query - All features combined
+2E5TAR MOTA3MEZ city, COUNT(*) AS total, AVG(salary) AS avg_salary
+MEN users
+LAMA age >= 25
+MAGMO3A B city
+LAKEN COUNT(*) > 1
+RATEB B avg_salary NAZL
+7ADD 5;
+
+-- ============================================================================
+-- SECTION 4: UPDATE AND DELETE OPERATIONS
+-- ============================================================================
+
+-- Update user salary
+3ADEL GOWA users 5ALY salary = 5500.0 LAMA id = 1;
+
+-- Delete a specific order
+2EMSA7 MEN orders LAMA order_id = 5;
+
+-- ============================================================================
+-- SECTION 5: VERIFICATION
+-- ============================================================================
+
+-- Show all users
+2E5TAR * MEN users;
+
+-- Show all orders
+2E5TAR * MEN orders;
+
+-- Show all products
+2E5TAR * MEN products;
+
+-- ============================================================================
+-- END OF DEMO SCRIPT
+-- ============================================================================
+

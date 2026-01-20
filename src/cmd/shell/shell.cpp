@@ -109,6 +109,63 @@ void DisplayDynamicSyntax() {
             case TokenType::ROLLBACK:
                 category = "TRANSACTIONS";
                 break;
+            
+            // NEW CATEGORIES
+            case TokenType::GROUP:
+            case TokenType::BY:
+            case TokenType::HAVING:
+            case TokenType::COUNT:
+            case TokenType::SUM:
+            case TokenType::AVG:
+            case TokenType::MIN_AGG:
+            case TokenType::MAX_AGG:
+                category = "GROUP BY & AGGREGATES";
+                break;
+            
+            case TokenType::ORDER:
+            case TokenType::ASC:
+            case TokenType::DESC:
+                category = "ORDER BY";
+                break;
+            
+            case TokenType::LIMIT:
+            case TokenType::OFFSET:
+                category = "LIMIT & OFFSET";
+                break;
+            
+            case TokenType::DISTINCT:
+            case TokenType::ALL:
+                category = "DISTINCT & ALL";
+                break;
+            
+            case TokenType::JOIN:
+            case TokenType::INNER:
+            case TokenType::LEFT:
+            case TokenType::RIGHT:
+            case TokenType::OUTER:
+            case TokenType::CROSS:
+                category = "JOINS";
+                break;
+            
+            case TokenType::FOREIGN:
+            case TokenType::KEY:
+            case TokenType::REFERENCES:
+            case TokenType::CASCADE:
+            case TokenType::RESTRICT:
+            case TokenType::SET:
+            case TokenType::NO:
+            case TokenType::ACTION:
+                category = "FOREIGN KEYS";
+                break;
+            
+            case TokenType::NULL_LIT:
+            case TokenType::NOT:
+            case TokenType::DEFAULT_KW:
+            case TokenType::UNIQUE:
+            case TokenType::CHECK:
+            case TokenType::AUTO_INCREMENT:
+                category = "COLUMN CONSTRAINTS";
+                break;
                 
             default:
                 category = "OTHER";
@@ -128,7 +185,14 @@ void DisplayDynamicSyntax() {
         "BOOLEAN VALUES",
         "LOGICAL OPERATORS",
         "INDEX & CONSTRAINTS",
-        "TRANSACTIONS"
+        "TRANSACTIONS",
+        "GROUP BY & AGGREGATES",
+        "ORDER BY",
+        "LIMIT & OFFSET",
+        "DISTINCT & ALL",
+        "JOINS",
+        "FOREIGN KEYS",
+        "COLUMN CONSTRAINTS"
     };
     
     for (const auto& cat : order) {
@@ -158,20 +222,142 @@ void DisplayDynamicSyntax() {
     std::cout << "\n[SHELL COMMANDS]" << std::endl;
     std::cout << "  syntax / help      -                Display this syntax guide" << std::endl;
     std::cout << "  clear / cls        -                Clear screen" << std::endl;
+    std::cout << "  run <file>         -                Execute FSQL file (.fsql)" << std::endl;
+    std::cout << "  exec <file>        -                Execute FSQL file (alias)" << std::endl;
+    std::cout << "  source <file>      -                Execute FSQL file (alias)" << std::endl;
     std::cout << "  exit / quit        -                Exit shell" << std::endl;
     
     std::cout << "\n[EXAMPLE QUERIES]" << std::endl;
+    std::cout << "  -- Basic Commands:" << std::endl;
     std::cout << "  2E3MEL GADWAL users (id RAKAM ASASI, name GOMLA);" << std::endl;
     std::cout << "  EMLA GOWA users ELKEYAM (1, 'Ahmed');" << std::endl;
     std::cout << "  2E5TAR * MEN users LAMA id = 1;" << std::endl;
     std::cout << "  3ADEL GOWA users 5ALY name = 'Ali' LAMA id = 1;" << std::endl;
     std::cout << "  2EMSA7 MEN users LAMA id = 1;" << std::endl;
+    
+    std::cout << "\n  -- Indexes:" << std::endl;
     std::cout << "  2E3MEL FEHRIS idx_name 3ALA users (name);" << std::endl;
+    
+    std::cout << "\n  -- GROUP BY & Aggregates:" << std::endl;
+    std::cout << "  2E5TAR department, 3ADD(*) MEN users MAGMO3A B department;" << std::endl;
+    std::cout << "  2E5TAR department, MAG3MO3(salary) MEN employees GROUP BY department;" << std::endl;
+    std::cout << "  2E5TAR city, MOTO3ASET(age) MEN users MAGMO3A B city ETHA MOTO3ASET(age) > 25;" << std::endl;
+    
+    std::cout << "\n  -- ORDER BY:" << std::endl;
+    std::cout << "  2E5TAR * MEN users RATEB B name TASE3DI;" << std::endl;
+    std::cout << "  2E5TAR * MEN products ORDER BY price DESC;" << std::endl;
+    std::cout << "  2E5TAR * MEN users ORDER BY age ASC, name DESC;" << std::endl;
+    
+    std::cout << "\n  -- LIMIT & OFFSET:" << std::endl;
+    std::cout << "  2E5TAR * MEN users 7ADD 10;" << std::endl;
+    std::cout << "  2E5TAR * MEN users LIMIT 10 OFFSET 20;" << std::endl;
+    std::cout << "  2E5TAR * MEN products 7ADD 5 EBDA2MEN 10;" << std::endl;
+    
+    std::cout << "\n  -- DISTINCT:" << std::endl;
+    std::cout << "  2E5TAR MOTA3MEZ city MEN users;" << std::endl;
+    std::cout << "  2E5TAR DISTINCT department MEN employees;" << std::endl;
+    
+    std::cout << "\n  -- JOINS:" << std::endl;
+    std::cout << "  2E5TAR * MEN users ENTEDAH orders 3ALA users.id = orders.user_id;" << std::endl;
+    std::cout << "  2E5TAR * MEN users DA5ELY JOIN orders ON users.id = orders.user_id;" << std::endl;
+    std::cout << "  2E5TAR * MEN users SHMAL ENTEDAH orders 3ALA users.id = orders.user_id;" << std::endl;
+    
+    std::cout << "\n  -- FOREIGN KEYS:" << std::endl;
+    std::cout << "  2E3MEL GADWAL orders (" << std::endl;
+    std::cout << "    id RAKAM ASASI," << std::endl;
+    std::cout << "    user_id RAKAM," << std::endl;
+    std::cout << "    FOREIGN KEY (user_id) YOSHEER users(id) TATABE3" << std::endl;
+    std::cout << "  );" << std::endl;
+    
+    std::cout << "\n  -- CONSTRAINTS:" << std::endl;
+    std::cout << "  2E3MEL GADWAL products (" << std::endl;
+    std::cout << "    id RAKAM ASASI TAZAYED," << std::endl;
+    std::cout << "    name GOMLA MESH FADY WAHED," << std::endl;
+    std::cout << "    price KASR EFRADY 0.0," << std::endl;
+    std::cout << "    stock RAKAM FA7S (stock >= 0)" << std::endl;
+    std::cout << "  );" << std::endl;
     
     std::cout << "\n" << std::string(80, '=') << std::endl;
     std::cout << "TIP: Franco keywords are case-insensitive. Use what you prefer!" << std::endl;
     std::cout << "     Total keywords available: " << keywords.size() << std::endl;
     std::cout << std::string(80, '=') << std::endl << std::endl;
+}
+
+// -----------------------------------------------------------------------------
+// FSQL FILE EXECUTION (FrancoSQL Script Files)
+// -----------------------------------------------------------------------------
+bool ExecuteFSQLFile(FrancoClient& client, const std::string& filepath, const std::string& current_db) {
+    std::ifstream file(filepath);
+    if (!file.is_open()) {
+        std::cerr << "[ERROR] Cannot open file: " << filepath << std::endl;
+        return false;
+    }
+
+    std::cout << "\n+============================================================+" << std::endl;
+    std::cout << "|  Executing FSQL File: " << std::left << std::setw(32) << filepath << " |" << std::endl;
+    std::cout << "|  Database Context: " << std::left << std::setw(36) << current_db << " |" << std::endl;
+    std::cout << "+============================================================+\n" << std::endl;
+
+    std::string line, statement;
+    int line_number = 0;
+    int executed = 0;
+    int successful = 0;
+    int failed = 0;
+
+    while (std::getline(file, line)) {
+        line_number++;
+        
+        // Remove leading/trailing whitespace
+        size_t first = line.find_first_not_of(" \t\r\n");
+        if (first == std::string::npos) continue; // Empty line
+        
+        size_t last = line.find_last_not_of(" \t\r\n");
+        line = line.substr(first, (last - first + 1));
+        
+        // Skip comments (lines starting with --)
+        if (line.rfind("--", 0) == 0) {
+            std::cout << line << std::endl; // Display comments
+            continue;
+        }
+        
+        // Accumulate statement until we hit a semicolon
+        statement += line + " ";
+        
+        if (line.back() == ';') {
+            // Execute the statement
+            executed++;
+            std::cout << "\n[Line " << line_number << "] " << statement << std::endl;
+            
+            std::string result = client.Query(statement);
+            
+            // Check if successful
+            std::string upper_result = result;
+            std::transform(upper_result.begin(), upper_result.end(), upper_result.begin(), ::toupper);
+            
+            if (upper_result.find("ERROR") != std::string::npos || 
+                upper_result.find("FAILED") != std::string::npos) {
+                std::cout << "[FAILED] " << result << std::endl;
+                failed++;
+            } else {
+                std::cout << "[SUCCESS] " << result << std::endl;
+                successful++;
+            }
+            
+            statement.clear();
+        }
+    }
+    
+    file.close();
+    
+    std::cout << "\n+============================================================+" << std::endl;
+    std::cout << "|  EXECUTION SUMMARY" << std::string(37, ' ') << "   |" << std::endl;
+    std::cout << "+------------------------------------------------------------+" << std::endl;
+    std::cout << "|  Total Statements: " << std::left << std::setw(38) << executed << " |" << std::endl;
+    std::cout << "|  Successful:       " << std::left << std::setw(38) << successful << " |" << std::endl;
+    std::cout << "|  Failed:           " << std::left << std::setw(38) << failed << " |" << std::endl;
+    std::cout << "+============================================================+\n" << std::endl;
+    
+    return failed == 0;
 }
 
 // -----------------------------------------------------------------------------
@@ -390,6 +576,34 @@ int main(int argc, char* argv[]) {
         // --- SYNTAX HELP COMMAND ---
         if (input == "syntax" || input == "help" || input == "SYNTAX" || input == "HELP") {
             DisplayDynamicSyntax();
+            continue;
+        }
+
+        // --- EXECUTE FSQL FILE (FrancoSQL Script) ---
+        if (input.rfind("run ", 0) == 0 || input.rfind("RUN ", 0) == 0 || 
+            input.rfind("exec ", 0) == 0 || input.rfind("EXEC ", 0) == 0 ||
+            input.rfind("source ", 0) == 0 || input.rfind("SOURCE ", 0) == 0) {
+            
+            std::string filepath = input.substr(input.find(' ') + 1);
+            
+            // Remove trailing semicolon if present
+            if (!filepath.empty() && filepath.back() == ';') {
+                filepath.pop_back();
+            }
+            
+            // Trim whitespace
+            size_t first = filepath.find_first_not_of(" \t\n\r");
+            size_t last = filepath.find_last_not_of(" \t\n\r");
+            if (first != std::string::npos) {
+                filepath = filepath.substr(first, (last - first + 1));
+            }
+            
+            // Add .fsql extension if not present
+            if (filepath.find('.') == std::string::npos) {
+                filepath += ".fsql";
+            }
+            
+            ExecuteFSQLFile(db_client, filepath, current_db);
             continue;
         }
 

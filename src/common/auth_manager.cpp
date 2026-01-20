@@ -48,12 +48,16 @@ namespace francodb {
     // -------------------------------------------------------------------------
     // Constructor / Destructor
     // -------------------------------------------------------------------------
-    AuthManager::AuthManager(BufferPoolManager *system_bpm, Catalog *system_catalog)
-         : system_bpm_(system_bpm), system_catalog_(system_catalog), initialized_(false) {
-        
-        // [FIX] Pass 'this' to the engine so it can perform auth checks (even if we bypass them with SuperAdmin session)
-        system_engine_ = new ExecutionEngine(system_bpm_, system_catalog_, this);
-        
+    AuthManager::AuthManager(BufferPoolManager *system_bpm, Catalog *system_catalog, DatabaseRegistry *db_registry)
+     : system_bpm_(system_bpm), 
+       system_catalog_(system_catalog), 
+       db_registry_(db_registry), // Initialize member
+       initialized_(false) {
+    
+        // [FIX] Pass 'this' (AuthManager) AND 'db_registry' to the engine
+        // The ExecutionEngine constructor requires: (bpm, catalog, auth, db_registry)
+        system_engine_ = new ExecutionEngine(system_bpm_, system_catalog_, this, db_registry_);
+    
         InitializeSystemDatabase();
         LoadUsers();
     }
@@ -268,19 +272,38 @@ namespace francodb {
         return role != UserRole::DENIED;
     }
 
+    // In auth_manager.cpp - Update HasPermission if needed
     bool AuthManager::HasPermission(UserRole role, StatementType stmt_type) {
         // 1. DENIED
         if (role == UserRole::DENIED) return false;
 
-        // 2. SUPERADMIN
+        // 2. SUPERADMIN - can do everything
         if (role == UserRole::SUPERADMIN) return true;
-        
-        // 3. ADMIN: Full Read/Write/DDL on the DB
+    
+        // 3. ADMIN - can do everything in their database
         if (role == UserRole::ADMIN) {
-            return true; // Simplification: Admins can do everything inside their DB
+            // Admins can create/drop databases and do all DDL/DML
+            switch (stmt_type) {
+                case StatementType::CREATE_DB:
+                case StatementType::DROP_DB:
+                case StatementType::USE_DB:
+                case StatementType::CREATE_TABLE:
+                case StatementType::DROP:
+                case StatementType::CREATE_INDEX:
+                case StatementType::INSERT:
+                case StatementType::SELECT:
+                case StatementType::UPDATE_CMD:
+                case StatementType::DELETE_CMD:
+                case StatementType::BEGIN:
+                case StatementType::COMMIT:
+                case StatementType::ROLLBACK:
+                    return true;
+                default:
+                    return false; // User management reserved for SUPERADMIN
+            }
         }
 
-        // 4. USER: Read/Write (DML) but no DDL (Create/Drop Table)
+        // 4. NORMAL USER - Read/Write (DML) but no DDL
         if (role == UserRole::NORMAL) {
             switch (stmt_type) {
                 case StatementType::SELECT:
@@ -291,11 +314,12 @@ namespace francodb {
                 case StatementType::COMMIT:
                 case StatementType::ROLLBACK:
                     return true;
-                default: return false;
+                default: 
+                    return false;
             }
         }
-        
-        // 5. READONLY
+    
+        // 5. READONLY - only SELECT
         if (role == UserRole::READONLY) {
             return stmt_type == StatementType::SELECT;
         }

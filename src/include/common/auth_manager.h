@@ -6,6 +6,7 @@
 #include <vector>
 #include "catalog/catalog.h"
 #include "buffer/buffer_pool_manager.h"
+#include "network/database_registry.h"
 #include "parser/statement.h" // Needed for StatementType
 
 namespace francodb {
@@ -32,7 +33,7 @@ namespace francodb {
 
     class AuthManager {
     public:
-        AuthManager(BufferPoolManager *system_bpm, Catalog *system_catalog);
+        AuthManager(BufferPoolManager *system_bpm, Catalog *system_catalog, DatabaseRegistry *db_registry);
 
         ~AuthManager();
 
@@ -75,6 +76,7 @@ namespace francodb {
         BufferPoolManager *system_bpm_;
         Catalog *system_catalog_;
         ExecutionEngine *system_engine_; // Owns a private engine for system queries
+        DatabaseRegistry *db_registry_;
 
         std::unordered_map<std::string, UserInfo> users_cache_;
         bool initialized_;

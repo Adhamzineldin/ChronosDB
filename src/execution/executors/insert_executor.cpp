@@ -106,6 +106,9 @@ bool InsertExecutor::Next(Tuple *tuple) {
                 
                 while (curr_page_id != INVALID_PAGE_ID) {
                     Page *page = bpm->FetchPage(curr_page_id);
+                    if (page == nullptr) {
+                        break; // Skip if page fetch fails
+                    }
                     auto *table_page = reinterpret_cast<TablePage *>(page->GetData());
                     
                     for (uint32_t slot = 0; slot < table_page->GetTupleCount(); slot++) {

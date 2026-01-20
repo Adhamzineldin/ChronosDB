@@ -21,7 +21,7 @@ namespace francodb {
         // --- USER MGMT ---
         {"MOSTA5DEM", TokenType::USER},
         {"USER", TokenType::USER},
-        {"3ABD", TokenType::USER}, // "Slave" (Funny/Franco style for user)
+        {"3ABD", TokenType::USER},
         {"WAZEFA", TokenType::ROLE},
         {"ROLE",   TokenType::ROLE},
         {"DOWR",   TokenType::ROLE},
@@ -44,13 +44,13 @@ namespace francodb {
         // --- ROLES (NEW) ---
         {"SUPERADMIN", TokenType::ROLE_SUPERADMIN},
         {"ADMIN",      TokenType::ROLE_ADMIN},
-        {"MODEER",     TokenType::ROLE_ADMIN},    // Arabic for Manager
+        {"MODEER",     TokenType::ROLE_ADMIN},
         {"NORMAL",     TokenType::ROLE_NORMAL},
-        {"3ADI",       TokenType::ROLE_NORMAL},   // Arabic for Normal
+        {"3ADI",       TokenType::ROLE_NORMAL},
         {"READONLY",   TokenType::ROLE_READONLY},
-        {"MOSHAHED",   TokenType::ROLE_READONLY}, // Arabic for Viewer/Watcher
+        {"MOSHAHED",   TokenType::ROLE_READONLY},
         {"DENIED",     TokenType::ROLE_DENIED},
-        {"MAMNO3",     TokenType::ROLE_DENIED},   // Arabic for Forbidden
+        {"MAMNO3",     TokenType::ROLE_DENIED},
 
         // --- TYPES ---
         {"RAKAM", TokenType::INT_TYPE},
@@ -77,7 +77,90 @@ namespace francodb {
         // --- TRANSACTIONS ---
         {"2EBDA2", TokenType::BEGIN_TXN},
         {"2ERGA3", TokenType::ROLLBACK},
-        {"2AKED",  TokenType::COMMIT}
+        {"2AKED",  TokenType::COMMIT},
+        
+        // --- GROUP BY & AGGREGATES ---
+        {"MAGMO3A", TokenType::GROUP},
+        {"GROUP",   TokenType::GROUP},
+        {"B",       TokenType::BY},
+        {"BY",      TokenType::BY},
+        {"ETHA",    TokenType::HAVING},
+        {"LAKEN",   TokenType::HAVING},
+        {"HAVING",  TokenType::HAVING},
+        {"3ADD",    TokenType::COUNT},
+        {"COUNT",   TokenType::COUNT},
+        {"MAG3MO3", TokenType::SUM},
+        {"SUM",     TokenType::SUM},
+        {"MOTOWASET", TokenType::AVG},
+        {"AVG",     TokenType::AVG},
+        {"ASGAR",   TokenType::MIN_AGG},
+        {"MIN",     TokenType::MIN_AGG},
+        {"AKBAR",   TokenType::MAX_AGG},
+        {"MAX",     TokenType::MAX_AGG},
+        
+        // --- ORDER BY ---
+        {"RATEB",    TokenType::ORDER},
+        {"ORDER",    TokenType::ORDER},
+        {"TASE3DI",  TokenType::ASC},
+        {"TALE3",    TokenType::ASC},
+        {"ASC",      TokenType::ASC},
+        {"TANAZOLI", TokenType::DESC},
+        {"NAZL",     TokenType::DESC},
+        {"DESC",     TokenType::DESC},
+        
+        // --- LIMIT / OFFSET ---
+        {"7ADD",      TokenType::LIMIT},
+        {"LIMIT",     TokenType::LIMIT},
+        {"EBDA2MEN",  TokenType::OFFSET},
+        {"OFFSET",    TokenType::OFFSET},
+        
+        // --- DISTINCT ---
+        {"MOTA3MEZ", TokenType::DISTINCT},
+        {"DISTINCT", TokenType::DISTINCT},
+        {"KOL",      TokenType::ALL},
+        {"ALL",      TokenType::ALL},
+        
+        // --- JOINS ---
+        {"ENTEDAH",  TokenType::JOIN},
+        {"JOIN",     TokenType::JOIN},
+        {"DA5ELY",   TokenType::INNER},
+        {"INNER",    TokenType::INNER},
+        {"SHMAL",    TokenType::LEFT},
+        {"LEFT",     TokenType::LEFT},
+        {"YAMEN",    TokenType::RIGHT},
+        {"RIGHT",    TokenType::RIGHT},
+        {"5AREGY",   TokenType::OUTER},
+        {"OUTER",    TokenType::OUTER},
+        {"TAQATE3",  TokenType::CROSS},
+        {"CROSS",    TokenType::CROSS},
+        
+        // --- FOREIGN KEYS ---
+        {"FOREIGN",    TokenType::FOREIGN},
+        {"KEY",        TokenType::KEY},
+        {"YOSHEER",    TokenType::REFERENCES},
+        {"REFERENCES", TokenType::REFERENCES},
+        {"TATABE3",    TokenType::CASCADE},
+        {"CASCADE",    TokenType::CASCADE},
+        {"MANE3",      TokenType::RESTRICT},
+        {"RESTRICT",   TokenType::RESTRICT},
+        {"SET",        TokenType::SET},
+        {"NO",         TokenType::NO},
+        {"E3RA2",      TokenType::ACTION},
+        {"ACTION",     TokenType::ACTION},
+        
+        // --- CONSTRAINTS ---
+        {"FADY",         TokenType::NULL_LIT},
+        {"NULL",         TokenType::NULL_LIT},
+        {"MESH",         TokenType::NOT},
+        {"NOT",          TokenType::NOT},
+        {"EFRADY",       TokenType::DEFAULT_KW},
+        {"DEFAULT",      TokenType::DEFAULT_KW},
+        {"WAHED",        TokenType::UNIQUE},
+        {"UNIQUE",       TokenType::UNIQUE},
+        {"FA7S",         TokenType::CHECK},
+        {"CHECK",        TokenType::CHECK},
+        {"TAZAYED",      TokenType::AUTO_INCREMENT},
+        {"AUTO_INCREMENT", TokenType::AUTO_INCREMENT}
     };
 
     Token Lexer::NextToken() {
@@ -279,6 +362,55 @@ namespace francodb {
             case TokenType::BEGIN_TXN: return "BEGIN";
             case TokenType::COMMIT: return "COMMIT";
             case TokenType::ROLLBACK: return "ROLLBACK";
+            
+            // GROUP BY & Aggregates
+            case TokenType::GROUP: return "GROUP";
+            case TokenType::BY: return "BY";
+            case TokenType::HAVING: return "HAVING";
+            case TokenType::COUNT: return "COUNT";
+            case TokenType::SUM: return "SUM";
+            case TokenType::AVG: return "AVG";
+            case TokenType::MIN_AGG: return "MIN";
+            case TokenType::MAX_AGG: return "MAX";
+            
+            // ORDER BY
+            case TokenType::ORDER: return "ORDER";
+            case TokenType::ASC: return "ASC";
+            case TokenType::DESC: return "DESC";
+            
+            // LIMIT/OFFSET
+            case TokenType::LIMIT: return "LIMIT";
+            case TokenType::OFFSET: return "OFFSET";
+            
+            // DISTINCT
+            case TokenType::DISTINCT: return "DISTINCT";
+            case TokenType::ALL: return "ALL";
+            
+            // JOINS
+            case TokenType::JOIN: return "JOIN";
+            case TokenType::INNER: return "INNER";
+            case TokenType::LEFT: return "LEFT";
+            case TokenType::RIGHT: return "RIGHT";
+            case TokenType::OUTER: return "OUTER";
+            case TokenType::CROSS: return "CROSS";
+            
+            // FOREIGN KEYS
+            case TokenType::FOREIGN: return "FOREIGN";
+            case TokenType::KEY: return "KEY";
+            case TokenType::REFERENCES: return "REFERENCES";
+            case TokenType::CASCADE: return "CASCADE";
+            case TokenType::RESTRICT: return "RESTRICT";
+            case TokenType::SET: return "SET";
+            case TokenType::NO: return "NO";
+            case TokenType::ACTION: return "ACTION";
+            
+            // CONSTRAINTS
+            case TokenType::NULL_LIT: return "NULL";
+            case TokenType::NOT: return "NOT";
+            case TokenType::DEFAULT_KW: return "DEFAULT";
+            case TokenType::UNIQUE: return "UNIQUE";
+            case TokenType::CHECK: return "CHECK";
+            case TokenType::AUTO_INCREMENT: return "AUTO_INCREMENT";
             
             default: return "UNKNOWN";
         }

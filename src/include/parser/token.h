@@ -46,6 +46,55 @@ namespace francodb {
         PRIMARY_KEY, // ASASI / MOFTA7
         ON,          // 3ALA
 
+        // --- GROUP BY & AGGREGATES ---
+        GROUP,       // MAGMO3A / GROUP
+        BY,          // B / BY
+        HAVING,      // ETHA / HAVING
+        COUNT,       // 3ADD / COUNT
+        SUM,         // MAG3MO3 / SUM
+        AVG,         // MOTO3ASET / AVG
+        MIN_AGG,     // ASGAR / MIN
+        MAX_AGG,     // AKBAR / MAX
+        
+        // --- ORDER BY ---
+        ORDER,       // RATEB / ORDER
+        ASC,         // TASE3DI / ASC
+        DESC,        // TANAZOLI / DESC
+        
+        // --- LIMIT / OFFSET ---
+        LIMIT,       // 7ADD / LIMIT
+        OFFSET,      // EBDA2MEN / OFFSET
+        
+        // --- DISTINCT ---
+        DISTINCT,    // MOTA3MEZ / DISTINCT
+        ALL,         // KOL / ALL
+        
+        // --- JOINS ---
+        JOIN,        // ENTEDAH / JOIN
+        INNER,       // DA5ELY / INNER
+        LEFT,        // SHMAL / LEFT
+        RIGHT,       // YAMEN / RIGHT
+        OUTER,       // 5AREGY / OUTER
+        CROSS,       // TAQATE3 / CROSS
+        
+        // --- FOREIGN KEYS ---
+        FOREIGN,     // 5AREGY / FOREIGN
+        KEY,         // MOFTA7 / KEY
+        REFERENCES,  // YOSHEER / REFERENCES
+        CASCADE,     // TATABE3 / CASCADE
+        RESTRICT,    // MANE3 / RESTRICT
+        SET,         // 5ALY / SET
+        NO,          // LA / NO
+        ACTION,      // E3RA2 / ACTION
+        
+        // --- CONSTRAINTS ---
+        NULL_LIT,    // FADY / NULL
+        NOT,         // MESH / NOT
+        DEFAULT_KW,  // EFRADY / DEFAULT
+        UNIQUE,      // WAHED / UNIQUE
+        CHECK,       //فحص / CHECK
+        AUTO_INCREMENT, // TAZAYED / AUTO_INCREMENT
+
         // --- LITERALS ---
         DECIMAL_LITERAL,
         TRUE_LIT,    // AH

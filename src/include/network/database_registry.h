@@ -73,6 +73,22 @@ public:
         auto it = external_catalog_.find(name);
         return (it == external_catalog_.end()) ? nullptr : it->second;
     }
+    
+    
+    bool Remove(const std::string &name) {
+        auto it = registry_.find(name);
+        if (it == registry_.end()) return false;
+        
+        // Flush before removing
+        if (it->second->bpm) {
+            it->second->bpm->FlushAllPages();
+        }
+        
+        registry_.erase(it);
+        external_bpm_.erase(name);
+        external_catalog_.erase(name);
+        return true;
+    }
 
     // Flush all databases (save all catalogs and unpin all pages)
     void FlushAllDatabases();

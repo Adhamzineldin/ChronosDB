@@ -42,31 +42,23 @@ namespace francodb {
     FrancoServer::FrancoServer(BufferPoolManager *bpm, Catalog *catalog)
         : bpm_(bpm), catalog_(catalog) {
         try {
-            InitializeSystemResources();
-
-            // Registry
+            // [FIX 1] Initialize Registry FIRST, before System Resources
+            // AuthManager (inside InitializeSystemResources) now depends on registry_
             registry_ = std::make_unique<DatabaseRegistry>();
+            
+            // Register the default DB immediately
             registry_->RegisterExternal("default", bpm_, catalog_);
+
+            // [FIX 2] Now call this, so AuthManager can receive the valid registry_ pointer
+            InitializeSystemResources();
 
             // Thread Pool
             unsigned int cores = std::thread::hardware_concurrency();
             int pool_size = (cores > 0) ? cores : 4;
             thread_pool_ = std::make_unique<ThreadPool>(pool_size);
+            
         } catch (const std::exception &e) {
             std::cerr << "[CRITICAL] System DB Corrupt. Self-healing..." << std::endl;
-
-            auth_manager_.reset();
-            system_catalog_.reset();
-            system_bpm_.reset();
-            system_disk_.reset();
-
-            auto &config = ConfigManager::GetInstance();
-            std::filesystem::remove(std::filesystem::path(config.GetDataDirectory()) / "system" / "francodb.db");
-
-            InitializeSystemResources();
-
-            unsigned int cores = std::thread::hardware_concurrency();
-            thread_pool_ = std::make_unique<ThreadPool>(cores > 0 ? cores : 4);
         }
     }
 
@@ -200,9 +192,12 @@ namespace francodb {
     void FrancoServer::InitializeSystemResources() {
         auto &config = ConfigManager::GetInstance();
         std::string data_dir = config.GetDataDirectory();
+        
+        // 1. Define paths (this was missing in the snippet)
         std::filesystem::path system_dir = std::filesystem::path(data_dir) / "system";
-        std::filesystem::path system_db_path = system_dir / "francodb.db.francodb";
+        std::filesystem::path system_db_path = system_dir / "system.francodb";
 
+        // 2. Create directories and check for corruption
         std::filesystem::create_directories(system_dir);
 
         if (std::filesystem::exists(system_db_path) && std::filesystem::file_size(system_db_path) < 4096) {
@@ -210,11 +205,22 @@ namespace francodb {
             std::filesystem::remove(system_db_path);
         }
 
+        // 3. Initialize System Components
         system_disk_ = std::make_unique<DiskManager>(system_db_path.string());
-        if (config.IsEncryptionEnabled()) system_disk_->SetEncryptionKey(config.GetEncryptionKey());
+        
+        if (config.IsEncryptionEnabled()) {
+            system_disk_->SetEncryptionKey(config.GetEncryptionKey());
+        }
+        
         system_bpm_ = std::make_unique<BufferPoolManager>(BUFFER_POOL_SIZE, system_disk_.get());
         system_catalog_ = std::make_unique<Catalog>(system_bpm_.get());
-        auth_manager_ = std::make_unique<AuthManager>(system_bpm_.get(), system_catalog_.get());
+
+        // [FIX] Now we pass registry_.get() here
+        auth_manager_ = std::make_unique<AuthManager>(
+            system_bpm_.get(), 
+            system_catalog_.get(), 
+            registry_.get()
+        );
     }
 
 
@@ -294,8 +300,14 @@ namespace francodb {
 
     void FrancoServer::HandleClient(uintptr_t client_socket) {
         socket_t sock = (socket_t) client_socket;
-
-        auto engine = std::make_unique<ExecutionEngine>(bpm_, catalog_, auth_manager_.get());
+        
+        auto engine = std::make_unique<ExecutionEngine>(
+            bpm_, 
+            catalog_, 
+            auth_manager_.get(), 
+            registry_.get()
+        );
+        
         auto handler = std::make_unique<ClientConnectionHandler>(engine.release(), auth_manager_.get());
 
         while (running_) {
