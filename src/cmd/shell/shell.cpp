@@ -223,6 +223,16 @@ int main(int argc, char* argv[]) {
         if (input == "exit" || input == "quit") break;
         if (input.empty()) continue;
 
+        // --- CLEAR COMMAND ---
+        if (input == "clear" || input == "cls") {
+            #ifdef _WIN32
+                system("cls");
+            #else
+                system("clear");
+            #endif
+            continue;
+        }
+
         // --- [FIXED] PROMPT UPDATE LOGIC - Only update on success ---
         std::string upper_input = input;
         std::transform(upper_input.begin(), upper_input.end(), upper_input.begin(), ::toupper);
