@@ -43,8 +43,10 @@ void TestIndexExecution() {
     auto *disk_manager = new DiskManager(db_file);
     auto *bpm = new BufferPoolManager(50, disk_manager);
     auto *catalog = new Catalog(bpm);
-    auto *auth_manager = new AuthManager(bpm, catalog);
-    ExecutionEngine engine(bpm, catalog, auth_manager);
+    auto *db_registry = new DatabaseRegistry();
+    db_registry->RegisterExternal("default", bpm, catalog);
+    auto *auth_manager = new AuthManager(bpm, catalog, db_registry);
+    ExecutionEngine engine(bpm, catalog, auth_manager, db_registry);
 
     std::cout << "=== STARTING INDEX EXECUTION TEST ===" << std::endl;
 
@@ -113,6 +115,7 @@ void TestIndexExecution() {
 
     // Cleanup
     delete auth_manager;
+    delete db_registry;
     delete catalog;
     delete bpm;
     delete disk_manager;

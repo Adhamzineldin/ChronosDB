@@ -13,6 +13,7 @@
 #include "parser/parser.h"
 #include "execution/execution_engine.h"
 #include "common/auth_manager.h"
+#include "network/database_registry.h"
 
 using namespace francodb;
 
@@ -20,6 +21,7 @@ using namespace francodb;
 DiskManager *g_disk_manager;
 BufferPoolManager *g_bpm;
 Catalog *g_catalog;
+DatabaseRegistry *g_db_registry;
 std::mutex g_log_mutex;
 
 // Helper to run SQL
@@ -36,8 +38,8 @@ void RunSQL(ExecutionEngine &engine, const std::string &sql) {
 
 // PHASE 1: POPULATE (Insert only)
 void PopulationWorker(int id, int count) {
-    auto *auth_manager = new AuthManager(g_bpm, g_catalog);
-    ExecutionEngine engine(g_bpm, g_catalog, auth_manager);
+    auto *auth_manager = new AuthManager(g_bpm, g_catalog, g_db_registry);
+    ExecutionEngine engine(g_bpm, g_catalog, auth_manager, g_db_registry);
     for (int i = 0; i < count; i++) {
         int user_id = (id * 1000) + i;
         std::string sql = "EMLA GOWA users ELKEYAM (" + std::to_string(user_id) + ", 'User" + std::to_string(user_id) + "');";
@@ -48,8 +50,8 @@ void PopulationWorker(int id, int count) {
 
 // PHASE 2: STRESS (Update/Delete/Select)
 void StressWorker(int id, int num_ops, int max_users) {
-    auto *auth_manager = new AuthManager(g_bpm, g_catalog);
-    ExecutionEngine engine(g_bpm, g_catalog, auth_manager);
+    auto *auth_manager = new AuthManager(g_bpm, g_catalog, g_db_registry);
+    ExecutionEngine engine(g_bpm, g_catalog, auth_manager, g_db_registry);
     std::mt19937 rng(id + 999);
     std::uniform_int_distribution<int> dist(0, 2); // 0=Select, 1=Update, 2=Delete
     std::uniform_int_distribution<int> user_dist(0, max_users - 1);
@@ -86,11 +88,13 @@ void TestRealWorldTraffic() {
     g_disk_manager = new DiskManager(db_file);
     g_bpm = new BufferPoolManager(100, g_disk_manager); // More RAM for speed
     g_catalog = new Catalog(g_bpm);
+    g_db_registry = new DatabaseRegistry();
+    g_db_registry->RegisterExternal("default", g_bpm, g_catalog);
     
     // 1. Setup Table
     {
-        auto *auth_manager = new AuthManager(g_bpm, g_catalog);
-        ExecutionEngine setup_engine(g_bpm, g_catalog, auth_manager);
+        auto *auth_manager = new AuthManager(g_bpm, g_catalog, g_db_registry);
+        ExecutionEngine setup_engine(g_bpm, g_catalog, auth_manager, g_db_registry);
         RunSQL(setup_engine, "2E3MEL GADWAL users (id RAKAM, name GOMLA);");
         RunSQL(setup_engine, "2E3MEL FEHRIS idx_users 3ALA users (id);");
         delete auth_manager;
@@ -118,6 +122,7 @@ void TestRealWorldTraffic() {
     delete g_catalog;
     delete g_bpm;
     delete g_disk_manager;
+    delete g_db_registry;
     
     // Clean up test files
     if (std::filesystem::exists(db_file)) std::filesystem::remove(db_file);

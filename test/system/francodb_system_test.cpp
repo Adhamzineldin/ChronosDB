@@ -10,6 +10,7 @@
 #include "parser/parser.h"
 #include "execution/execution_engine.h"
 #include "common/auth_manager.h"
+#include "network/database_registry.h"
 
 using namespace francodb;
 
@@ -351,8 +352,10 @@ void TestDataPersistence(const std::string &db_file) {
     auto *disk_manager2 = new DiskManager(db_file);
     auto *bpm2 = new BufferPoolManager(50, disk_manager2);
     auto *catalog2 = new Catalog(bpm2);
-    auto *auth_manager2 = new AuthManager(bpm2, catalog2);
-    ExecutionEngine engine2(bpm2, catalog2, auth_manager2);
+    auto *db_registry2 = new DatabaseRegistry();
+    db_registry2->RegisterExternal("default", bpm2, catalog2);
+    auto *auth_manager2 = new AuthManager(bpm2, catalog2, db_registry2);
+    ExecutionEngine engine2(bpm2, catalog2, auth_manager2, db_registry2);
     
     // Verify data persisted
     std::cout << "[10.2] Verifying data persisted after restart..." << std::endl;
@@ -364,6 +367,7 @@ void TestDataPersistence(const std::string &db_file) {
     RunSQL(engine2, "2E5TAR * MEN users LAMA id = 200;"); // Should use index
     
     delete auth_manager2;
+    delete db_registry2;
     delete catalog2;
     delete bpm2;
     delete disk_manager2;
@@ -449,15 +453,19 @@ void TestFrancoDBSystem() {
     auto *disk_manager = new DiskManager(db_file);
     auto *bpm = new BufferPoolManager(50, disk_manager);
     auto *catalog = new Catalog(bpm);
-    auto *auth_manager = new AuthManager(bpm, catalog);
-    ExecutionEngine engine(bpm, catalog, auth_manager);
+    auto *db_registry = new DatabaseRegistry();
+    db_registry->RegisterExternal("default", bpm, catalog);
+    auto *auth_manager = new AuthManager(bpm, catalog, db_registry);
+    ExecutionEngine engine(bpm, catalog, auth_manager, db_registry);
     
     auto cleanup = [&]() {
         if (auth_manager) delete auth_manager;
+        if (db_registry) delete db_registry;
         if (catalog) delete catalog;
         if (bpm) delete bpm;
         if (disk_manager) delete disk_manager;
         auth_manager = nullptr;
+        db_registry = nullptr;
         catalog = nullptr;
         bpm = nullptr;
         disk_manager = nullptr;
@@ -486,10 +494,12 @@ void TestFrancoDBSystem() {
         
         // Close the first database before testing persistence
         delete auth_manager;
+        delete db_registry;
         delete catalog;
         delete bpm;
         delete disk_manager;
         auth_manager = nullptr;
+        db_registry = nullptr;
         catalog = nullptr;
         bpm = nullptr;
         disk_manager = nullptr;

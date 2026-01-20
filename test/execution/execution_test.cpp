@@ -40,10 +40,12 @@ void TestExecutionEngine() {
     auto *disk_manager = new DiskManager(db_file);
     auto *bpm = new BufferPoolManager(50, disk_manager); // 50 pages memory
     auto *catalog = new Catalog(bpm);
-    auto *auth_manager = new AuthManager(bpm, catalog);
+    auto *db_registry = new DatabaseRegistry();
+    db_registry->RegisterExternal("default", bpm, catalog);
+    auto *auth_manager = new AuthManager(bpm, catalog, db_registry);
     
     // 2. Start Execution Engine
-    ExecutionEngine engine(bpm, catalog, auth_manager);
+    ExecutionEngine engine(bpm, catalog, auth_manager, db_registry);
 
     try {
         std::cout << "--- STARTING FRANCO DB ENGINE ---" << std::endl;
@@ -98,6 +100,7 @@ void TestExecutionEngine() {
         std::cerr << "CRITICAL ERROR: " << e.what() << std::endl;
         // Cleanup on error
         delete auth_manager;
+        delete db_registry;
         delete catalog;
         delete bpm;
         delete disk_manager;
@@ -112,6 +115,7 @@ void TestExecutionEngine() {
 
     // Cleanup
     delete auth_manager;
+    delete db_registry;
     delete catalog;
     delete bpm;
     delete disk_manager;
