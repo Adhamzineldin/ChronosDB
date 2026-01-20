@@ -4,6 +4,10 @@
 #include "catalog/index_info.h"
 #include "buffer/buffer_pool_manager.h"
 #include "storage/page/free_page_manager.h"
+#include "storage/table/table_page.h"
+#include "storage/table/tuple.h"
+#include "common/value.h"
+#include "storage/index/index_key.h"
 #include <iostream>
 #include <sstream>
 
@@ -51,6 +55,37 @@ IndexInfo *Catalog::CreateIndex(const std::string &index_name, const std::string
 
     auto index_info = std::make_unique<IndexInfo>(index_name, table_name, col_name, type, bpm_);
     IndexInfo *ptr = index_info.get();
+    
+    // ========================================================================
+    // POPULATE INDEX WITH EXISTING DATA
+    // When creating an index on a table that already has data, we need to scan
+    // the table and insert all existing (key, RID) pairs into the index.
+    // ========================================================================
+    page_id_t curr_page_id = table->first_page_id_;
+    while (curr_page_id != INVALID_PAGE_ID) {
+        Page *page = bpm_->FetchPage(curr_page_id);
+        if (!page) break;
+        
+        auto *table_page = reinterpret_cast<TablePage *>(page->GetData());
+        for (uint32_t slot = 0; slot < table_page->GetTupleCount(); slot++) {
+            RID rid(curr_page_id, slot);
+            Tuple tuple;
+            if (table_page->GetTuple(rid, &tuple, nullptr)) {
+                // Extract the key value from the tuple
+                Value key_val = tuple.GetValue(table->schema_, col_idx);
+                
+                // Create a GenericKey and insert into the B+Tree
+                GenericKey<8> key;
+                key.SetFromValue(key_val);
+                ptr->b_plus_tree_->Insert(key, rid, nullptr);
+            }
+        }
+        
+        page_id_t next_page = table_page->GetNextPageId();
+        bpm_->UnpinPage(curr_page_id, false);
+        curr_page_id = next_page;
+    }
+    // ========================================================================
     
     indexes_[index_name] = std::move(index_info);
     index_names_[index_name] = ptr;

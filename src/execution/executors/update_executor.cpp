@@ -95,7 +95,6 @@ bool UpdateExecutor::Next(Tuple *tuple) {
     }
 
     // 2. APPLY PHASE (Update indexes, Delete Old, Insert New)
-    std::cerr << "[DEBUG UPDATE] Collected " << updates_to_apply.size() << " updates to apply" << std::endl;
     int count = 0;
     for (const auto &update : updates_to_apply) {
         // Verify the tuple still exists (might have been deleted by another thread)
@@ -122,44 +121,28 @@ bool UpdateExecutor::Next(Tuple *tuple) {
             
             if (col.IsPrimaryKey() && col.GetName() == plan_->target_column_) {
                 Value new_pk_value = update.new_tuple.GetValue(table_info_->schema_, i);
-                std::cerr << "[DEBUG UPDATE] Checking PK uniqueness: column=" << col.GetName() 
-                          << ", new_value=" << new_pk_value.GetAsInteger() 
-                          << ", old_rid=" << update.old_rid.GetPageId() << ":" << update.old_rid.GetSlotId() << std::endl;
                 bool found_duplicate = false;
                 
                 // Try to use index first (faster)
                 auto indexes = exec_ctx_->GetCatalog()->GetTableIndexes(plan_->table_name_);
-                std::cerr << "[DEBUG UPDATE] Found " << indexes.size() << " indexes on table" << std::endl;
                 bool has_index = false;
                 for (auto *index : indexes) {
-                    std::cerr << "[DEBUG UPDATE] Checking index: " << index->name_ << " on column: " << index->col_name_ << std::endl;
                     if (index->col_name_ == col.GetName()) {
                         has_index = true;
-                        std::cerr << "[DEBUG UPDATE] Using index for PK check" << std::endl;
                         GenericKey<8> key;
                         key.SetFromValue(new_pk_value);
                         
                         std::vector<RID> result_rids;
                         if (index->b_plus_tree_->GetValue(key, &result_rids, txn_)) {
-                            std::cerr << "[DEBUG UPDATE] Index returned " << result_rids.size() << " RIDs" << std::endl;
                             // Check if any of the RIDs point to non-deleted tuples (excluding current)
                             for (const RID &rid : result_rids) {
-                                std::cerr << "[DEBUG UPDATE] Checking RID " << rid.GetPageId() << ":" << rid.GetSlotId() << std::endl;
-                                if (rid == update.old_rid) {
-                                    std::cerr << "[DEBUG UPDATE] Skipping current tuple" << std::endl;
-                                    continue; // Skip current tuple
-                                }
+                                if (rid == update.old_rid) continue; // Skip current tuple
                                 Tuple existing_tuple;
                                 if (table_info_->table_heap_->GetTuple(rid, &existing_tuple, txn_)) {
-                                    std::cerr << "[DEBUG UPDATE] DUPLICATE FOUND!" << std::endl;
                                     found_duplicate = true;
                                     break;
-                                } else {
-                                    std::cerr << "[DEBUG UPDATE] RID points to deleted tuple" << std::endl;
                                 }
                             }
-                        } else {
-                            std::cerr << "[DEBUG UPDATE] Index returned no matches" << std::endl;
                         }
                         break;
                     }
