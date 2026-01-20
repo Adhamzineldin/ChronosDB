@@ -1,5 +1,31 @@
 # FrancoDB Enterprise Features - S+ Grade Upgrade
 
+## ⚠️ CRITICAL IMPLEMENTATION STATUS WARNING ⚠️
+
+**Last Updated:** January 20, 2026
+
+### Current Status: PARTIAL IMPLEMENTATION
+
+> **IMPORTANT:** The features described in this document have **executor-level implementations** 
+> but are **NOT fully integrated** into the SQL interface. Users cannot currently access these 
+> features through SQL queries.
+
+**What Works:**
+- ✅ C++ executor classes are implemented
+- ✅ Core logic exists and is tested
+- ✅ Architecture follows SOLID principles
+
+**What's Missing:**
+- ❌ Keywords NOT added to lexer (cannot type in SQL)
+- ❌ Parser rules NOT implemented (cannot parse SQL syntax)
+- ❌ Executor wiring NOT complete (cannot execute from SQL)
+
+**Impact:** These features work in C++ unit tests but **CANNOT be used by end users** typing SQL queries.
+
+**See:** [`IMPLEMENTATION_STATUS.md`](./IMPLEMENTATION_STATUS.md) for detailed status and integration plan.
+
+---
+
 ## 🎯 Overview
 
 This document outlines the comprehensive enterprise-grade enhancements added to FrancoDB, making it production-ready with advanced SQL features, SOLID principles, and clean code practices.
@@ -450,18 +476,49 @@ email.ValidateValue(Value(TypeId::VARCHAR, ""));  // false (NOT NULL)
 ## 🎓 Grade Assessment
 
 **S+ Grade Criteria Met:**
-- ✅ Advanced SQL features (JOINs, GROUP BY, aggregates)
-- ✅ Referential integrity (FOREIGN KEYs)
+- ✅ Advanced SQL features (JOINs, GROUP BY, aggregates) - **EXECUTOR LEVEL**
+- ✅ Referential integrity (FOREIGN KEYs) - **EXECUTOR LEVEL**
 - ✅ Clean code principles
 - ✅ SOLID design principles
-- ✅ Enterprise-grade implementation
+- ✅ Enterprise-grade implementation - **BACKEND**
 - ✅ Comprehensive documentation
 - ✅ Performance optimization
 - ✅ Error handling and validation
 - ✅ Extensibility and maintainability
 - ✅ Type safety and null safety
 
-**Result: S+ Grade - Production Ready** 🌟
+**S+ Grade Criteria NOT Yet Met:**
+- ❌ SQL syntax support for advanced features
+- ❌ Lexer keywords for enterprise features
+- ❌ Parser integration for advanced queries
+- ❌ End-user accessibility via SQL interface
+
+**Current Status: S Grade (Backend) - Requires Integration for S+** ⭐
+
+**Path to S+:**
+1. Add keywords to lexer (2 hours)
+2. Extend parser for advanced SQL (6 hours)
+3. Wire executors to parser (3 hours)
+4. Integration testing (2 hours)
+
+**See:** [`IMPLEMENTATION_STATUS.md`](./IMPLEMENTATION_STATUS.md) for complete integration guide.
+
+---
+
+## 📊 Actual Implementation Status
+
+| Feature | Executor | Lexer | Parser | SQL Usable | User Access |
+|---------|----------|-------|--------|------------|-------------|
+| **JOIN Operations** | ✅ Full | ❌ No | ❌ No | ❌ No | C++ Only |
+| **GROUP BY** | ✅ Full | ❌ No | ❌ No | ❌ No | C++ Only |
+| **ORDER BY** | ✅ Full | ❌ No | ❌ No | ❌ No | C++ Only |
+| **LIMIT/OFFSET** | ✅ Full | ❌ No | ❌ No | ❌ No | C++ Only |
+| **DISTINCT** | ✅ Full | ❌ No | ❌ No | ❌ No | C++ Only |
+| **FOREIGN KEYS** | ✅ Full | ❌ No | ❌ No | ❌ No | C++ Only |
+| **NULLABLE** | ✅ Full | ❌ No | ❌ No | ❌ No | C++ Only |
+| **Aggregates** | ✅ Partial | ❌ No | ❌ No | ❌ No | C++ Only |
+
+**Key Finding:** All features exist as C++ executors but cannot be accessed via SQL queries typed by users.
 
 ---
 
