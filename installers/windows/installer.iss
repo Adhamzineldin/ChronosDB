@@ -87,10 +87,9 @@ Root: HKCR; Subkey: "maayn\shell\open\command"; ValueType: string; ValueName: ""
 Filename: "sc.exe"; Parameters: "stop FrancoDBService"; Flags: runhidden; RunOnceId: "StopService"
 Filename: "sc.exe"; Parameters: "delete FrancoDBService"; Flags: runhidden; RunOnceId: "DeleteService"
 
+
+
 [Code]
-// ... PASTE THE CODE SECTION FROM THE PREVIOUS REPLY HERE ...
-// (The [Code] section handles the Inputs, Service Creation logic, etc.
-// It is identical to the "Phase 3" script I gave you earlier.)
 
 var
   PortPage: TInputQueryWizardPage;
@@ -105,6 +104,27 @@ var
   ServiceStarted: Boolean;
   ServiceRebootRequired: Boolean;
   ServiceStartResult: Integer;
+
+// ==============================================================================
+// HELPER: PROCESS CHECKING (Crucial Fix)
+// ==============================================================================
+function IsProcessRunning(const FileName: String): Boolean;
+var
+  FSWbemLocator: Variant;
+  FWbemObjectSet: Variant;
+  Query: String;
+begin
+  Result := False;
+  try
+    FSWbemLocator := CreateOleObject('WbemScripting.SWbemLocator');
+    FWbemObjectSet := FSWbemLocator.ConnectServer('', 'root\CIMV2', '', '');
+    Query := 'SELECT * FROM Win32_Process WHERE Name="' + FileName + '"';
+    FWbemObjectSet := FWbemObjectSet.ExecQuery(Query);
+    Result := (FWbemObjectSet.Count > 0);
+  except
+    Result := False; // Fallback if WMI fails
+  end;
+end;
 
 function NeedsAddPath(Param: string): boolean;
 var
@@ -207,15 +227,82 @@ begin
      GeneratedEncryptionKey := GenerateEncryptionKey();
 end;
 
-// HELPER: Checks if a specific EXE is running using tasklist
-function IsAppRunning(const FileName: string): Boolean;
+// ============================================================================== 
+// IMPROVED SERVICE STATE CHECKING
+// ==============================================================================
+
+function GetServiceState(const ServiceName: String): Integer;
 var
   ResultCode: Integer;
+  TempFile: String;
+  Lines: TArrayOfString;
+  I: Integer;
 begin
-  // tasklist returns 0 if found, 1 if not found
-  Exec('cmd.exe', '/C tasklist /FI "IMAGENAME eq ' + FileName + '" | find /I "' + FileName + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Result := (ResultCode = 0);
+  Result := -1; // -1 = Unknown/Not Found
+  TempFile := ExpandConstant('{tmp}\service_state.txt');
+  
+  if Exec('cmd.exe', '/C sc query "' + ServiceName + '" > "' + TempFile + '" 2>&1', 
+          '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+  begin
+    if LoadStringsFromFile(TempFile, Lines) then
+    begin
+      for I := 0 to GetArrayLength(Lines) - 1 do
+      begin
+        if Pos('STATE', Lines[I]) > 0 then
+        begin
+          if Pos('STOPPED', Lines[I]) > 0 then Result := 1
+          else if Pos('STOP_PENDING', Lines[I]) > 0 then Result := 2
+          else if Pos('RUNNING', Lines[I]) > 0 then Result := 4
+          else if Pos('START_PENDING', Lines[I]) > 0 then Result := 3;
+          Break;
+        end;
+      end;
+    end;
+    DeleteFile(TempFile);
+  end;
 end;
+
+function WaitForServiceStop(const ServiceName: String; MaxWaitSec: Integer): Boolean;
+var
+  I, State: Integer;
+  ProcessRunning: Boolean;
+begin
+  Result := False;
+  
+  for I := 1 to MaxWaitSec do
+  begin
+    State := GetServiceState(ServiceName);
+    
+    // Check 1: Is the Service Manager saying it's stopped?
+    if (State = 1) or (State = -1) then
+    begin
+      // Check 2: Is the ACTUAL PROCESS still running? (The "Zombie" Check)
+      // We check for both service wrapper and the server itself
+      ProcessRunning := IsProcessRunning('francodb_server.exe') or IsProcessRunning('francodb_service.exe');
+      
+      if not ProcessRunning then
+      begin
+        Result := True;
+        Break;
+      end;
+      
+      WizardForm.StatusLabel.Caption := 'Service stopped, waiting for process cleanup...';
+    end
+    else
+    begin
+      if State = 2 then
+        WizardForm.StatusLabel.Caption := 'Saving data to disk... (' + IntToStr(I) + 's)'
+      else
+        WizardForm.StatusLabel.Caption := 'Stopping service... (' + IntToStr(I) + 's)';
+    end;
+    
+    Sleep(1000);
+  end;
+end;
+
+// ==============================================================================
+// MAIN INSTALLATION LOGIC
+// ==============================================================================
 
 procedure CurStepChanged(CurStep: TSetupStep);
 var
@@ -224,60 +311,45 @@ var
   EncEnabled: Boolean;
   ResultCode, I: Integer;
   ServicePath, DataDir, LogDir: String;
+  ServiceStopped: Boolean;
 begin
-  // ==============================================================================
-  // 1. SAFE SHUTDOWN LOGIC (NO FORCE KILL)
-  // ==============================================================================
   if CurStep = ssInstall then
   begin
-    // A. Ask the service to stop nicely
+    WizardForm.StatusLabel.Caption := 'Stopping FrancoDB...';
+    
     Exec('sc.exe', 'stop FrancoDBService', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     
-    // B. Wait up to 30 Seconds (checking every 1 second)
-    WizardForm.StatusLabel.Caption := 'Waiting for graceful database shutdown (Max 30s)...';
+    // Wait up to 120 seconds for full shutdown
+    ServiceStopped := WaitForServiceStop('FrancoDBService', 120);
     
-    for I := 1 to 30 do
+    if not ServiceStopped then
     begin
-      if not IsAppRunning('francodb_server.exe') then
-      begin
-        // Process is gone! We can proceed safely.
-        Break;
-      end;
-      Sleep(1000); // Wait 1 second
-    end;
-
-    // C. The "User Must Stop It" Fallback
-    // If it is STILL running after 30 seconds, we refuse to continue.
-    while IsAppRunning('francodb_server.exe') do
-    begin
-      // FIX: Changed 'mbCritical' to 'mbError'
-      if MsgBox('Safe Shutdown Failed.' + #13#10 + #13#10 +
-                'The server is taking too long to save data.' + #13#10 +
-                'To prevent corruption, we will NOT force kill it.' + #13#10 + #13#10 +
-                'Please open Task Manager, end "francodb_server.exe", and click OK.', 
-                mbError, MB_OKCANCEL) = IDCANCEL then
-      begin
-        Abort; // User cancelled installation
-      end;
-      // Loop continues until user kills it and clicks OK
+       // If it fails to stop nicely, we force kill to prevent installer hanging
+       // But we warn the user first? No, if we are reinstalling, assume user wants it done.
+       if MsgBox('The database service is stuck.' + #13#10 + 
+                 'Force close it? (Unsaved data might be lost)', mbError, MB_YESNO) = IDYES then
+       begin
+          Exec('taskkill', '/F /IM francodb_service.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+          Exec('taskkill', '/F /IM francodb_server.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+       end
+       else
+       begin
+          Abort;
+       end;
     end;
     
-    // D. Only NOW do we cleanup the service entry
     Exec('sc.exe', 'delete FrancoDBService', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-
-    // E. Wipe logs (Safe now because process is definitely gone)
+    Sleep(2000);
+    
+    // Clean old logs
     DelTree(ExpandConstant('{app}\log'), True, True, True);
   end;
 
-  // ==============================================================================
-  // 2. CONFIGURATION & PERMISSIONS
-  // ==============================================================================
   if CurStep = ssPostInstall then
   begin
     DataDir := ExpandConstant('{app}\data');
     LogDir  := ExpandConstant('{app}\log');
 
-    // Grant Permissions
     Exec('icacls', '"' + DataDir + '" /grant Users:(OI)(CI)M /T /C /Q', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     Exec('icacls', '"' + LogDir + '" /grant Users:(OI)(CI)M /T /C /Q', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 
@@ -297,7 +369,6 @@ begin
        SaveStringToFile(ExpandConstant('{app}\bin\francodb.conf'), ConfigContent, False);
     end;
 
-    // 3. SERVICE INSTALLATION
     ServicePath := ExpandConstant('{app}\bin\francodb_service.exe');
     ServiceInstalled := False;
     ServiceRebootRequired := False;
@@ -337,60 +408,27 @@ begin
           ServiceStarted := False;
           ServiceStartResult := ResultCode; 
        end;
-    end
-    else
-    begin
-       ServiceInstalled := False;
-       ServiceStarted := False;
-       ServiceStartResult := -1; 
     end;
 
-    // 4. SUMMARY REPORT
     SummaryText := 'STATUS REPORT' + #13#10 + '------------------------------------------------------------' + #13#10;
     
     if ServiceRebootRequired then
-    begin
-      SummaryText := SummaryText + '[WARN] Service : REBOOT REQUIRED (Code 1072)' + #13#10;
-      SummaryText := SummaryText + '       The previous service is stuck. Restart Windows' + #13#10;
-      SummaryText := SummaryText + '       to finish the update.' + #13#10;
-    end
+      SummaryText := SummaryText + '[WARN] Service : REBOOT REQUIRED (Code 1072)' + #13#10
     else if ServiceStarted then
       SummaryText := SummaryText + '[ OK ] Service : FrancoDB is running' + #13#10
-    else if not ServiceInstalled then
-      SummaryText := SummaryText + '[FAIL] Service : Failed to create (Code ' + IntToStr(ServiceStartResult) + ')' + #13#10
-    else if ServiceStartResult = -1 then
-      SummaryText := SummaryText + '[FAIL] Service : Executable missing from {app}\bin' + #13#10
     else
-      SummaryText := SummaryText + '[FAIL] Service : Failed to start (Code ' + IntToStr(ServiceStartResult) + ')' + #13#10;
-
-    if NeedsAddPath(ExpandConstant('{app}\bin')) then
-      SummaryText := SummaryText + '[INFO] Env Var : Updated (Restart Terminal)' + #13#10
-    else
-      SummaryText := SummaryText + '[ OK ] Env Var : Already configured' + #13#10;
-
-    if IsUpgrade then
-      SummaryText := SummaryText + '[INFO] Config  : Preserved previous settings' + #13#10
-    else
-      SummaryText := SummaryText + '[ OK ] Config  : Generated successfully' + #13#10;
-
-    SummaryText := SummaryText + #13#10;
+      SummaryText := SummaryText + '[FAIL] Service : Failed to start' + #13#10;
 
     if (not IsUpgrade) and (EncryptionPage.SelectedValueIndex = 1) then
     begin
-      SummaryText := SummaryText + 'SECURITY ALERT' + #13#10;
-      SummaryText := SummaryText + '------------------------------------------------------------' + #13#10;
-      SummaryText := SummaryText + 'Below is your Master Encryption Key. You MUST save this.' + #13#10;
-      SummaryText := SummaryText + 'If you lose this key, your database is gone forever.' + #13#10 + #13#10;
-      SummaryText := SummaryText + GeneratedEncryptionKey + #13#10;
-      SummaryText := SummaryText + '------------------------------------------------------------' + #13#10;
+      SummaryText := SummaryText + #13#10 + 'SECURITY ALERT' + #13#10 + '------------------------------------------------------------' + #13#10;
+      SummaryText := SummaryText + 'MASTER KEY: ' + GeneratedEncryptionKey + #13#10;
     end;
 
     SummaryPage.RichEditViewer.Lines.Text := SummaryText;
     SummaryPage.RichEditViewer.Font.Name := 'Consolas';
-    SummaryPage.RichEditViewer.Font.Size := 9;
   end;
 end;
-
 
 // ==============================================================================
 // UNINSTALLER LOGIC
@@ -398,38 +436,41 @@ end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
-  ResultCode: Integer;
+  ResultCode, I: Integer;
+  ProcessRunning: Boolean;
 begin
-  // 1. STOP THE SERVICE BEFORE DELETING FILES
-  // We do this at the START of uninstall so the EXE isn't locked
   if CurUninstallStep = usUninstall then
   begin
     Exec('sc.exe', 'stop FrancoDBService', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    
+    // Wait for shutdown (Max 60s)
+    for I := 1 to 60 do
+    begin
+      ProcessRunning := IsProcessRunning('francodb_server.exe');
+      if not ProcessRunning then Break;
+      Sleep(1000);
+    end;
+    
+    // If still running after 60s, KILL IT. Uninstaller must succeed.
+    if IsProcessRunning('francodb_server.exe') then
+    begin
+        Exec('taskkill', '/F /IM francodb_server.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    end;
+
     Exec('sc.exe', 'delete FrancoDBService', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-    Sleep(1000); // Give it a second to release file locks
+    Sleep(1000);
   end;
 
-  // 2. DELETE LEFTOVER DATA AFTER UNINSTALL
   if CurUninstallStep = usPostUninstall then
   begin
-    // Check if the data folder still exists (meaning the uninstaller left it)
-    if DirExists(ExpandConstant('{app}\data')) or DirExists(ExpandConstant('{app}\log')) then
+    if DirExists(ExpandConstant('{app}\data')) then
     begin
-      if MsgBox('FrancoDB was successfully uninstalled.' + #13#10 + #13#10 +
-                'Do you want to delete the database files and logs as well?' + #13#10 +
-                '(This cannot be undone)', mbConfirmation, MB_YESNO) = IDYES then
+      if MsgBox('Delete all database files and logs?', mbConfirmation, MB_YESNO) = IDYES then
       begin
-        // Nuke the directories
         DelTree(ExpandConstant('{app}\data'), True, True, True);
         DelTree(ExpandConstant('{app}\log'), True, True, True);
-        
-        // Delete the config file generated by code
         DeleteFile(ExpandConstant('{app}\bin\francodb.conf'));
-        
-        // Clean up the bin folder if empty
         RemoveDir(ExpandConstant('{app}\bin'));
-        
-        // Clean up the root folder if empty
         RemoveDir(ExpandConstant('{app}'));
       end;
     end;

@@ -34,6 +34,8 @@ namespace francodb {
         BufferPoolManager* GetSystemBpm() { return system_bpm_.get(); }
         Catalog* GetSystemCatalog() { return system_catalog_.get(); }
         AuthManager* GetAuthManager() { return auth_manager_.get(); }
+        
+        void Stop();
 
     private:
         void InitializeSystemResources();

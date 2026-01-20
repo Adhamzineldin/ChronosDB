@@ -6,21 +6,24 @@
 #include <vector>
 #include <fstream>
 #include <chrono>
+#include <algorithm>
 
 static TCHAR g_ServiceName[] = TEXT("FrancoDBService");
 SERVICE_STATUS g_ServiceStatus;
 SERVICE_STATUS_HANDLE g_StatusHandle = NULL;
 HANDLE g_ServiceStopEvent = INVALID_HANDLE_VALUE;
-PROCESS_INFORMATION g_ServerProcess = {0};
+HANDLE g_ShutdownEvent = INVALID_HANDLE_VALUE;
+PROCESS_INFORMATION g_ServerProcess = {};
 bool g_IsStopping = false;
 
-// circuit breaker variables
 int g_RestartCount = 0;
 const int MAX_RESTARTS = 5;
 auto g_LastRestartTime = std::chrono::steady_clock::now();
 
+const DWORD GRACEFUL_SHUTDOWN_TIMEOUT_MS = 90000;
+
 std::string GetExeDir() {
-    wchar_t buffer[32767]; // Large buffer for long paths
+    wchar_t buffer[32767];
     GetModuleFileNameW(NULL, buffer, 32767);
     return std::filesystem::path(buffer).parent_path().string();
 }
@@ -57,9 +60,13 @@ bool StartServerProcess() {
     std::filesystem::path binDir = GetExeDir();
     std::filesystem::path serverExe = binDir / "francodb_server.exe";
 
-    if (!std::filesystem::exists(serverExe)) return false;
+    if (!std::filesystem::exists(serverExe)) {
+        LogDebug("ERROR: Server executable not found at " + serverExe.string());
+        return false;
+    }
 
-    STARTUPINFOW si = { sizeof(si) };
+    STARTUPINFOW si = {};
+    si.cb = sizeof(si);
     si.dwFlags = STARTF_USESHOWWINDOW;
     si.wShowWindow = SW_HIDE; 
 
@@ -67,21 +74,72 @@ bool StartServerProcess() {
     std::vector<wchar_t> cmdLineBuffer(cmdLine.begin(), cmdLine.end());
     cmdLineBuffer.push_back(0);
 
-    return CreateProcessW(NULL, cmdLineBuffer.data(), NULL, NULL, FALSE, 
-        CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP, NULL, binDir.wstring().c_str(), &si, &g_ServerProcess);
+    bool success = CreateProcessW(NULL, cmdLineBuffer.data(), NULL, NULL, FALSE, 
+        CREATE_NO_WINDOW, NULL, binDir.wstring().c_str(), &si, &g_ServerProcess);
+    
+    if (success) {
+        LogDebug("Server process started successfully (PID: " + std::to_string(g_ServerProcess.dwProcessId) + ")");
+    } else {
+        LogDebug("ERROR: Failed to start server process. Error code: " + std::to_string(GetLastError()));
+    }
+    
+    return success;
 }
 
 void StopServerProcess() {
-    if (g_ServerProcess.hProcess == NULL) return;
-
-    // The Server must have its own Signal Handler for CTRL_BREAK_EVENT
-    GenerateConsoleCtrlEvent(CTRL_BREAK_EVENT, g_ServerProcess.dwProcessId);
-
-    if (WaitForSingleObject(g_ServerProcess.hProcess, 8000) == WAIT_TIMEOUT) {
-        LogDebug("Server lazy exit. Killing process.");
-        TerminateProcess(g_ServerProcess.hProcess, 1);
+    if (g_ServerProcess.hProcess == NULL) {
+        LogDebug("No server process to stop");
+        return;
     }
 
+    LogDebug("Initiating graceful shutdown (timeout: " + std::to_string(GRACEFUL_SHUTDOWN_TIMEOUT_MS / 1000) + "s)");
+    
+    // ✅ SIGNAL THE SHUTDOWN EVENT (most reliable method)
+    if (g_ShutdownEvent != INVALID_HANDLE_VALUE) {
+        LogDebug("Signaling shutdown event to server...");
+        SetEvent(g_ShutdownEvent);
+    } else {
+        LogDebug("WARNING: Shutdown event not available!");
+    }
+
+    // Wait with progress updates
+    auto startTime = std::chrono::steady_clock::now();
+    DWORD elapsed = 0;
+    DWORD waitInterval = 10000;
+    
+    while (elapsed < GRACEFUL_SHUTDOWN_TIMEOUT_MS) {
+        DWORD remainingTime = GRACEFUL_SHUTDOWN_TIMEOUT_MS - elapsed;
+        DWORD waitTime = std::min(waitInterval, remainingTime);
+        
+        DWORD result = WaitForSingleObject(g_ServerProcess.hProcess, waitTime);
+        
+        if (result == WAIT_OBJECT_0) {
+            DWORD exitCode;
+            GetExitCodeProcess(g_ServerProcess.hProcess, &exitCode);
+            LogDebug("✅ Server shutdown completed successfully after " + std::to_string(elapsed / 1000) + "s (exit code: " + std::to_string(exitCode) + ")");
+            CloseHandle(g_ServerProcess.hProcess);
+            CloseHandle(g_ServerProcess.hThread);
+            g_ServerProcess.hProcess = NULL;
+            return;
+        }
+        
+        elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - startTime
+        ).count();
+        
+        if (elapsed % 10000 < waitTime) {
+            LogDebug("Still waiting for graceful shutdown... (" + std::to_string(elapsed / 1000) + "s / " + std::to_string(GRACEFUL_SHUTDOWN_TIMEOUT_MS / 1000) + "s)");
+            ReportStatus(SERVICE_STOP_PENDING, 0, GRACEFUL_SHUTDOWN_TIMEOUT_MS - elapsed + 5000);
+        }
+    }
+
+    // ⚠️ TIMEOUT REACHED
+    LogDebug("❌ CRITICAL: Graceful shutdown timeout after 90 seconds");
+    LogDebug("❌ Force terminating - DATABASE MAY BE CORRUPTED");
+    
+    TerminateProcess(g_ServerProcess.hProcess, 1);
+    WaitForSingleObject(g_ServerProcess.hProcess, 5000);
+    
     CloseHandle(g_ServerProcess.hProcess);
     CloseHandle(g_ServerProcess.hThread);
     g_ServerProcess.hProcess = NULL;
@@ -89,64 +147,109 @@ void StopServerProcess() {
 
 VOID WINAPI ServiceCtrlHandler(DWORD CtrlCode) {
     if (CtrlCode == SERVICE_CONTROL_STOP || CtrlCode == SERVICE_CONTROL_SHUTDOWN) {
+        LogDebug("Received stop/shutdown signal from Windows");
         g_IsStopping = true;
-        ReportStatus(SERVICE_STOP_PENDING, 0, 10000);
+        ReportStatus(SERVICE_STOP_PENDING, 0, GRACEFUL_SHUTDOWN_TIMEOUT_MS + 10000);
         SetEvent(g_ServiceStopEvent);
     }
 }
 
 VOID WINAPI ServiceMain(DWORD argc, LPTSTR *argv) {
+    LogDebug("=== FrancoDB Service Starting ===");
+    
     g_StatusHandle = RegisterServiceCtrlHandler(g_ServiceName, ServiceCtrlHandler);
+    if (!g_StatusHandle) {
+        LogDebug("ERROR: Failed to register service control handler");
+        return;
+    }
+    
     ReportStatus(SERVICE_START_PENDING, 0, 3000);
     g_ServiceStopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+    
+    // ✅ Create shutdown event BEFORE starting server
+    g_ShutdownEvent = CreateEventW(NULL, TRUE, FALSE, L"Global\\FrancoDBShutdownEvent");
+    if (g_ShutdownEvent == NULL) {
+        LogDebug("ERROR: Could not create shutdown event. Error: " + std::to_string(GetLastError()));
+    } else {
+        LogDebug("Created shutdown event successfully");
+    }
 
     if (!StartServerProcess()) {
+        LogDebug("ERROR: Failed to start server process");
+        if (g_ShutdownEvent) CloseHandle(g_ShutdownEvent);
         ReportStatus(SERVICE_STOPPED, GetLastError(), 0);
         return;
     }
 
-    // Check for instant crash
-    if (WaitForSingleObject(g_ServerProcess.hProcess, 1500) == WAIT_OBJECT_0) {
-        ReportStatus(SERVICE_STOPPED, 1067, 0); // Process terminated unexpectedly
+    // Give server time to initialize
+    Sleep(2000);
+
+    if (WaitForSingleObject(g_ServerProcess.hProcess, 100) == WAIT_OBJECT_0) {
+        DWORD exitCode;
+        GetExitCodeProcess(g_ServerProcess.hProcess, &exitCode);
+        LogDebug("ERROR: Server process terminated immediately (exit code: " + std::to_string(exitCode) + ")");
+        if (g_ShutdownEvent) CloseHandle(g_ShutdownEvent);
+        ReportStatus(SERVICE_STOPPED, 1067, 0);
         return;
     }
 
+    LogDebug("Server running normally");
     ReportStatus(SERVICE_RUNNING, 0, 0);
 
     while (!g_IsStopping) {
         HANDLE waitObjects[2] = { g_ServiceStopEvent, g_ServerProcess.hProcess };
         DWORD result = WaitForMultipleObjects(2, waitObjects, FALSE, INFINITE);
         
-        if (result == WAIT_OBJECT_0 || g_IsStopping) break; 
+        if (result == WAIT_OBJECT_0 || g_IsStopping) {
+            LogDebug("Stop event received");
+            break;
+        }
         
         if (result == WAIT_OBJECT_0 + 1) { 
-            // Server died - Circuit Breaker Logic
+            DWORD exitCode;
+            GetExitCodeProcess(g_ServerProcess.hProcess, &exitCode);
+            LogDebug("WARNING: Server process died unexpectedly (exit code: " + std::to_string(exitCode) + ")");
+            
             auto now = std::chrono::steady_clock::now();
             if (std::chrono::duration_cast<std::chrono::minutes>(now - g_LastRestartTime).count() > 10) {
-                g_RestartCount = 0; // Reset count if last crash was > 10 mins ago
+                g_RestartCount = 0;
             }
             
             g_LastRestartTime = now;
             g_RestartCount++;
 
             if (g_RestartCount > MAX_RESTARTS) {
-                LogDebug("Circuit breaker triggered. Too many crashes.");
+                LogDebug("CRITICAL: Circuit breaker triggered (" + std::to_string(g_RestartCount) + " crashes in 10 minutes)");
                 break;
             }
 
-            LogDebug("Server crashed. Restarting (" + std::to_string(g_RestartCount) + "/" + std::to_string(MAX_RESTARTS) + ")");
+            LogDebug("Attempting restart (" + std::to_string(g_RestartCount) + "/" + std::to_string(MAX_RESTARTS) + ")");
             CloseHandle(g_ServerProcess.hProcess);
             CloseHandle(g_ServerProcess.hThread);
+            
+            ResetEvent(g_ShutdownEvent);
             Sleep(3000);
-            if (!StartServerProcess()) break;
+            
+            if (!StartServerProcess()) {
+                LogDebug("ERROR: Failed to restart server");
+                break;
+            }
         }
     }
 
+    LogDebug("Service stopping - initiating server shutdown");
     StopServerProcess();
+    
+    if (g_ShutdownEvent) CloseHandle(g_ShutdownEvent);
+    
+    LogDebug("=== FrancoDB Service Stopped ===");
     ReportStatus(SERVICE_STOPPED, 0, 0);
 }
 
 int _tmain(int argc, TCHAR *argv[]) {
-    SERVICE_TABLE_ENTRY ServiceTable[] = { {g_ServiceName, (LPSERVICE_MAIN_FUNCTION) ServiceMain}, {NULL, NULL} };
+    SERVICE_TABLE_ENTRY ServiceTable[] = { 
+        {g_ServiceName, (LPSERVICE_MAIN_FUNCTION) ServiceMain}, 
+        {NULL, NULL} 
+    };
     return StartServiceCtrlDispatcher(ServiceTable);
 }

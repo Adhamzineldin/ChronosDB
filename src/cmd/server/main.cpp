@@ -11,7 +11,6 @@
 
 #ifdef _WIN32
 #include <windows.h>
-// --- FIX 1: Include Winsock Headers ---
 #include <winsock2.h>
 #pragma comment(lib, "ws2_32.lib") 
 #else
@@ -30,9 +29,9 @@
 using namespace francodb;
 namespace fs = std::filesystem;
 
-// GLOBAL SERVER POINTER
+// Global pointers for resource management
 std::unique_ptr<FrancoServer> g_Server;
-std::atomic<bool> g_ShutdownInProgress(false);
+std::atomic<bool> g_ShutdownRequested(false); 
 
 std::string GetExecutableDir() {
 #ifdef _WIN32
@@ -51,15 +50,32 @@ void SetupServiceLogging(const std::string& exe_dir) {
         try { fs::create_directories(log_dir); } catch(...) {}
     }
     fs::path log_path = log_dir / "francodb_server.log";
-    for (int i = 0; i < 5; i++) {
+    
+    // Force open log file (Retry logic)
+    for(int i=0; i<3; i++) {
         FILE* fp = freopen(log_path.string().c_str(), "a", stdout);
         if (fp) {
             freopen(log_path.string().c_str(), "a", stderr);
             std::cout.setf(std::ios::unitbuf);
             std::cerr.setf(std::ios::unitbuf);
+            std::cout << "\n=== NEW SERVER SESSION ===" << std::endl;
             return;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+}
+
+// Triggers the shutdown sequence safely
+// This is the ONLY thing the background thread calls.
+void TriggerShutdown() {
+    if (g_ShutdownRequested.exchange(true)) return; // Already triggered
+
+    std::cout << "[SHUTDOWN] Signal received. Interrupting network listener..." << std::endl;
+
+    // CRITICAL: We do NOT flush here. We just break the network loop.
+    // The Main Thread is stuck in 'accept()'. This forces it to error out and continue.
+    if (g_Server) {
+        g_Server->Stop(); 
     }
 }
 
@@ -67,131 +83,123 @@ void SetupServiceLogging(const std::string& exe_dir) {
 BOOL WINAPI ConsoleHandler(DWORD signal) {
     if (signal == CTRL_C_EVENT || signal == CTRL_BREAK_EVENT || 
         signal == CTRL_CLOSE_EVENT || signal == CTRL_SHUTDOWN_EVENT) {
-        
-        if (g_ShutdownInProgress.exchange(true)) return TRUE;
-
-        std::cerr << "\n[SYSTEM] Graceful shutdown initiated..." << std::endl;
-        
-        // Note: We do NOT destroy the server here anymore to avoid 
-        // the "libwinpthread" crash. We just stop the listener.
-        if (g_Server) {
-            g_Server->Shutdown(); 
-        }
+        TriggerShutdown();
         return TRUE;
     }
     return FALSE;
+}
+
+void ShutdownEventMonitor() {
+    HANDLE hEvent = OpenEventW(SYNCHRONIZE, FALSE, L"Global\\FrancoDBShutdownEvent");
+    if (hEvent) {
+        std::cout << "[INFO] Monitoring shutdown event..." << std::endl;
+        WaitForSingleObject(hEvent, INFINITE);
+        std::cout << "[SYSTEM] ✅ Shutdown event received from service!" << std::endl;
+        TriggerShutdown();
+        CloseHandle(hEvent);
+    }
 }
 #endif
 
 int main(int argc, char* argv[])
 {
-    // --- FIX 2: Initialize Windows Networking (Winsock) ---
 #ifdef _WIN32
     WSADATA wsaData;
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        std::cerr << "[CRASH] WSAStartup failed!" << std::endl;
-        return 1;
-    }
+    WSAStartup(MAKEWORD(2, 2), &wsaData);
 #endif
 
-    bool is_service = false;
-    if (argc > 1 && std::string(argv[1]) == "--service") {
-        is_service = true;
-    }
-
+    bool is_service = (argc > 1 && std::string(argv[1]) == "--service");
     std::string exe_dir = GetExecutableDir();
-    
-    if (is_service) {
-        SetupServiceLogging(exe_dir);
-    } 
+    if (is_service) SetupServiceLogging(exe_dir);
     
     std::cout << "==========================================" << std::endl;
     std::cout << "     FRANCO DB SERVER v2.0 (Active)" << std::endl;
     std::cout << "==========================================" << std::endl;
 
 #ifdef _WIN32
-    if (!SetConsoleCtrlHandler(ConsoleHandler, TRUE)) {
-        std::cerr << "[WARN] Could not register console handler." << std::endl;
+    SetConsoleCtrlHandler(ConsoleHandler, TRUE);
+    std::thread monitorThread;
+    if (is_service) {
+        monitorThread = std::thread(ShutdownEventMonitor);
+        monitorThread.detach(); // It's fine to detach, it just signals g_Server
     }
 #endif
 
     try {
-        fs::path config_path = fs::path(exe_dir) / "francodb.conf";
+        // 1. CONFIG
         auto& config = ConfigManager::GetInstance();
+        fs::path config_path = fs::path(exe_dir) / "francodb.conf";
         
-        if (fs::exists(config_path)) {
-            std::cout << "[INFO] Loading config from: " << config_path << std::endl;
-            config.LoadConfig(config_path.string());
-        } else {
-            std::cout << "[WARN] Config not found, using defaults." << std::endl;
-            config.SaveConfig(config_path.string());
-        }
+        if (fs::exists(config_path)) config.LoadConfig(config_path.string());
+        else config.SaveConfig(config_path.string());
         
-        int port = config.GetPort();
-        fs::path data_dir_path = fs::absolute(fs::path(config.GetDataDirectory()));
-        if (fs::path(config.GetDataDirectory()).is_relative()) {
-            data_dir_path = fs::absolute(fs::path(exe_dir) / config.GetDataDirectory());
-        }
-        std::cout << "[INFO] Data Directory: " << data_dir_path << std::endl;
-        fs::create_directories(data_dir_path);
-
-        fs::path db_path = data_dir_path / "francodb.db";
+        fs::path data_dir = fs::absolute(fs::path(exe_dir) / config.GetDataDirectory());
+        fs::create_directories(data_dir);
         
-        auto disk_manager = std::make_unique<DiskManager>(db_path.string());
+        // 2. INITIALIZE DB COMPONENTS
+        std::cout << "[INFO] Initializing DB components..." << std::endl;
+        auto disk_manager = std::make_unique<DiskManager>((data_dir / "francodb.db").string());
         if (config.IsEncryptionEnabled()) disk_manager->SetEncryptionKey(config.GetEncryptionKey());
         
         auto bpm = std::make_unique<BufferPoolManager>(BUFFER_POOL_SIZE, disk_manager.get());
         auto catalog = std::make_unique<Catalog>(bpm.get());
         
+        if(catalog->GetAllTableNames().empty()) {
+            try { catalog->LoadCatalog(); } catch(...) {}
+        }
         
-        try { 
-            if (catalog->GetAllTableNames().empty()) catalog->LoadCatalog(); 
-        } catch (...) {}
-        
-        std::cout << "[INFO] Initializing Server Logic..." << std::endl;
+        // 3. START SERVER
         g_Server = std::make_unique<FrancoServer>(bpm.get(), catalog.get());
+        std::cout << "[READY] FrancoDB Server listening on port " << config.GetPort() << "..." << std::endl;
         
-        std::cout << "[INFO] Starting Network Listener on port " << port << "..." << std::endl;
-      
-        
-        g_Server->Start(port);
-    
-        
-        // CLEAN SHUTDOWN - Proper order!
-        g_Server.reset();  // Destroy server first
-    
-        // Now safe to destroy AuthManager
-        if (g_auth_manager) {
-            delete g_auth_manager;
-            g_auth_manager = nullptr;
+        // === BLOCKING CALL === 
+        // This holds the Main Thread until TriggerShutdown() calls g_Server->Stop()
+        try {
+            g_Server->Start(config.GetPort()); 
+        } catch (...) {
+            // Start() will throw or return when Stop() is called. This is expected.
         }
-            
-
-        } catch (const std::exception &e) {
-            std::cerr << "[CRASH] Critical Failure: " << e.what() << std::endl;
         
-            // --- FIX 3: Force destruction BEFORE return ---
-            // This ensures the server is destroyed while libwinpthread is still loaded.
-            if (g_Server) {
-                std::cerr << "[SHUTDOWN] Emergency cleanup..." << std::endl;
-                g_Server.reset();
-            }
+        // === SHUTDOWN SEQUENCE (MAIN THREAD ONLY) ===
+        // We are guaranteed to be on the Main Thread here.
+        // No other thread is touching the DB.
         
-            if (g_auth_manager) {
-                delete g_auth_manager;
-                g_auth_manager = nullptr;
-            }
+        std::cout << "[SHUTDOWN] Network stopped. Beginning synchronous flush..." << std::endl;
 
-#ifdef _WIN32
-            WSACleanup();
-#endif
-            return 1;
+        // 4. FLUSH BUFFERS
+        if (bpm) {
+            std::cout << "[SHUTDOWN] Flushing Buffer Pool..." << std::endl;
+            bpm->FlushAllPages(); 
+            std::cout << "[SHUTDOWN] Buffer Pool Flushed." << std::endl;
         }
 
-        // --- FIX 4: Cleanup Winsock ---
-#ifdef _WIN32
-        WSACleanup();
-#endif
+        if (catalog) {
+            std::cout << "[SHUTDOWN] Saving Catalog..." << std::endl;
+            catalog->SaveCatalog();
+        }
 
+        // 5. DESTROY SERVER LOGIC
+        // Destroy server first so no new requests try to use the DB
+        g_Server.reset(); 
+
+        // 6. DESTROY DB COMPONENTS
+        // Catalog first, then BPM, then DiskManager (Reverse order of creation)
+        catalog.reset();
+        bpm.reset();
+        disk_manager.reset(); 
+
+        std::cout << "[SHUTDOWN] All resources destroyed safely." << std::endl;
+        
+        if (g_auth_manager) { delete g_auth_manager; g_auth_manager = nullptr; }
+
+    } catch (const std::exception &e) {
+        std::cerr << "[CRASH] Critical Failure: " << e.what() << std::endl;
+        return 1;
+    }
+
+#ifdef _WIN32
+    WSACleanup();
+#endif
+    std::cout << "[SHUTDOWN] Server exited cleanly" << std::endl;
     return 0;
 }
