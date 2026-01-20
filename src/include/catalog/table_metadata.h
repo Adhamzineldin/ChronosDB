@@ -2,8 +2,10 @@
 
 #include <string>
 #include <memory>
+#include <vector>
 #include "storage/table/schema.h"
 #include "storage/table/table_heap.h"
+#include "parser/statement.h"
 
 namespace francodb {
 
@@ -20,6 +22,7 @@ namespace francodb {
         std::unique_ptr<TableHeap> table_heap_;
         page_id_t first_page_id_;
         uint32_t oid_; // <--- NEW: Unique ID for this table (0, 1, 2...)
+        std::vector<CreateStatement::ForeignKey> foreign_keys_;  // Store FK constraints
     };
 
 } // namespace francodb

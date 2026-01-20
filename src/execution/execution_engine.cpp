@@ -189,8 +189,14 @@ namespace francodb {
 
     ExecutionResult ExecutionEngine::ExecuteCreate(CreateStatement *stmt) {
         Schema schema(stmt->columns_);
-        bool success = catalog_->CreateTable(stmt->table_name_, schema);
-        if (!success) return ExecutionResult::Error("Table already exists: " + stmt->table_name_);
+        TableMetadata *table_info = catalog_->CreateTable(stmt->table_name_, schema);
+        if (!table_info) {
+            return ExecutionResult::Error("Table already exists: " + stmt->table_name_);
+        }
+        
+        // Store foreign keys in table metadata
+        table_info->foreign_keys_ = stmt->foreign_keys_;
+        
         return ExecutionResult::Message("CREATE TABLE SUCCESS");
     }
 
@@ -783,12 +789,23 @@ namespace francodb {
             std::string default_str = col.HasDefaultValue() ? 
                 ValueToString(col.GetDefaultValue().value()) : "NULL";
             
-            // Extra
+            // Extra - includes CHECK, AUTO_INCREMENT, and FOREIGN KEY info
             std::string extra;
             if (col.IsAutoIncrement()) extra = "AUTO_INCREMENT";
             if (col.HasCheckConstraint()) {
                 if (!extra.empty()) extra += ", ";
                 extra += "CHECK(" + col.GetCheckConstraint() + ")";
+            }
+            
+            // Check if this column is part of a foreign key
+            for (const auto &fk : table_info->foreign_keys_) {
+                for (const auto &fk_col : fk.columns) {
+                    if (fk_col == col.GetName()) {
+                        if (!extra.empty()) extra += ", ";
+                        extra += "FK(" + fk.ref_table + "." + fk.ref_columns[0] + ")";
+                        break;
+                    }
+                }
             }
             
             rs->AddRow({field, type, null_str, key_str, default_str, extra});
@@ -849,6 +866,23 @@ namespace francodb {
             
             if (i < schema.GetColumnCount() - 1) create_sql += ",";
             create_sql += "\n";
+        }
+        
+        // Add foreign keys
+        if (!table_info->foreign_keys_.empty()) {
+            for (const auto &fk : table_info->foreign_keys_) {
+                create_sql += "  , FOREIGN KEY (";
+                for (size_t j = 0; j < fk.columns.size(); j++) {
+                    if (j > 0) create_sql += ", ";
+                    create_sql += fk.columns[j];
+                }
+                create_sql += ") YOSHEER " + fk.ref_table + " (";
+                for (size_t j = 0; j < fk.ref_columns.size(); j++) {
+                    if (j > 0) create_sql += ", ";
+                    create_sql += fk.ref_columns[j];
+                }
+                create_sql += ")\n";
+            }
         }
         
         create_sql += ");";

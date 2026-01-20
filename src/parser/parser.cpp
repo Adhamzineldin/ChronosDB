@@ -125,31 +125,29 @@ namespace francodb {
                 if (!Match(TokenType::SEMICOLON))
                     throw Exception(ExceptionType::PARSER, "Expected ; after SHOW DATABASES");
                 return std::make_unique<ShowDatabasesStatement>();
+            } else if (current_token_.type == TokenType::CREATE) {
+                // SHOW CREATE TABLE
+                Advance(); // Eat CREATE
+                if (current_token_.type != TokenType::TABLE) {
+                    throw Exception(ExceptionType::PARSER, "Expected TABLE after SHOW CREATE");
+                }
+                Advance(); // Eat TABLE
+                auto stmt = std::make_unique<ShowCreateTableStatement>();
+                if (current_token_.type != TokenType::IDENTIFIER) {
+                    throw Exception(ExceptionType::PARSER, "Expected table name");
+                }
+                stmt->table_name_ = current_token_.text;
+                Advance();
+                if (!Match(TokenType::SEMICOLON))
+                    throw Exception(ExceptionType::PARSER, "Expected ; after SHOW CREATE TABLE");
+                return stmt;
             } else if (current_token_.type == TokenType::TABLE) {
                 Advance(); // Eat TABLE / GADWAL
-                // Check if it's SHOW CREATE TABLE
-                if (current_token_.type == TokenType::CREATE) {
-                    Advance(); // Eat CREATE
-                    if (current_token_.type != TokenType::TABLE) {
-                        throw Exception(ExceptionType::PARSER, "Expected TABLE after SHOW CREATE");
-                    }
-                    Advance(); // Eat TABLE
-                    auto stmt = std::make_unique<ShowCreateTableStatement>();
-                    if (current_token_.type != TokenType::IDENTIFIER) {
-                        throw Exception(ExceptionType::PARSER, "Expected table name");
-                    }
-                    stmt->table_name_ = current_token_.text;
-                    Advance();
-                    if (!Match(TokenType::SEMICOLON))
-                        throw Exception(ExceptionType::PARSER, "Expected ; after SHOW CREATE TABLE");
-                    return stmt;
-                }
-                // Otherwise it's SHOW TABLES
                 if (!Match(TokenType::SEMICOLON))
                     throw Exception(ExceptionType::PARSER, "Expected ; after SHOW TABLES");
                 return std::make_unique<ShowTablesStatement>();
             }
-            throw Exception(ExceptionType::PARSER, "Expected USER, DATABASES, or TABLES after SHOW");
+            throw Exception(ExceptionType::PARSER, "Expected USER, DATABASES, CREATE, or TABLES after SHOW");
         }
         // 14. DESCRIBE / DESC
         else if (current_token_.type == TokenType::DESCRIBE) {

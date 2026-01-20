@@ -223,6 +223,108 @@ bool InsertExecutor::Next(Tuple *tuple) {
     }
     // ------------------------------------
     
+    // --- VALIDATE FOREIGN KEY CONSTRAINTS ---
+    // Check that all FK columns reference existing rows in their target tables
+    TableMetadata *table_meta = exec_ctx_->GetCatalog()->GetTable(plan_->table_name_);
+    if (table_meta && !table_meta->foreign_keys_.empty()) {
+        for (const auto &fk : table_meta->foreign_keys_) {
+            // Get the FK column index and value
+            int fk_col_idx = table_info_->schema_.GetColIdx(fk.columns[0]);
+            if (fk_col_idx < 0) continue;
+            
+            Value fk_value = to_insert.GetValue(table_info_->schema_, fk_col_idx);
+            
+            // Look up the referenced table
+            TableMetadata *ref_table = exec_ctx_->GetCatalog()->GetTable(fk.ref_table);
+            if (!ref_table) {
+                throw Exception(ExceptionType::EXECUTION, 
+                    "Referenced table does not exist: " + fk.ref_table);
+            }
+            
+            // Find the referenced column index
+            int ref_col_idx = ref_table->schema_.GetColIdx(fk.ref_columns[0]);
+            if (ref_col_idx < 0) {
+                throw Exception(ExceptionType::EXECUTION, 
+                    "Referenced column does not exist: " + fk.ref_columns[0]);
+            }
+            
+            // Try to find matching row in referenced table using index if available
+            bool found = false;
+            auto ref_indexes = exec_ctx_->GetCatalog()->GetTableIndexes(fk.ref_table);
+            
+            for (auto *index : ref_indexes) {
+                if (index->col_name_ == fk.ref_columns[0]) {
+                    // Use index for faster lookup
+                    GenericKey<8> key;
+                    key.SetFromValue(fk_value);
+                    
+                    std::vector<RID> result_rids;
+                    if (index->b_plus_tree_->GetValue(key, &result_rids, txn_)) {
+                        for (const RID &rid : result_rids) {
+                            Tuple ref_tuple;
+                            if (ref_table->table_heap_->GetTuple(rid, &ref_tuple, txn_)) {
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+                    break;
+                }
+            }
+            
+            // Fallback: Sequential scan if no index
+            if (!found) {
+                page_id_t curr_page_id = ref_table->first_page_id_;
+                auto *bpm = exec_ctx_->GetBufferPoolManager();
+                
+                while (curr_page_id != INVALID_PAGE_ID) {
+                    Page *page = bpm->FetchPage(curr_page_id);
+                    if (page == nullptr) break;
+                    
+                    auto *table_page = reinterpret_cast<TablePage *>(page->GetData());
+                    
+                    for (uint32_t slot = 0; slot < table_page->GetTupleCount(); slot++) {
+                        RID rid(curr_page_id, slot);
+                        Tuple ref_tuple;
+                        if (table_page->GetTuple(rid, &ref_tuple, txn_)) {
+                            Value ref_value = ref_tuple.GetValue(ref_table->schema_, ref_col_idx);
+                            
+                            // Compare values
+                            bool matches = false;
+                            if (ref_value.GetTypeId() == fk_value.GetTypeId()) {
+                                if (ref_value.GetTypeId() == TypeId::INTEGER) {
+                                    matches = (ref_value.GetAsInteger() == fk_value.GetAsInteger());
+                                } else if (ref_value.GetTypeId() == TypeId::DECIMAL) {
+                                    matches = (std::abs(ref_value.GetAsDouble() - fk_value.GetAsDouble()) < 0.0001);
+                                } else if (ref_value.GetTypeId() == TypeId::VARCHAR) {
+                                    matches = (ref_value.GetAsString() == fk_value.GetAsString());
+                                }
+                            }
+                            
+                            if (matches) {
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    page_id_t next = table_page->GetNextPageId();
+                    bpm->UnpinPage(curr_page_id, false);
+                    curr_page_id = next;
+                    
+                    if (found) break;
+                }
+            }
+            
+            if (!found) {
+                throw Exception(ExceptionType::EXECUTION, 
+                    "FOREIGN KEY violation: No matching row in " + fk.ref_table + 
+                    " for value in column '" + fk.columns[0] + "'");
+            }
+        }
+    }
+    // ------------------------------------
+    
     RID rid;
     bool success = table_info_->table_heap_->InsertTuple(to_insert, &rid, txn_);
     if (!success) throw Exception(ExceptionType::EXECUTION, "Failed to insert tuple");
