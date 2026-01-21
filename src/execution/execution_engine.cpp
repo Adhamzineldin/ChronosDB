@@ -176,6 +176,14 @@ namespace francodb {
             }
             return res;
         } catch (const std::exception &e) {
+            
+            if (current_transaction_ && current_transaction_->GetState() == Transaction::TransactionState::RUNNING) {
+                // Force Rollback to release locks
+                bool was_explicit = in_explicit_transaction_;
+                in_explicit_transaction_ = true; 
+                ExecuteRollback();
+                in_explicit_transaction_ = was_explicit;
+            }
             return ExecutionResult::Error(e.what());
         }
     }

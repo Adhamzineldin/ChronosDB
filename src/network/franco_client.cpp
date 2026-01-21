@@ -174,12 +174,10 @@ namespace francodb {
     std::string FrancoClient::Query(const std::string& sql) {
         if (!is_connected_) return "ERROR: Not connected.";
 
-        MsgType type;
-        switch (protocol_type_) {
-            case ProtocolType::JSON:   type = MsgType::CMD_JSON; break;
-            case ProtocolType::BINARY: type = MsgType::CMD_BINARY; break;
-            default:                   type = MsgType::CMD_TEXT; break;
-        }
+        // 1. Send Request
+        MsgType type = MsgType::CMD_TEXT;
+        if (protocol_type_ == ProtocolType::JSON) type = MsgType::CMD_JSON;
+        else if (protocol_type_ == ProtocolType::BINARY) type = MsgType::CMD_BINARY;
 
         PacketHeader header;
         header.type = type;
@@ -187,23 +185,51 @@ namespace francodb {
 
         if (send((socket_t)sock_, (char*)&header, sizeof(header), 0) < 0) {
             is_connected_ = false;
-            return "ERROR: Connection Lost (Write)";
+            return "ERROR: Connection Lost (Write Header)";
         }
 
         if (send((socket_t)sock_, sql.c_str(), sql.size(), 0) < 0) {
             is_connected_ = false;
-            return "ERROR: Connection Lost (Write Payload)";
+            return "ERROR: Connection Lost (Write Body)";
         }
 
-        char buffer[net::MAX_PACKET_SIZE];
-        int bytes = recv((socket_t)sock_, buffer, net::MAX_PACKET_SIZE, 0);
-        
+        // =========================================================
+        // [FIX] RECEIVE PROTOCOL: LENGTH + DATA
+        // =========================================================
+    
+        // A. Read Length
+        uint32_t net_len = 0;
+        int bytes = recv((socket_t)sock_, (char*)&net_len, sizeof(net_len), MSG_WAITALL);
+    
         if (bytes <= 0) {
             is_connected_ = false;
-            return "ERROR: Server closed connection";
+            return "ERROR: Server closed connection (Header)";
         }
-        
-        return std::string(buffer, bytes);
+    
+        uint32_t payload_len = ntohl(net_len);
+
+        // B. Read Body (Loop until full)
+        std::string response_str;
+        try {
+            response_str.resize(payload_len);
+        } catch (...) {
+            return "ERROR: Response too large (OOM)";
+        }
+    
+        size_t total_received = 0;
+        char* buf_ptr = &response_str[0];
+
+        while (total_received < payload_len) {
+            int r = recv((socket_t)sock_, buf_ptr + total_received, payload_len - total_received, 0);
+            if (r <= 0) {
+                is_connected_ = false;
+                return "ERROR: Server closed connection (Body Incomplete)";
+            }
+            total_received += r;
+        }
+
+        return response_str;
+        // =========================================================
     }
 
     void FrancoClient::Disconnect() {

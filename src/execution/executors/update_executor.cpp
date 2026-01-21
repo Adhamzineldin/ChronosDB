@@ -78,6 +78,8 @@ bool UpdateExecutor::Next(Tuple *tuple) {
         if (page == nullptr) {
             break; // Skip if page fetch fails
         }
+        
+        try {
         auto *table_page = reinterpret_cast<TablePage *>(page->GetData());
         
         for (uint32_t i = 0; i < table_page->GetTupleCount(); ++i) {
@@ -95,6 +97,12 @@ bool UpdateExecutor::Next(Tuple *tuple) {
         page_id_t next = table_page->GetNextPageId();
         bpm->UnpinPage(curr_page_id, false);
         curr_page_id = next;
+            
+        } catch (...) {
+            // CRITICAL: Unpin if we crash here (e.g. Type mismatch exception)
+            bpm->UnpinPage(curr_page_id, false);
+            throw; 
+        }
     }
 
     // 2. APPLY PHASE (Update indexes, Delete Old, Insert New)

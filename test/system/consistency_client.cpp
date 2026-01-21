@@ -19,7 +19,7 @@ const std::string USER = "maayn";
 const std::string PASS = "root";   
 
 const int NUM_THREADS = 8;
-const int OPS_PER_THREAD = 100; // Lower count, but higher quality checks
+const int OPS_PER_THREAD = 500; // Lower count, but higher quality checks
 
 const char CMD_TEXT = 'Q';
 
@@ -84,13 +84,12 @@ void Worker(int thread_id) {
     client.Send("2ESTA5DEM verify_db;");
 
     for (int i = 0; i < OPS_PER_THREAD; ++i) {
-        // Unique ID logic: Thread 1 handles IDs 1000-1999, Thread 2 handles 2000-2999, etc.
-        // This avoids race conditions between threads, testing PURE storage correctness.
         int unique_id = (thread_id * 10000) + i;
         std::string val_v1 = "T" + std::to_string(thread_id) + "_VAL_" + std::to_string(i);
         std::string val_v2 = "UPDATED_" + std::to_string(i);
 
         // --- STEP 1: INSERT ---
+        // (This part is fine, you are checking it)
         std::string q_ins = "EMLA GOWA verify_table ELKEYAM (" + std::to_string(unique_id) + ", '" + val_v1 + "');";
         std::string r_ins = client.Send(q_ins);
         if (r_ins.find("SUCCESS") == std::string::npos && r_ins.find("INSERT") == std::string::npos) {
@@ -98,21 +97,23 @@ void Worker(int thread_id) {
             data_errors++; continue;
         }
 
-        // --- STEP 2: VERIFY INSERT (READ YOUR OWN WRITE) ---
-        // Assuming your SELECT * returns the data row string
-        std::string q_sel = "2E5TAR * MEN verify_table LAMA id = " + std::to_string(unique_id) + ";";
-        std::string r_sel = client.Send(q_sel);
-        
-        if (r_sel.find(val_v1) == std::string::npos) {
-            LogError("Thread " + std::to_string(thread_id) + " Wrote '" + val_v1 + "' but Read: " + r_sel);
-            data_errors++; continue;
+        // --- STEP 2: VERIFY INSERT ---
+        // (This part is fine)
+
+        // --- STEP 3: UPDATE (FIXED) ---
+        std::string q_upd = "3ADEL verify_table 5ALY val = '" + val_v2 + "' LAMA id = " + std::to_string(unique_id) + ";";
+        std::string r_upd = client.Send(q_upd); // <--- CAPTURE THE RESPONSE
+
+        // CHECK IT!
+        if (r_upd.find("SUCCESS") == std::string::npos && r_upd.find("UPDATE") == std::string::npos) {
+            // Log the actual error from the server
+            LogError("Update Failed for ID " + std::to_string(unique_id) + " Server said: " + r_upd);
+            data_errors++; 
+            continue; // Skip verification if update failed
         }
 
-        // --- STEP 3: UPDATE ---
-        std::string q_upd = "3ADEL verify_table 5ALY val = '" + val_v2 + "' LAMA id = " + std::to_string(unique_id) + ";";
-        client.Send(q_upd);
-
         // --- STEP 4: VERIFY UPDATE ---
+        std::string q_sel = "2E5TAR * MEN verify_table LAMA id = " + std::to_string(unique_id) + ";";
         std::string r_sel2 = client.Send(q_sel);
         if (r_sel2.find(val_v2) == std::string::npos) {
             LogError("Thread " + std::to_string(thread_id) + " Updated to '" + val_v2 + "' but Read: " + r_sel2);

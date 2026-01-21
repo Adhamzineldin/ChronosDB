@@ -299,51 +299,66 @@ namespace francodb {
     // src/network/franco_server.cpp
 
     void FrancoServer::HandleClient(uintptr_t client_socket) {
-        socket_t sock = (socket_t) client_socket;
-        
-        auto engine = std::make_unique<ExecutionEngine>(
-            bpm_, 
-            catalog_, 
-            auth_manager_.get(), 
-            registry_.get()
-        );
-        
-        auto handler = std::make_unique<ClientConnectionHandler>(engine.release(), auth_manager_.get());
+    socket_t sock = (socket_t) client_socket;
+    
+    // Create fresh engine/handler for this thread
+    auto engine = std::make_unique<ExecutionEngine>(
+        bpm_, 
+        catalog_, 
+        auth_manager_.get(), 
+        registry_.get()
+    );
+    
+    auto handler = std::make_unique<ClientConnectionHandler>(engine.release(), auth_manager_.get());
 
-        while (running_) {
-            PacketHeader header;
-            int bytes_read = recv(sock, (char *) &header, sizeof(header), MSG_WAITALL);
+    while (running_) {
+        PacketHeader header;
+        // 1. Read Request Header
+        int bytes_read = recv(sock, (char *) &header, sizeof(header), MSG_WAITALL);
+        if (bytes_read <= 0) break;
 
-            if (bytes_read <= 0) break;
+        uint32_t payload_len = ntohl(header.length);
+        if (payload_len > 1024 * 1024 * 10) break; // 10MB Limit
 
-            uint32_t payload_len = ntohl(header.length);
-            // Safety check against DOS attacks (Max 10MB packet)
-            if (payload_len > 1024 * 1024 * 10) break;
+        // 2. Read Request Payload
+        std::vector<char> payload(payload_len);
+        recv(sock, payload.data(), payload_len, MSG_WAITALL);
 
-            std::vector<char> payload(payload_len);
-            recv(sock, payload.data(), payload_len, MSG_WAITALL);
+        std::string sql(payload.begin(), payload.end());
 
-            std::string sql(payload.begin(), payload.end());
-
-            switch (header.type) {
-                case MsgType::CMD_JSON: handler->SetResponseFormat(ProtocolType::JSON);
-                    break;
-                case MsgType::CMD_BINARY: handler->SetResponseFormat(ProtocolType::BINARY);
-                    break;
-                default: handler->SetResponseFormat(ProtocolType::TEXT);
-                    break;
-            }
-
-            // [FIX] Use DispatchCommand instead of direct ProcessRequest
-            std::string response = DispatchCommand(sql, handler.get());
-
-            send(sock, response.c_str(), response.size(), 0);
+        // 3. Setup Response Format
+        switch (header.type) {
+            case MsgType::CMD_JSON: handler->SetResponseFormat(ProtocolType::JSON); break;
+            case MsgType::CMD_BINARY: handler->SetResponseFormat(ProtocolType::BINARY); break;
+            default: handler->SetResponseFormat(ProtocolType::TEXT); break;
         }
 
-#ifdef _WIN32
-        closesocket(sock);
-#else
-        close(sock);
-#endif
+        // 4. Execute
+        std::string response = DispatchCommand(sql, handler.get());
+
+        // =========================================================
+        // [FIX] SEND PROTOCOL: LENGTH + DATA
+        // =========================================================
+        uint32_t resp_len = htonl(response.size());
+        
+        // A. Send Length (4 Bytes)
+        int sent_header = send(sock, (char*)&resp_len, sizeof(resp_len), 0);
+        if (sent_header <= 0) break;
+
+        // B. Send Body (Loop to ensure full delivery)
+        size_t total_sent = 0;
+        while (total_sent < response.size()) {
+            int sent = send(sock, response.c_str() + total_sent, response.size() - total_sent, 0);
+            if (sent <= 0) break;
+            total_sent += sent;
+        }
+        // =========================================================
     }
+
+#ifdef _WIN32
+    closesocket(sock);
+#else
+    close(sock);
+#endif
+}
 }
