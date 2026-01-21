@@ -4,7 +4,6 @@
 #include <chrono>
 
 namespace francodb {
-    
     // Helper: Write a standard string to buffer [4-byte Len][Data]
     void WriteString(std::vector<char> &buffer, const std::string &str) {
         uint32_t len = static_cast<uint32_t>(str.length());
@@ -44,6 +43,26 @@ namespace francodb {
         try {
             std::unique_lock<std::mutex> lock(latch_);
 
+            // ==============================================================
+            // [AUTO-REOPEN LOGIC]
+            // If the log file was closed (e.g., by Time Travel reading),
+            // we must re-open it now to allow new writes.
+            // ==============================================================
+            if (!log_file_.is_open()) {
+                // Re-open in Append Mode
+                log_file_.open(log_file_name_, std::ios::binary | std::ios::app);
+
+                // Restart the background flush thread if it was stopped
+                if (stop_flush_thread_) {
+                    stop_flush_thread_ = false;
+                    // If the old thread object is still technically "active" in C++, 
+                    // we assign a new thread to it.
+                    if (flush_thread_.joinable()) flush_thread_.join();
+                    flush_thread_ = std::thread(&LogManager::FlushThread, this);
+                }
+            }
+            // ==============================================================
+
             // 1. Assign Unique LSN
             log_record.lsn_ = next_lsn_++;
 
@@ -81,14 +100,12 @@ namespace francodb {
             if (log_record.log_record_type_ == LogRecordType::INSERT) {
                 WriteString(record_buf, log_record.table_name_);
                 WriteValue(record_buf, log_record.new_value_);
-            }
-            else if (log_record.log_record_type_ == LogRecordType::UPDATE) {
+            } else if (log_record.log_record_type_ == LogRecordType::UPDATE) {
                 WriteString(record_buf, log_record.table_name_);
                 WriteValue(record_buf, log_record.old_value_);
                 WriteValue(record_buf, log_record.new_value_);
-            }
-            else if (log_record.log_record_type_ == LogRecordType::APPLY_DELETE ||
-                     log_record.log_record_type_ == LogRecordType::MARK_DELETE) {
+            } else if (log_record.log_record_type_ == LogRecordType::APPLY_DELETE ||
+                       log_record.log_record_type_ == LogRecordType::MARK_DELETE) {
                 WriteString(record_buf, log_record.table_name_);
                 WriteValue(record_buf, log_record.old_value_);
             }
@@ -110,7 +127,7 @@ namespace francodb {
             return LogRecord::INVALID_LSN;
         }
     }
-    
+
     // Force a specific log record for checkpoints
     void LogManager::LogCheckpoint() {
         LogRecord rec(0, 0, LogRecordType::CHECKPOINT_END);
@@ -138,18 +155,18 @@ namespace francodb {
             if (stop_flush_thread_) return;
             stop_flush_thread_ = true;
             cv_.notify_all();
-        } 
-        
+        }
+
         // 2. Wait for the background thread to die
         if (flush_thread_.joinable()) {
             flush_thread_.join();
         }
-        
+
         // 3. [CRITICAL FIX] Flush whatever is left in the buffers!
         // The previous code cleared them; now we WRITE them.
         try {
             bool did_write = false;
-            
+
             // Check the main buffer
             if (!log_buffer_.empty()) {
                 log_file_.write(log_buffer_.data(), log_buffer_.size());
@@ -165,7 +182,7 @@ namespace francodb {
             if (did_write) {
                 log_file_.flush();
             }
-            
+
             log_file_.close();
         } catch (...) {
             // Best effort shutdown
@@ -175,9 +192,7 @@ namespace francodb {
     void LogManager::FlushThread() {
         try {
             while (true) {
-                std::vector<char> local_flush_buffer;
-                
-                {
+                std::vector<char> local_flush_buffer; {
                     std::unique_lock<std::mutex> lock(latch_);
 
                     // Wait for 30ms or until buffer is large
@@ -186,7 +201,7 @@ namespace francodb {
                     });
 
                     if (stop_flush_thread_) {
-                        break; 
+                        break;
                     }
 
                     if (log_buffer_.empty()) {
@@ -195,7 +210,7 @@ namespace francodb {
 
                     SwapBuffers();
                     local_flush_buffer = std::move(flush_buffer_);
-                } 
+                }
 
                 // --- I/O OPERATION ---
                 if (!local_flush_buffer.empty()) {
@@ -204,14 +219,11 @@ namespace francodb {
                             log_file_.write(local_flush_buffer.data(), local_flush_buffer.size());
                             log_file_.flush();
                         }
-                    } catch (...) {}
+                    } catch (...) {
+                    }
                 }
             }
-        } catch (...) {}
+        } catch (...) {
+        }
     }
-    
-    
-    
-    
-    
 } // namespace francodb

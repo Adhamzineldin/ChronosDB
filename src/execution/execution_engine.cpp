@@ -306,6 +306,13 @@ namespace francodb {
         if (stmt->as_of_timestamp_ > 0) {
             std::cout << "[TIME TRAVEL] Building snapshot as of " << stmt->as_of_timestamp_ << "..." << std::endl;
             
+            
+            if (log_manager_) {
+                log_manager_->Flush(true);     
+                log_manager_->StopFlushThread(); 
+            }
+            
+            
             shadow_heap = SnapshotManager::BuildSnapshot(
                 stmt->table_name_, 
                 stmt->as_of_timestamp_, 
