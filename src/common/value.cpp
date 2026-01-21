@@ -2,18 +2,14 @@
 #include <cstring>
 #include <iostream>
 #include <cstdint>
+#include <string>
 
 namespace francodb {
 
 Value::Value() : type_id_(TypeId::INVALID), integer_(0) {}
-
 Value::Value(TypeId type, int32_t i) : type_id_(type), integer_(i) {}
-
 Value::Value(TypeId type, double d) : type_id_(type), decimal_(d) {}
-
-Value::Value(TypeId type, const std::string &s) : type_id_(type) {
-    string_val_ = s;
-}
+Value::Value(TypeId type, const std::string &s) : type_id_(type), string_val_(s) {}
 
 Value::Value(const Value &other) {
     CopyFrom(other);
@@ -33,6 +29,7 @@ void Value::CopyFrom(const Value &other) {
     } else if (type_id_ == TypeId::DECIMAL) {
         decimal_ = other.decimal_;
     } else {
+        // Safely copy integer/union value
         integer_ = other.integer_;
     }
 }
@@ -48,12 +45,9 @@ void Value::SerializeTo(char *dest) const {
             std::memcpy(dest, &b, sizeof(uint8_t));
             break;
         }
-        case TypeId::BIGINT: {
-            int64_t val = static_cast<int64_t>(integer_);
-            std::memcpy(dest, &val, sizeof(int64_t));
-            break;
-        }
+        case TypeId::BIGINT:
         case TypeId::TIMESTAMP: {
+            // Ensure we write 8 bytes
             int64_t val = static_cast<int64_t>(integer_);
             std::memcpy(dest, &val, sizeof(int64_t));
             break;
@@ -63,8 +57,10 @@ void Value::SerializeTo(char *dest) const {
             break;
         }
         case TypeId::VARCHAR: {
-            // VARCHAR handled by Tuple (offset/length + raw bytes). Avoid writing here.
-            // No-op for standalone Value serialization of VARCHAR.
+            // Write raw bytes only if not empty
+            if (!string_val_.empty()) {
+                std::memcpy(dest, string_val_.c_str(), string_val_.length());
+            }
             break;
         }
         default:
@@ -72,7 +68,8 @@ void Value::SerializeTo(char *dest) const {
     }
 }
 
-Value Value::DeserializeFrom(const char *src, TypeId type) {
+// [FIX] Added length parameter to signature
+Value Value::DeserializeFrom(const char *src, TypeId type, uint32_t length) {
     switch (type) {
         case TypeId::INTEGER: {
             int32_t val;
@@ -84,16 +81,11 @@ Value Value::DeserializeFrom(const char *src, TypeId type) {
             std::memcpy(&b, src, sizeof(uint8_t));
             return Value(TypeId::BOOLEAN, static_cast<int32_t>(b));
         }
-        case TypeId::BIGINT: {
-            int64_t val;
-            std::memcpy(&val, src, sizeof(int64_t));
-            // Store into integer_ for simplicity (may truncate if > int32 range)
-            return Value(TypeId::BIGINT, static_cast<int32_t>(val));
-        }
+        case TypeId::BIGINT:
         case TypeId::TIMESTAMP: {
             int64_t val;
             std::memcpy(&val, src, sizeof(int64_t));
-            return Value(TypeId::TIMESTAMP, static_cast<int32_t>(val));
+            return Value(type, static_cast<int32_t>(val));
         }
         case TypeId::DECIMAL: {
             double val;
@@ -101,9 +93,11 @@ Value Value::DeserializeFrom(const char *src, TypeId type) {
             return Value(TypeId::DECIMAL, val);
         }
         case TypeId::VARCHAR: {
-            // For tuple data, use Tuple::GetValue which knows length.
-            // Fallback: treat src as null-terminated.
-            return Value(TypeId::VARCHAR, std::string(src));
+            // [CRITICAL] Use length to avoid reading garbage/crash
+            if (length > 0) {
+                return Value(TypeId::VARCHAR, std::string(src, length));
+            }
+            return Value(TypeId::VARCHAR, std::string(""));
         }
         default:
             return Value();
@@ -115,14 +109,12 @@ std::ostream &operator<<(std::ostream &os, const Value &val) {
         os << val.string_val_;
     } else if (val.type_id_ == TypeId::DECIMAL) {
         os << val.decimal_;
-    } else if (val.type_id_ == TypeId::INTEGER || val.type_id_ == TypeId::BIGINT || 
-               val.type_id_ == TypeId::TIMESTAMP || val.type_id_ == TypeId::BOOLEAN) {
+    } else if (val.type_id_ == TypeId::INTEGER || val.type_id_ == TypeId::BOOLEAN) {
         os << val.integer_;
     } else {
-        os << "<INVALID>";
+        os << "<VAL>";
     }
     return os;
 }
 
 } // namespace francodb
-

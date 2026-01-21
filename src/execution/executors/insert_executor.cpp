@@ -253,7 +253,7 @@ bool InsertExecutor::Next(Tuple *tuple) {
             }
             
             if (found_duplicate) {
-                // std::cout << "[DEBUG][INSERT] Duplicate detected for PK '" << col.GetName() << "' value=" << pk_value << std::endl;
+                std::cout << "[DEBUG][INSERT] Duplicate detected for PK '" << col.GetName() << "' value=" << pk_value << std::endl;
                 throw Exception(ExceptionType::EXECUTION, 
                     "PRIMARY KEY violation: Duplicate value for " + col.GetName());
             }
