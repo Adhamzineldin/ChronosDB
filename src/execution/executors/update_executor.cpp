@@ -262,15 +262,59 @@ Tuple UpdateExecutor::CreateUpdatedTuple(const Tuple &old_tuple) {
     std::vector<Value> new_values;
     const Schema &schema = table_info_->schema_;
 
-    // Loop through all columns
     for (uint32_t i = 0; i < schema.GetColumnCount(); ++i) {
-        std::string col_name = schema.GetColumn(i).GetName();
+        const Column &col = schema.GetColumn(i);
+        std::string col_name = col.GetName();
         
-        // Is this the target column? (e.g., "points")
         if (col_name == plan_->target_column_) {
-            new_values.push_back(plan_->new_value_); // Use the new value
+            // Found target. Convert raw value (String) to Schema Type (Int/Dec).
+            const Value &raw_val = plan_->new_value_;
+            Value final_val;
+
+            try {
+                // If types match, use directly
+                if (raw_val.GetTypeId() == col.GetType()) {
+                    final_val = raw_val; 
+                } 
+                // CONVERT: String -> Integer
+                else if (col.GetType() == TypeId::INTEGER) {
+                    if (raw_val.GetTypeId() == TypeId::VARCHAR) {
+                        int32_t val = std::stoi(raw_val.GetAsString());
+                        final_val = Value(TypeId::INTEGER, val);
+                    } else if (raw_val.GetTypeId() == TypeId::DECIMAL) {
+                        final_val = Value(TypeId::INTEGER, static_cast<int32_t>(raw_val.GetAsDouble()));
+                    } else {
+                        // Fallback/Error
+                        throw Exception(ExceptionType::EXECUTION, "Cannot cast to INTEGER");
+                    }
+                } 
+                // CONVERT: String -> Decimal
+                else if (col.GetType() == TypeId::DECIMAL) {
+                    if (raw_val.GetTypeId() == TypeId::VARCHAR) {
+                        double val = std::stod(raw_val.GetAsString());
+                        final_val = Value(TypeId::DECIMAL, val);
+                    } else if (raw_val.GetTypeId() == TypeId::INTEGER) {
+                        final_val = Value(TypeId::DECIMAL, static_cast<double>(raw_val.GetAsInteger()));
+                    } else {
+                        throw Exception(ExceptionType::EXECUTION, "Cannot cast to DECIMAL");
+                    }
+                }
+                // CONVERT: Any -> String
+                else if (col.GetType() == TypeId::VARCHAR) {
+                    final_val = Value(TypeId::VARCHAR, raw_val.GetAsString());
+                }
+                else {
+                    // Boolean etc.
+                    final_val = raw_val;
+                }
+            } catch (...) {
+                throw Exception(ExceptionType::EXECUTION, 
+                    "Update Type Mismatch for column '" + col_name + "'");
+            }
+            new_values.push_back(final_val);
         } else {
-            new_values.push_back(old_tuple.GetValue(schema, i)); // Keep old value
+            // Keep old value
+            new_values.push_back(old_tuple.GetValue(schema, i)); 
         }
     }
     return Tuple(new_values, schema);
