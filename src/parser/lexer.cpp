@@ -88,6 +88,16 @@ namespace francodb {
         {"2ERGA3", TokenType::ROLLBACK},
         {"2AKED",  TokenType::COMMIT},
         
+        
+        
+        // --- RECOVERY / TIME TRAVEL (NEW) ---
+        {"CHECKPOINT", TokenType::CHECKPOINT},
+        {"SAVE",       TokenType::CHECKPOINT}, // Alias
+        {"RECOVER",    TokenType::RECOVER},
+        {"ERGA3",      TokenType::RECOVER},    // "Return" / "Go Back"
+        {"TO",         TokenType::TO},
+        {"ELA",        TokenType::TO},
+        
         // --- GROUP BY & AGGREGATES ---
         {"MAGMO3A", TokenType::GROUP},
         {"GROUP",   TokenType::GROUP},
@@ -371,6 +381,11 @@ namespace francodb {
             case TokenType::BEGIN_TXN: return "BEGIN";
             case TokenType::COMMIT: return "COMMIT";
             case TokenType::ROLLBACK: return "ROLLBACK";
+            
+                
+            case TokenType::CHECKPOINT: return "CHECKPOINT";
+            case TokenType::RECOVER:    return "RECOVER";
+            case TokenType::TO:         return "TO";
             
             // GROUP BY & Aggregates
             case TokenType::GROUP: return "GROUP";

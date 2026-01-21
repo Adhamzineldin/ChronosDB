@@ -130,7 +130,11 @@ namespace francodb {
         GT,          // >
         LT,          // <
         EOF_TOKEN,   // End
-        INVALID      // Error
+        INVALID,      // Error
+        
+        CHECKPOINT, // "CHECKPOINT"
+        RECOVER,    // "RECOVER"
+        TO          // "TO"
     };
 
     struct Token {

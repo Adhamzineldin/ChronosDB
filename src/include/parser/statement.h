@@ -9,8 +9,10 @@
 namespace francodb {
     enum class StatementType {
         CREATE, INSERT, SELECT, DELETE_CMD, UPDATE_CMD, DROP, CREATE_INDEX, BEGIN, ROLLBACK, COMMIT, CREATE_DB, USE_DB,
-        LOGIN, CREATE_USER, ALTER_USER_ROLE, DELETE_USER, SHOW_USERS, SHOW_DATABASES, SHOW_TABLES, SHOW_STATUS, WHOAMI, DROP_DB, CREATE_TABLE,
-        DESCRIBE_TABLE, ALTER_TABLE, SHOW_CREATE_TABLE
+        LOGIN, CREATE_USER, ALTER_USER_ROLE, DELETE_USER, SHOW_USERS, SHOW_DATABASES, SHOW_TABLES, SHOW_STATUS, WHOAMI,
+        DROP_DB, CREATE_TABLE,
+        DESCRIBE_TABLE, ALTER_TABLE, SHOW_CREATE_TABLE, CHECKPOINT_CMD,
+        RECOVER_CMD
     };
 
     enum class LogicType { NONE, AND, OR };
@@ -39,23 +41,25 @@ namespace francodb {
         StatementType GetType() const override { return StatementType::CREATE; }
         std::string table_name_;
         std::vector<Column> columns_;
-        
+
         // ============ ENTERPRISE FEATURES ============
         // FOREIGN KEY constraints
         struct ForeignKey {
-            std::vector<std::string> columns;      // Local columns
-            std::string ref_table;                 // Referenced table
-            std::vector<std::string> ref_columns;  // Referenced columns
-            std::string on_delete;                 // CASCADE, RESTRICT, SET NULL, etc.
-            std::string on_update;                 // CASCADE, RESTRICT, SET NULL, etc.
+            std::vector<std::string> columns; // Local columns
+            std::string ref_table; // Referenced table
+            std::vector<std::string> ref_columns; // Referenced columns
+            std::string on_delete; // CASCADE, RESTRICT, SET NULL, etc.
+            std::string on_update; // CASCADE, RESTRICT, SET NULL, etc.
         };
+
         std::vector<ForeignKey> foreign_keys_;
-        
+
         // CHECK constraints (table-level)
         struct CheckConstraint {
             std::string name;
             std::string expression;
         };
+
         std::vector<CheckConstraint> check_constraints_;
     };
 
@@ -87,38 +91,40 @@ namespace francodb {
 
         // THE UPGRADE: A list of conditions instead of single variables
         std::vector<WhereCondition> where_clause_;
-        
+
         // ============ ENTERPRISE FEATURES ============
         // DISTINCT support
         bool is_distinct_ = false;
-        
+
         // Aggregate functions (COUNT, SUM, AVG, MIN, MAX)
-        std::vector<std::pair<std::string, std::string>> aggregates_; // {function, column}
-        
+        std::vector<std::pair<std::string, std::string> > aggregates_; // {function, column}
+
         // JOIN support
         struct JoinClause {
-            std::string join_type;      // "INNER", "LEFT", "RIGHT", "CROSS"
-            std::string table_name;     // Table to join with
-            std::string condition;      // Join condition (simplified for now)
+            std::string join_type; // "INNER", "LEFT", "RIGHT", "CROSS"
+            std::string table_name; // Table to join with
+            std::string condition; // Join condition (simplified for now)
         };
+
         std::vector<JoinClause> joins_;
-        
+
         // GROUP BY support
         std::vector<std::string> group_by_columns_;
-        
+
         // HAVING clause (like WHERE but for grouped results)
         std::vector<WhereCondition> having_clause_;
-        
+
         // ORDER BY support
         struct OrderByClause {
             std::string column;
             std::string direction; // "ASC" or "DESC"
         };
+
         std::vector<OrderByClause> order_by_;
-        
+
         // LIMIT and OFFSET support
-        int limit_ = -1;        // -1 means no limit
-        int offset_ = 0;        // Start from beginning by default
+        int limit_ = -1; // -1 means no limit
+        int offset_ = 0; // Start from beginning by default
     };
 
     class UpdateStatement : public Statement {
@@ -232,33 +238,33 @@ namespace francodb {
     public:
         StatementType GetType() const override { return StatementType::SHOW_STATUS; }
     };
-    
+
     class DropDatabaseStatement : public Statement {
     public:
         StatementType GetType() const override { return StatementType::DROP_DB; }
         std::string db_name_;
     };
-    
+
     // DESCRIBE TABLE / DESC
     class DescribeTableStatement : public Statement {
     public:
         StatementType GetType() const override { return StatementType::DESCRIBE_TABLE; }
         std::string table_name_;
     };
-    
+
     // SHOW CREATE TABLE
     class ShowCreateTableStatement : public Statement {
     public:
         StatementType GetType() const override { return StatementType::SHOW_CREATE_TABLE; }
         std::string table_name_;
     };
-    
+
     // ALTER TABLE
     class AlterTableStatement : public Statement {
     public:
         StatementType GetType() const override { return StatementType::ALTER_TABLE; }
         std::string table_name_;
-        
+
         enum class AlterType {
             ADD_COLUMN,
             DROP_COLUMN,
@@ -267,11 +273,28 @@ namespace francodb {
             ADD_PRIMARY_KEY,
             DROP_PRIMARY_KEY
         };
-        
+
         AlterType alter_type_;
         std::string column_name_;
-        Column new_column_def_;  // For ADD_COLUMN or MODIFY_COLUMN
-        std::string new_column_name_;  // For RENAME_COLUMN
+        Column new_column_def_; // For ADD_COLUMN or MODIFY_COLUMN
+        std::string new_column_name_; // For RENAME_COLUMN
     };
+    
+    class CheckpointStatement : public Statement {
+    public:
+        StatementType GetType() const override { return StatementType::CHECKPOINT_CMD; }
+    };
+
+    class RecoverStatement : public Statement {
+    public:
+        StatementType GetType() const override { return StatementType::RECOVER_CMD; }
+        uint64_t timestamp_;
+        
+        explicit RecoverStatement(uint64_t timestamp) : timestamp_(timestamp) {}
+    };
+    
+    
+   
+    
     
 } // namespace francodb
