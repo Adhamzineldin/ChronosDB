@@ -4,11 +4,13 @@
 #include "execution/executors/delete_executor.h"
 #include "execution/executors/index_scan_executor.h"
 #include "execution/executors/update_executor.h"
+#include "execution/executors/join_executor.h"
 #include "common/exception.h"
 #include <algorithm>
 #include <sstream>
 #include <filesystem>
 #include <set>
+#include <map>
 
 #include "common/auth_manager.h"
 #include "../include/network/session_context.h"
@@ -261,24 +263,100 @@ namespace francodb {
         AbstractExecutor *executor = nullptr;
         bool use_index = false;
 
-        // Optimizer Logic (Simplified)
-        if (!stmt->where_clause_.empty() && stmt->where_clause_[0].op == "=") {
-            auto &cond = stmt->where_clause_[0];
-            auto indexes = catalog_->GetTableIndexes(stmt->table_name_);
-            for (auto *idx: indexes) {
-                if (idx->col_name_ == cond.column && idx->b_plus_tree_) {
-                    try {
-                        executor = new IndexScanExecutor(exec_ctx_, stmt, idx, cond.value, GetCurrentTransaction());
-                        use_index = true;
-                        break;
-                    } catch (...) {
+        // Handle JOINs if present
+        if (!stmt->joins_.empty()) {
+            // For now, we'll use nested loop joins
+            // Create executor for left table (main table)
+            auto left_executor = std::unique_ptr<AbstractExecutor>(
+                new SeqScanExecutor(exec_ctx_, stmt, GetCurrentTransaction()));
+            
+            // For each join, create a right executor and wrap in JoinExecutor
+            for (const auto &join_clause : stmt->joins_) {
+                // Create a temporary SelectStatement for the right table
+                auto right_stmt = std::make_unique<SelectStatement>();
+                right_stmt->select_all_ = true;
+                right_stmt->table_name_ = join_clause.table_name;
+                
+                auto right_executor = std::unique_ptr<AbstractExecutor>(
+                    new SeqScanExecutor(exec_ctx_, right_stmt.get(), GetCurrentTransaction()));
+                
+                // Parse join condition (simplified: assumes format "table1.col1 = table2.col2")
+                std::vector<JoinCondition> conditions;
+                if (!join_clause.condition.empty()) {
+                    // Simple parsing of join condition
+                    // Expected format: "table1.col1 = table2.col2" or "col1 = col2"
+                    JoinCondition cond;
+                    
+                    size_t eq_pos = join_clause.condition.find('=');
+                    if (eq_pos != std::string::npos) {
+                        std::string left_part = join_clause.condition.substr(0, eq_pos);
+                        std::string right_part = join_clause.condition.substr(eq_pos + 1);
+                        
+                        // Trim whitespace
+                        left_part.erase(0, left_part.find_first_not_of(" \t"));
+                        left_part.erase(left_part.find_last_not_of(" \t") + 1);
+                        right_part.erase(0, right_part.find_first_not_of(" \t"));
+                        right_part.erase(right_part.find_last_not_of(" \t") + 1);
+                        
+                        // Parse left side
+                        size_t dot_pos = left_part.find('.');
+                        if (dot_pos != std::string::npos) {
+                            cond.left_table = left_part.substr(0, dot_pos);
+                            cond.left_column = left_part.substr(dot_pos + 1);
+                        } else {
+                            cond.left_table = stmt->table_name_;
+                            cond.left_column = left_part;
+                        }
+                        
+                        // Parse right side
+                        dot_pos = right_part.find('.');
+                        if (dot_pos != std::string::npos) {
+                            cond.right_table = right_part.substr(0, dot_pos);
+                            cond.right_column = right_part.substr(dot_pos + 1);
+                        } else {
+                            cond.right_table = join_clause.table_name;
+                            cond.right_column = right_part;
+                        }
+                        
+                        cond.op = "=";
+                        conditions.push_back(cond);
+                    }
+                }
+                
+                // Determine join type
+                JoinType join_type = JoinType::INNER;
+                if (join_clause.join_type == "LEFT") join_type = JoinType::LEFT;
+                else if (join_clause.join_type == "RIGHT") join_type = JoinType::RIGHT;
+                else if (join_clause.join_type == "CROSS") join_type = JoinType::CROSS;
+                else if (join_clause.join_type == "FULL") join_type = JoinType::FULL;
+                
+                // Wrap in JoinExecutor
+                left_executor = std::unique_ptr<AbstractExecutor>(
+                    new JoinExecutor(exec_ctx_, std::move(left_executor), std::move(right_executor),
+                                   join_type, conditions, GetCurrentTransaction()));
+            }
+            
+            executor = left_executor.release();
+        } else {
+            // Optimizer Logic (Simplified) - only if no joins
+            if (!stmt->where_clause_.empty() && stmt->where_clause_[0].op == "=") {
+                auto &cond = stmt->where_clause_[0];
+                auto indexes = catalog_->GetTableIndexes(stmt->table_name_);
+                for (auto *idx: indexes) {
+                    if (idx->col_name_ == cond.column && idx->b_plus_tree_) {
+                        try {
+                            executor = new IndexScanExecutor(exec_ctx_, stmt, idx, cond.value, GetCurrentTransaction());
+                            use_index = true;
+                            break;
+                        } catch (...) {
+                        }
                     }
                 }
             }
-        }
 
-        if (!use_index) {
-            executor = new SeqScanExecutor(exec_ctx_, stmt, GetCurrentTransaction());
+            if (!use_index) {
+                executor = new SeqScanExecutor(exec_ctx_, stmt, GetCurrentTransaction());
+            }
         }
 
         try {
@@ -320,16 +398,105 @@ namespace francodb {
             }
         }
 
-        // 2. Rows - Only return selected columns
+        // 2. Collect all rows first (needed for DISTINCT, ORDER BY, GROUP BY, LIMIT)
+        std::vector<std::vector<std::string>> all_rows;
         Tuple t;
         while (executor->Next(&t)) {
             std::vector<std::string> row_strings;
             for (uint32_t col_idx: column_indices) {
                 row_strings.push_back(ValueToString(t.GetValue(*output_schema, col_idx)));
             }
-            rs->AddRow(row_strings);
+            all_rows.push_back(row_strings);
         }
         delete executor;
+
+        // 3. Apply DISTINCT if requested
+        if (stmt->is_distinct_) {
+            std::set<std::vector<std::string>> unique_rows(all_rows.begin(), all_rows.end());
+            all_rows.assign(unique_rows.begin(), unique_rows.end());
+        }
+
+        // 4. Apply GROUP BY if present
+        if (!stmt->group_by_columns_.empty()) {
+            // Group rows by specified columns
+            std::map<std::vector<std::string>, std::vector<std::vector<std::string>>> grouped_data;
+            
+            for (const auto &row : all_rows) {
+                std::vector<std::string> group_key;
+                for (const auto &group_col : stmt->group_by_columns_) {
+                    // Find column index in result set
+                    auto it = std::find(rs->column_names.begin(), rs->column_names.end(), group_col);
+                    if (it != rs->column_names.end()) {
+                        size_t idx = std::distance(rs->column_names.begin(), it);
+                        if (idx < row.size()) {
+                            group_key.push_back(row[idx]);
+                        }
+                    }
+                }
+                grouped_data[group_key].push_back(row);
+            }
+            
+            // For now, just return first row of each group (simplified aggregation)
+            all_rows.clear();
+            for (const auto &[key, group] : grouped_data) {
+                if (!group.empty()) {
+                    all_rows.push_back(group[0]);
+                }
+            }
+        }
+
+        // 5. Apply ORDER BY if present
+        if (!stmt->order_by_.empty()) {
+            std::sort(all_rows.begin(), all_rows.end(), 
+                [&](const std::vector<std::string> &a, const std::vector<std::string> &b) {
+                    for (const auto &order_clause : stmt->order_by_) {
+                        // Find column index
+                        auto it = std::find(rs->column_names.begin(), rs->column_names.end(), order_clause.column);
+                        if (it != rs->column_names.end()) {
+                            size_t idx = std::distance(rs->column_names.begin(), it);
+                            if (idx < a.size() && idx < b.size()) {
+                                // Try numeric comparison first
+                                try {
+                                    double val_a = std::stod(a[idx]);
+                                    double val_b = std::stod(b[idx]);
+                                    if (val_a != val_b) {
+                                        if (order_clause.direction == "DESC") {
+                                            return val_a > val_b;
+                                        } else {
+                                            return val_a < val_b;
+                                        }
+                                    }
+                                } catch (...) {
+                                    // Fall back to string comparison
+                                    if (a[idx] != b[idx]) {
+                                        if (order_clause.direction == "DESC") {
+                                            return a[idx] > b[idx];
+                                        } else {
+                                            return a[idx] < b[idx];
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    return false;
+                });
+        }
+
+        // 6. Apply OFFSET
+        size_t start_idx = 0;
+        if (stmt->offset_ > 0 && static_cast<size_t>(stmt->offset_) < all_rows.size()) {
+            start_idx = static_cast<size_t>(stmt->offset_);
+        }
+
+        // 7. Apply LIMIT and add rows to result set
+        size_t count = 0;
+        size_t max_count = (stmt->limit_ > 0) ? static_cast<size_t>(stmt->limit_) : all_rows.size();
+        
+        for (size_t i = start_idx; i < all_rows.size() && count < max_count; i++) {
+            rs->AddRow(all_rows[i]);
+            count++;
+        }
 
         return ExecutionResult::Data(rs);
     }
