@@ -145,7 +145,7 @@ namespace francodb {
             // We need to peek the Type to see if it's a checkpoint
             // Size (4) + LSN (4) + Prev (4) + Txn (4) + Time (8) = 24 bytes offset to Type
             
-            log_file.seekg(24, std::ios::cur); 
+            log_file.seekg(20, std::ios::cur); 
             
             int log_type_int;
             log_file.read(reinterpret_cast<char*>(&log_type_int), sizeof(int));
