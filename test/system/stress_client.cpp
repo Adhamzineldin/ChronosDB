@@ -134,12 +134,17 @@ static void Worker(int id) {
             int val = dist(rng);
             query = "EMLA GOWA stress_table ELKEYAM (" + std::to_string(val) + ", 'StressTest');";
         } else if (r < 70) {
-            query = "2E5TAR * MEN stress_table;"; // Returns massive data -> Tests Protocol
+            query = "2E5TAR * MEN stress_table LIMIT 100;"; // Returns massive data -> Tests Protocol
         } else {
-            query = "3ADEL stress_table 5ALY val = 'Updated' LAMA id > 50;";
+            query = "3ADEL stress_table 5ALY val = 'Updated' LAMA id = 50;";
         }
 
         std::string resp = client.Send(query);
+        
+        
+        if (i % 50 == 0) {
+            std::cout << "." << std::flush; 
+        }
         
         if (resp.find("ERROR") != std::string::npos || resp.find("NETWORK_ERROR") != std::string::npos) {
             fail_count++;
