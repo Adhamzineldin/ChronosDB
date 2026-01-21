@@ -2,7 +2,7 @@
 AppName=FrancoDB
 AppVersion=1.0
 AppPublisher=FrancoDB Team
-AppPublisherURL=https://github.com/yourusername/FrancoDB
+AppPublisherURL=https://github.com/adhamzineldin/FrancoDB
 AppId={{8C5E4A9B-3F2D-4B1C-9A7E-5D8F2C1B4A3E}
 DefaultDirName={autopf}\FrancoDB
 DefaultGroupName=FrancoDB

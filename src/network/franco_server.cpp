@@ -110,7 +110,7 @@ namespace francodb {
 
         while (running_ && is_running_) {
             sockaddr_in client_addr{};
-            int len = sizeof(client_addr);
+            socklen_t len = sizeof(client_addr);
 
             // Note: ThreadPool handles tasks fast, so blocking accept is usually okay.
             // Keeping select() logic for clean shutdown support.

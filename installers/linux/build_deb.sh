@@ -8,9 +8,11 @@ set -e
 # Script is in installers/linux/, so project root is two levels up
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-DEB_DIR="${SCRIPT_DIR}/debian_package"
+DEB_DIR=$(mktemp -d -t francodb-deb.XXXXXX)
+
 BUILD_DIR="${PROJECT_ROOT}/build"
-OUTPUT_DIR="${PROJECT_ROOT}/Output"
+OUTPUT_DIR="${SCRIPT_DIR}/Output"
+mkdir -p "$OUTPUT_DIR"
 VERSION="1.0.0"
 ARCH="amd64"
 
@@ -40,6 +42,11 @@ mkdir -p "$DEB_DIR/usr/local/bin"
 mkdir -p "$DEB_DIR/usr/share/doc/francodb"
 mkdir -p "$DEB_DIR/usr/share/man/man1"
 
+# IMPORTANT: Set correct permissions on DEBIAN directory (must be 0755 or 0775 for dpkg-deb)
+# Also set umask to ensure new files have proper permissions
+chmod 755 "$DEB_DIR/DEBIAN"
+umask 0022
+
 # Create output directory if it doesn't exist
 mkdir -p "$OUTPUT_DIR"
 
@@ -49,8 +56,14 @@ echo "Building FrancoDB from source..."
 if [ ! -d "$BUILD_DIR" ]; then
     mkdir -p "$BUILD_DIR"
     cd "$BUILD_DIR"
-    cmake -DCMAKE_BUILD_TYPE=Release "$PROJECT_ROOT"
+    
+    # FIX: Use standard flags instead of presets
+    # -DBUILD_TESTING=OFF : Skips tests (speeds up build, avoids winsock error)
+    # -DCMAKE_BUILD_TYPE=Release : Optimizes for production
+    cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF "$PROJECT_ROOT"
+    
     cmake --build . -j$(nproc)
+    
     cd "$SCRIPT_DIR"
 fi
 
@@ -145,7 +158,7 @@ Package: francodb
 Version: $VERSION
 Architecture: $ARCH
 Maintainer: FrancoDB Team <dev@francodb.io>
-Homepage: https://github.com/yourusername/FrancoDB
+Homepage: https://github.com/adhamzineldin/FrancoDB
 Description: FrancoDB - S+ Grade Enterprise Database System
  FrancoDB is a high-performance relational database with:
  - Advanced SQL support (JOINs, GROUP BY, aggregates)
@@ -287,6 +300,11 @@ DEB_FILENAME="francodb_${VERSION}_${ARCH}.deb"
 echo ""
 echo "Building .deb package..."
 
+# Final permission check - ensure DEBIAN directory has correct permissions before building
+chmod 755 "$DEB_DIR/DEBIAN"
+chmod 644 "$DEB_DIR/DEBIAN/control"
+chmod 755 "$DEB_DIR/DEBIAN/preinst" "$DEB_DIR/DEBIAN/postinst" "$DEB_DIR/DEBIAN/prerm" "$DEB_DIR/DEBIAN/postrm" 2>/dev/null || true
+
 dpkg-deb --build "$DEB_DIR" "${OUTPUT_DIR}/${DEB_FILENAME}"
 
 echo "✓ Package built successfully!"
@@ -307,6 +325,13 @@ echo ""
 cd "$OUTPUT_DIR"
 md5sum "${DEB_FILENAME}" > "${DEB_FILENAME}.md5"
 echo "✓ Checksum: ${DEB_FILENAME}.md5"
-
+ 
 echo "Done!"
 
+
+echo "✓ Checksum: ${DEB_FILENAME}.md5"
+
+# Clean up the temporary staging directory
+rm -rf "$DEB_DIR"
+
+echo "Done!"

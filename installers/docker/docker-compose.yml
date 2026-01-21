@@ -1,11 +1,9 @@
-version: '3.8'
-
 services:
   francodb:
     # Build from project root with Dockerfile in installers/docker
     build:
       context: ../..
-      dockerfile: Dockerfile
+      dockerfile: installers/docker/Dockerfile
     
     # Container name for easy reference
     container_name: francodb-server

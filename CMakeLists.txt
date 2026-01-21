@@ -69,7 +69,9 @@ endif()
 # =========================================================
 # 5. TESTS (Delegate to test/ folder)
 # =========================================================
-if(EXISTS "${TEST_DIR}")
+option(BUILD_TESTING "Build the testing tree." ON)
+
+if(BUILD_TESTING AND EXISTS "${TEST_DIR}")
     add_subdirectory(test)
 endif()
 
