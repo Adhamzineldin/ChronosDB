@@ -125,6 +125,7 @@ namespace francodb {
         // LIMIT and OFFSET support
         int limit_ = -1; // -1 means no limit
         int offset_ = 0; // Start from beginning by default
+        uint64_t as_of_timestamp_ = 0;
     };
 
     class UpdateStatement : public Statement {

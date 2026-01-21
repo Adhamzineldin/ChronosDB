@@ -21,7 +21,8 @@ namespace francodb {
         INCOMPLETE = 8,     // "I haven't coded this yet"
         NOT_IMPLEMENTED = 9,// "I will never code this"
         EXECUTION = 10,     // Executor failed
-        PARSER = 11         // Parser syntax errors
+        PARSER = 11,        // Parser syntax errors
+        CATALOG=12
     };
 
     class Exception : public std::exception {

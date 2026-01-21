@@ -3,6 +3,9 @@
 #include "parser/token.h"
 #include "common/exception.h"
 
+
+
+
 namespace francodb {
     Parser::Parser(Lexer lexer) : lexer_(std::move(lexer)) {
         // Prepare the first token
@@ -96,22 +99,30 @@ namespace francodb {
                 throw Exception(ExceptionType::PARSER, "Expected ; after CHECKPOINT");
             return std::make_unique<CheckpointStatement>();
         } else if (current_token_.type == TokenType::RECOVER) {
-            // RECOVER TO <timestamp>;
             Advance(); // Eat RECOVER
-
-            if (!Match(TokenType::TO))
+            
+            if (!Match(TokenType::TO)) 
                 throw Exception(ExceptionType::PARSER, "Expected TO (ELA) after RECOVER");
+            
+            uint64_t timestamp = 0;
 
-            if (current_token_.type != TokenType::NUMBER)
-                throw Exception(ExceptionType::PARSER, "Expected timestamp number after TO");
-
-            // Note: stoull handles large timestamps
-            uint64_t timestamp = std::stoull(current_token_.text);
-            Advance(); // Eat Number
-
+            // CASE 1: Human Readable String ('21/01/2026 14:30')
+            if (current_token_.type == TokenType::STRING_LIT) {
+                timestamp = ParseHumanDateToMicros(current_token_.text);
+                Advance(); // Eat String
+            }
+            // CASE 2: Raw Timestamp Number (for geeks/debugging)
+            else if (current_token_.type == TokenType::NUMBER) {
+                timestamp = std::stoull(current_token_.text);
+                Advance(); // Eat Number
+            } 
+            else {
+                throw Exception(ExceptionType::PARSER, "Expected Date String ('DD/MM/YYYY HH:MM') or Timestamp Number");
+            }
+            
             if (!Match(TokenType::SEMICOLON))
                 throw Exception(ExceptionType::PARSER, "Expected ; after Timestamp");
-
+                
             return std::make_unique<RecoverStatement>(timestamp);
         }
         // 10. USE database
@@ -669,6 +680,29 @@ namespace francodb {
                 stmt->offset_ = ParseNumber();
             }
         }
+        
+        // Check for "AS OF"
+        if (current_token_.text == "AS") {
+            Advance(); // Eat AS
+    
+            if (current_token_.text == "OF") {
+                Advance(); // Eat OF
+        
+                // Parse the Timestamp
+                if (current_token_.type == TokenType::STRING_LIT) {
+                    stmt->as_of_timestamp_ = ParseHumanDateToMicros(current_token_.text);
+                    Advance();
+                } else if (current_token_.type == TokenType::NUMBER) {
+                    stmt->as_of_timestamp_ = std::stoull(current_token_.text);
+                    Advance();
+                } else {
+                    throw Exception(ExceptionType::PARSER, "Expected Timestamp (String or Number) after AS OF");
+                }
+        
+            } else {
+                throw Exception(ExceptionType::PARSER, "Expected OF after AS");
+            }
+        }
 
         if (!Match(TokenType::SEMICOLON)) throw Exception(ExceptionType::PARSER, "Expected ;");
         return stmt;
@@ -1061,5 +1095,28 @@ namespace francodb {
         }
 
         return stmt;
+    }
+    
+    
+    uint64_t Parser::ParseHumanDateToMicros(const std::string& date_str) {
+        std::tm tm = {};
+        std::istringstream ss(date_str);
+        
+        // Parse format: 21/01/2026 14:30
+        ss >> std::get_time(&tm, "%d/%m/%Y %H:%M");
+        
+        if (ss.fail()) {
+            throw Exception(ExceptionType::PARSER, "Invalid date. Use: 'DD/MM/YYYY HH:MM'");
+        }
+
+        tm.tm_sec = 0; 
+        tm.tm_isdst = -1; // Let system determine DST
+        
+        std::time_t t = std::mktime(&tm);
+        if (t == -1) {
+            throw Exception(ExceptionType::PARSER, "Date conversion failed.");
+        }
+
+        return static_cast<uint64_t>(t) * 1000000ULL;
     }
 } // namespace francodb

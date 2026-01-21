@@ -39,7 +39,6 @@ namespace francodb {
         
         
         
-        
         class Iterator {
         public:
             Iterator(BufferPoolManager *bpm, page_id_t page_id, uint32_t slot_id, 

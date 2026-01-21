@@ -1,6 +1,10 @@
 #pragma once
 
 #include <memory>
+#include <iomanip>
+#include <sstream>
+#include <chrono>
+
 #include "parser/lexer.h"
 #include "parser/statement.h"
 
@@ -9,6 +13,9 @@ namespace francodb {
     class Parser {
     public:
         explicit Parser(Lexer lexer);
+
+        static uint64_t ParseHumanDateToMicros(const std::string & text);
+
         std::unique_ptr<Statement> ParseQuery();
 
     private:
