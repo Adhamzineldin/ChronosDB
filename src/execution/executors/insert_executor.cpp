@@ -158,7 +158,90 @@ bool InsertExecutor::Next(Tuple *tuple) {
 
     Tuple to_insert(reordered_values, table_info_->schema_);
     
-    // --- STEP 3: CHECK PRIMARY KEY UNIQUENESS ---
+    // --- STEP 3: CHECK FOREIGN KEY CONSTRAINTS ---
+    // Validate that foreign key values exist in referenced tables
+    for (const auto &fk : table_info_->foreign_keys_) {
+        // Get the referenced table
+        TableMetadata *ref_table = exec_ctx_->GetCatalog()->GetTable(fk.ref_table);
+        if (!ref_table) {
+            throw Exception(ExceptionType::EXECUTION, 
+                "Referenced table does not exist: " + fk.ref_table);
+        }
+        
+        // For each foreign key column, check if the value exists in the referenced table
+        for (size_t fk_idx = 0; fk_idx < fk.columns.size(); fk_idx++) {
+            const std::string &local_col = fk.columns[fk_idx];
+            const std::string &ref_col = fk.ref_columns[fk_idx];
+            
+            // Get the column index in the local table
+            int local_col_idx = table_info_->schema_.GetColIdx(local_col);
+            if (local_col_idx < 0) {
+                throw Exception(ExceptionType::EXECUTION, 
+                    "Foreign key column not found: " + local_col);
+            }
+            
+            // Get the column index in the referenced table
+            int ref_col_idx = ref_table->schema_.GetColIdx(ref_col);
+            if (ref_col_idx < 0) {
+                throw Exception(ExceptionType::EXECUTION, 
+                    "Referenced column not found: " + ref_col + " in table " + fk.ref_table);
+            }
+            
+            // Get the value to check
+            const Value &fk_value = reordered_values[local_col_idx];
+            
+            // Search for this value in the referenced table
+            bool found = false;
+            page_id_t curr_page_id = ref_table->first_page_id_;
+            auto *bpm = exec_ctx_->GetBufferPoolManager();
+            
+            while (curr_page_id != INVALID_PAGE_ID && !found) {
+                Page *page = bpm->FetchPage(curr_page_id);
+                if (page == nullptr) break;
+                
+                auto *table_page = reinterpret_cast<TablePage *>(page->GetData());
+                uint32_t tuple_count = table_page->GetTupleCount();
+                
+                for (uint32_t slot = 0; slot < tuple_count; slot++) {
+                    RID rid(curr_page_id, slot);
+                    Tuple existing_tuple;
+                    if (table_page->GetTuple(rid, &existing_tuple, txn_)) {
+                        Value existing_value = existing_tuple.GetValue(ref_table->schema_, ref_col_idx);
+                        
+                        // Compare values
+                        bool matches = false;
+                        if (existing_value.GetTypeId() == fk_value.GetTypeId()) {
+                            if (existing_value.GetTypeId() == TypeId::INTEGER) {
+                                matches = (existing_value.GetAsInteger() == fk_value.GetAsInteger());
+                            } else if (existing_value.GetTypeId() == TypeId::DECIMAL) {
+                                matches = (std::abs(existing_value.GetAsDouble() - fk_value.GetAsDouble()) < 0.0001);
+                            } else if (existing_value.GetTypeId() == TypeId::VARCHAR) {
+                                matches = (existing_value.GetAsString() == fk_value.GetAsString());
+                            }
+                        }
+                        
+                        if (matches) {
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                
+                page_id_t next = table_page->GetNextPageId();
+                bpm->UnpinPage(curr_page_id, false);
+                curr_page_id = next;
+            }
+            
+            if (!found) {
+                throw Exception(ExceptionType::EXECUTION, 
+                    "FOREIGN KEY violation: Value for column '" + local_col + 
+                    "' does not exist in referenced table '" + fk.ref_table + 
+                    "." + ref_col + "'");
+            }
+        }
+    }
+    
+    // --- STEP 4: CHECK PRIMARY KEY UNIQUENESS ---
     for (uint32_t i = 0; i < table_info_->schema_.GetColumnCount(); i++) {
         const Column &col = table_info_->schema_.GetColumn(i);
         if (col.IsPrimaryKey()) {
@@ -260,7 +343,7 @@ bool InsertExecutor::Next(Tuple *tuple) {
         }
     }
     
-    // --- STEP 4: PHYSICAL INSERT ---
+    // --- STEP 5: PHYSICAL INSERT ---
     RID rid;
     bool success = table_info_->table_heap_->InsertTuple(to_insert, &rid, txn_);
     if (!success) throw Exception(ExceptionType::EXECUTION, "Failed to insert tuple");
@@ -272,7 +355,7 @@ bool InsertExecutor::Next(Tuple *tuple) {
         txn_->AddModifiedTuple(rid, empty_tuple, false, plan_->table_name_);
     }
 
-    // --- STEP 5: UPDATE INDEXES ---
+    // --- STEP 6: UPDATE INDEXES ---
     auto indexes = exec_ctx_->GetCatalog()->GetTableIndexes(plan_->table_name_);
     // std::cout << "[DEBUG][INSERT] Updating " << indexes.size() << " indexes for table '" << plan_->table_name_ << "'" << std::endl;
     if (!indexes.empty()) {

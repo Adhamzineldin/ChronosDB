@@ -197,6 +197,40 @@ namespace francodb {
 
     ExecutionResult ExecutionEngine::ExecuteCreate(CreateStatement *stmt) {
         Schema schema(stmt->columns_);
+        
+        // Validate foreign keys BEFORE creating the table
+        for (const auto &fk : stmt->foreign_keys_) {
+            // Check if referenced table exists
+            TableMetadata *ref_table = catalog_->GetTable(fk.ref_table);
+            if (!ref_table) {
+                return ExecutionResult::Error("Referenced table does not exist: " + fk.ref_table);
+            }
+            
+            // Check if all referenced columns exist in the referenced table
+            for (const auto &ref_col : fk.ref_columns) {
+                int col_idx = ref_table->schema_.GetColIdx(ref_col);
+                if (col_idx < 0) {
+                    return ExecutionResult::Error("Referenced column '" + ref_col + 
+                                                "' does not exist in table '" + fk.ref_table + "'");
+                }
+            }
+            
+            // Check if all local columns exist in the table being created
+            for (const auto &local_col : fk.columns) {
+                bool found = false;
+                for (const auto &col : stmt->columns_) {
+                    if (col.GetName() == local_col) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    return ExecutionResult::Error("Foreign key column '" + local_col + 
+                                                "' does not exist in table definition");
+                }
+            }
+        }
+        
         TableMetadata *table_info = catalog_->CreateTable(stmt->table_name_, schema);
         if (!table_info) {
             return ExecutionResult::Error("Table already exists: " + stmt->table_name_);
