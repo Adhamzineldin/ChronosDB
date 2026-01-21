@@ -298,6 +298,8 @@ namespace francodb {
                 case StatementType::BEGIN:
                 case StatementType::COMMIT:
                 case StatementType::ROLLBACK:
+                case StatementType::CHECKPOINT:
+                case StatementType::RECOVER:
                     return true;
                 default:
                     return false; // User management reserved for SUPERADMIN

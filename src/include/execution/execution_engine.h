@@ -55,6 +55,10 @@ namespace francodb {
         ExecutionResult ExecuteShowCreateTable(ShowCreateTableStatement *stmt);
         ExecutionResult ExecuteAlterTable(AlterTableStatement *stmt);
 
+        ExecutionResult ExecuteCheckpoint();
+
+        ExecutionResult ExecuteRecover(RecoverStatement *stmt);
+
         // --- TRANSACTION EXECUTORS ---
         ExecutionResult ExecuteBegin();
 

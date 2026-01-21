@@ -5,6 +5,8 @@
 #include "execution/executors/index_scan_executor.h"
 #include "execution/executors/update_executor.h"
 #include "execution/executors/join_executor.h"
+#include "recovery/checkpoint_manager.h"
+#include "recovery/recovery_manager.h"
 #include "common/exception.h"
 #include <algorithm>
 #include <sstream>
@@ -168,6 +170,12 @@ namespace francodb {
                     auto *create = dynamic_cast<CreateStatement *>(stmt);
                     return ExecuteCreate(create);
                 }
+                    
+                case StatementType::CHECKPOINT:
+                    return ExecuteCheckpoint();
+            
+                case StatementType::RECOVER:
+                    return ExecuteRecover(dynamic_cast<RecoverStatement*>(stmt));
 
                 default: return ExecutionResult::Error("Unknown Statement Type in Engine.");
             }
@@ -1097,5 +1105,31 @@ namespace francodb {
     // ====================================================================
     ExecutionResult ExecutionEngine::ExecuteAlterTable(AlterTableStatement *stmt) {
         return ExecutionResult::Error("ALTER TABLE is not fully implemented yet. Use DROP and CREATE to modify schema.");
+    }
+    
+    
+    
+    
+    ExecutionResult ExecutionEngine::ExecuteCheckpoint() {
+        // Permission Check (Optional: restrict to Admin)
+        // if (!auth_manager_->HasPermission(UserRole::ADMIN, StatementType::CHECKPOINT_CMD)) ...
+
+        CheckpointManager cp_mgr(bpm_, log_manager_);
+        cp_mgr.BeginCheckpoint();
+        return ExecutionResult::Message("CHECKPOINT SUCCESS");
+    }
+
+    
+    //TODO FIX "THE REAL DB SHIT"
+    ExecutionResult ExecutionEngine::ExecuteRecover(RecoverStatement* stmt) {
+        // WARNING: This is a destructive operation.
+        // In a real DB, we would ensure no other transactions are running.
+        
+        std::cout << "[SYSTEM] Initiating Time Travel to: " << stmt->timestamp_ << std::endl;
+        
+        RecoveryManager recovery(log_manager_);
+        recovery.RecoverToTime(stmt->timestamp_);
+        
+        return ExecutionResult::Message("TIME TRAVEL COMPLETE. System state reverted.");
     }
 } // namespace francodb

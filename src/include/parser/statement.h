@@ -11,8 +11,8 @@ namespace francodb {
         CREATE, INSERT, SELECT, DELETE_CMD, UPDATE_CMD, DROP, CREATE_INDEX, BEGIN, ROLLBACK, COMMIT, CREATE_DB, USE_DB,
         LOGIN, CREATE_USER, ALTER_USER_ROLE, DELETE_USER, SHOW_USERS, SHOW_DATABASES, SHOW_TABLES, SHOW_STATUS, WHOAMI,
         DROP_DB, CREATE_TABLE,
-        DESCRIBE_TABLE, ALTER_TABLE, SHOW_CREATE_TABLE, CHECKPOINT_CMD,
-        RECOVER_CMD
+        DESCRIBE_TABLE, ALTER_TABLE, SHOW_CREATE_TABLE,
+        CHECKPOINT, RECOVER
     };
 
     enum class LogicType { NONE, AND, OR };
@@ -282,12 +282,12 @@ namespace francodb {
     
     class CheckpointStatement : public Statement {
     public:
-        StatementType GetType() const override { return StatementType::CHECKPOINT_CMD; }
+        StatementType GetType() const override { return StatementType::CHECKPOINT; }
     };
 
     class RecoverStatement : public Statement {
     public:
-        StatementType GetType() const override { return StatementType::RECOVER_CMD; }
+        StatementType GetType() const override { return StatementType::RECOVER; }
         uint64_t timestamp_;
         
         explicit RecoverStatement(uint64_t timestamp) : timestamp_(timestamp) {}
