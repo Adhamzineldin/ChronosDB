@@ -63,7 +63,7 @@ namespace francodb {
         std::unique_ptr<ThreadPool> thread_pool_;
 
         std::atomic<bool> running_{false};
-        uintptr_t listen_sock_ = 0;
+        std::atomic<uintptr_t> listen_sock_{0};
         
         // Removed: std::map<uintptr_t, std::thread> client_threads_;
         std::thread auto_save_thread_;

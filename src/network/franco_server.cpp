@@ -65,8 +65,8 @@ namespace francodb {
         std::cout << "[SHUTDOWN] Server destructor called..." << std::endl;
         
         // 1. Signal stop first
-        running_ = false;
-        is_running_ = false;
+        running_.store(false);
+        is_running_.store(false);
         
         // 2. Wait for auto-save thread with timeout
         if (auto_save_thread_.joinable()) {
@@ -125,38 +125,82 @@ namespace francodb {
         }
 
         listen(s, net::BACKLOG_QUEUE);
-        listen_sock_ = (uintptr_t) s;
-        running_ = true;
+        listen_sock_.store((uintptr_t) s);
+        running_.store(true);
 
         auto_save_thread_ = std::thread(&FrancoServer::AutoSaveLoop, this);
 
         std::cout << "[READY] FrancoDB Server listening on port " << port << " (Pool Active)..." << std::endl;
 
-        while (running_ && is_running_) {
+        while (running_.load() && is_running_.load()) {
+            // Check if socket was closed by Stop() BEFORE using it
+            uintptr_t current_sock = listen_sock_.load();
+            if (current_sock == 0) {
+                std::cout << "[SERVER] Socket closed by Stop(), exiting accept loop..." << std::endl;
+                break;
+            }
+            
+            // Use the current socket value, not the local 's' which might be stale
+            socket_t active_sock = (socket_t)current_sock;
+            
             sockaddr_in client_addr{};
             socklen_t len = sizeof(client_addr);
 
 #ifdef _WIN32
             fd_set readSet;
             FD_ZERO(&readSet);
-            FD_SET(s, &readSet);
+            FD_SET(active_sock, &readSet);
             timeval timeout;
-            timeout.tv_sec = 1;
-            timeout.tv_usec = 0;
+            timeout.tv_sec = 0;  // Shorter timeout for faster shutdown response
+            timeout.tv_usec = 500000; // 500ms
             int selectResult = select(0, &readSet, nullptr, nullptr, &timeout);
-            if (selectResult > 0 && FD_ISSET(s, &readSet)) {
+            
+            // Check running_ again after select returns (might have been signaled)
+            if (!running_.load() || !is_running_.load() || listen_sock_.load() == 0) {
+                std::cout << "[SERVER] Shutdown detected after select, exiting..." << std::endl;
+                break;
+            }
+            
+            // Handle select error (socket may have been closed)
+            if (selectResult < 0) {
+                int err = WSAGetLastError();
+                if (err == WSAENOTSOCK || err == WSAEINTR || err == WSAEBADF) {
+                    std::cout << "[SERVER] Socket error (closed), exiting..." << std::endl;
+                    break;
+                }
+                // Other errors - just continue with next iteration
+                continue;
+            }
+            
+            if (selectResult > 0 && FD_ISSET(active_sock, &readSet)) {
 #else
             fd_set readSet;
             FD_ZERO(&readSet);
-            FD_SET(s, &readSet);
+            FD_SET(active_sock, &readSet);
             timeval timeout;
-            timeout.tv_sec = 1;
-            timeout.tv_usec = 0;
-            int selectResult = select(s + 1, &readSet, nullptr, nullptr, &timeout);
-            if (selectResult > 0 && FD_ISSET(s, &readSet)) { 
+            timeout.tv_sec = 0;  // Shorter timeout for faster shutdown response
+            timeout.tv_usec = 500000; // 500ms
+            int selectResult = select(active_sock + 1, &readSet, nullptr, nullptr, &timeout);
+            
+            // Check running_ again after select returns (might have been signaled)
+            if (!running_.load() || !is_running_.load() || listen_sock_.load() == 0) {
+                std::cout << "[SERVER] Shutdown detected after select, exiting..." << std::endl;
+                break;
+            }
+            
+            // Handle select error (socket may have been closed)
+            if (selectResult < 0) {
+                if (errno == EBADF || errno == EINTR) {
+                    std::cout << "[SERVER] Socket error (closed), exiting..." << std::endl;
+                    break;
+                }
+                continue;
+            }
+            
+            if (selectResult > 0 && FD_ISSET(active_sock, &readSet)) { 
 #endif
-                socket_t client_sock = accept(s, (struct sockaddr *) &client_addr, &len);
-                if (client_sock != INVALID_SOCK && running_) {
+                socket_t client_sock = accept(active_sock, (struct sockaddr *) &client_addr, &len);
+                if (client_sock != INVALID_SOCK && running_.load()) {
                     uintptr_t client_id = (uintptr_t) client_sock;
 
                     // Push client to Thread Pool
@@ -164,14 +208,24 @@ namespace francodb {
                         this->HandleClient(client_id);
                     });
                 }
+            } else if (selectResult < 0) {
+                // Socket error - likely closed
+                std::cout << "[SERVER] Select error, socket may be closed. Exiting..." << std::endl;
+                break;
             }
         }
+        
+        std::cout << "[SERVER] Accept loop exited cleanly" << std::endl;
 
+        // Only close socket if it wasn't already closed by Stop()
+        uintptr_t sock_to_close = listen_sock_.exchange(0);
+        if (sock_to_close != 0) {
 #ifdef _WIN32
-        closesocket((socket_t) listen_sock_);
+            closesocket((socket_t) sock_to_close);
 #else
-        close((socket_t) listen_sock_);
+            close((socket_t) sock_to_close);
 #endif
+        }
     }
 
 
@@ -187,29 +241,30 @@ namespace francodb {
         // [NOTE] LogManager flush is handled in main.cpp usually, or can be added here
         if (log_manager_) log_manager_->Flush(true);
 
-        running_ = false;
-        is_running_ = false;
-        if (listen_sock_ != 0) {
+        running_.store(false);
+        is_running_.store(false);
+        
+        uintptr_t sock = listen_sock_.exchange(0);
+        if (sock != 0) {
 #ifdef _WIN32
-            closesocket((socket_t) listen_sock_);
+            closesocket((socket_t) sock);
 #else
-            close((socket_t) listen_sock_);
+            close((socket_t) sock);
 #endif
-            listen_sock_ = 0;
         }
     }
 
 
     void FrancoServer::AutoSaveLoop() {
         CheckpointManager cp_manager(bpm_, log_manager_);
-        while (running_) {
+        while (running_.load()) {
             // Sleep in small increments to respond to shutdown quickly
-            for (int i = 0; i < 300 && running_; ++i) {
+            for (int i = 0; i < 300 && running_.load(); ++i) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
             
             // Check again after sleep - might have been signaled to stop
-            if (!running_) {
+            if (!running_.load()) {
                 std::cout << "[AUTO-SAVE] Shutdown detected, exiting loop..." << std::endl;
                 break;
             }
@@ -223,7 +278,7 @@ namespace francodb {
                 // Try to lock with timeout
                 auto start = std::chrono::steady_clock::now();
                 bool acquired = false;
-                while (!acquired && running_) {
+                while (!acquired && running_.load()) {
                     acquired = lock.try_lock();
                     if (!acquired) {
                         auto elapsed = std::chrono::steady_clock::now() - start;
@@ -235,7 +290,7 @@ namespace francodb {
                     }
                 }
                 
-                if (!acquired || !running_) {
+                if (!acquired || !running_.load()) {
                     continue;
                 }
                 
@@ -358,20 +413,20 @@ namespace francodb {
         std::cout << "[STOP] Initiating graceful shutdown..." << std::endl;
         
         // 1. Signal all loops to stop FIRST (non-blocking)
-        running_ = false;
-        is_running_ = false;
+        running_.store(false);
+        is_running_.store(false);
 
         // 2. Close the listening socket to unblock accept()
-        if (listen_sock_ != 0) {
+        uintptr_t sock = listen_sock_.exchange(0);
+        if (sock != 0) {
 #ifdef _WIN32
             // Shutdown first to unblock any blocking recv/send calls
-            shutdown((socket_t) listen_sock_, SD_BOTH);
-            closesocket((socket_t) listen_sock_);
+            shutdown((socket_t) sock, SD_BOTH);
+            closesocket((socket_t) sock);
 #else
-            shutdown((socket_t) listen_sock_, SHUT_RDWR);
-            close((socket_t) listen_sock_);
+            shutdown((socket_t) sock, SHUT_RDWR);
+            close((socket_t) sock);
 #endif
-            listen_sock_ = 0;
         }
         
         std::cout << "[STOP] Socket closed, waiting for threads to finish..." << std::endl;
@@ -392,7 +447,7 @@ namespace francodb {
         
         auto handler = std::make_unique<ClientConnectionHandler>(engine.release(), auth_manager_.get());
 
-        while (running_) {
+        while (running_.load()) {
             PacketHeader header;
             int bytes_read = recv(sock, (char *) &header, sizeof(header), MSG_WAITALL);
             if (bytes_read <= 0) break;

@@ -300,9 +300,11 @@ bool ExecuteFSQLFile(FrancoClient& client, const std::string& filepath, const st
 
     std::string line, statement;
     int line_number = 0;
+    int statement_start_line = 0;
     int executed = 0;
     int successful = 0;
     int failed = 0;
+    bool in_block_comment = false;
 
     while (std::getline(file, line)) {
         line_number++;
@@ -314,10 +316,55 @@ bool ExecuteFSQLFile(FrancoClient& client, const std::string& filepath, const st
         size_t last = line.find_last_not_of(" \t\r\n");
         line = line.substr(first, (last - first + 1));
         
-        // Skip comments (lines starting with --)
-        if (line.rfind("--", 0) == 0) {
-            std::cout << line << std::endl; // Display comments
+        // Handle block comments /* ... */
+        if (in_block_comment) {
+            size_t end_comment = line.find("*/");
+            if (end_comment != std::string::npos) {
+                in_block_comment = false;
+                line = line.substr(end_comment + 2);
+                if (line.empty()) continue;
+            } else {
+                continue; // Still in block comment
+            }
+        }
+        
+        // Check for block comment start
+        size_t start_comment = line.find("/*");
+        if (start_comment != std::string::npos) {
+            size_t end_comment = line.find("*/", start_comment + 2);
+            if (end_comment != std::string::npos) {
+                // Block comment on single line - remove it
+                line = line.substr(0, start_comment) + line.substr(end_comment + 2);
+            } else {
+                // Multi-line block comment
+                line = line.substr(0, start_comment);
+                in_block_comment = true;
+            }
+            if (line.empty()) continue;
+        }
+        
+        // Skip single-line comments (lines starting with -- or #)
+        if (line.rfind("--", 0) == 0 || line.rfind("#", 0) == 0) {
+            std::cout << "\033[90m" << line << "\033[0m" << std::endl; // Gray color for comments
             continue;
+        }
+        
+        // Remove inline comments
+        size_t comment_pos = line.find("--");
+        if (comment_pos != std::string::npos) {
+            line = line.substr(0, comment_pos);
+            // Trim again
+            last = line.find_last_not_of(" \t\r\n");
+            if (last != std::string::npos) {
+                line = line.substr(0, last + 1);
+            }
+        }
+        
+        if (line.empty()) continue;
+        
+        // Track where statement started
+        if (statement.empty()) {
+            statement_start_line = line_number;
         }
         
         // Accumulate statement until we hit a semicolon
@@ -326,7 +373,13 @@ bool ExecuteFSQLFile(FrancoClient& client, const std::string& filepath, const st
         if (line.back() == ';') {
             // Execute the statement
             executed++;
-            std::cout << "\n[Line " << line_number << "] " << statement << std::endl;
+            
+            // Show statement with line info
+            if (statement_start_line == line_number) {
+                std::cout << "\n\033[36m[Line " << line_number << "]\033[0m " << statement << std::endl;
+            } else {
+                std::cout << "\n\033[36m[Lines " << statement_start_line << "-" << line_number << "]\033[0m " << statement << std::endl;
+            }
             
             std::string result = client.Query(statement);
             
@@ -336,10 +389,17 @@ bool ExecuteFSQLFile(FrancoClient& client, const std::string& filepath, const st
             
             if (upper_result.find("ERROR") != std::string::npos || 
                 upper_result.find("FAILED") != std::string::npos) {
-                std::cout << "[FAILED] " << result << std::endl;
+                std::cout << "\033[31m[FAILED]\033[0m " << result << std::endl;
+                
+                // Try to provide more detailed error info
+                if (upper_result.find("EXPECTED") != std::string::npos) {
+                    std::cout << "\033[33m  ^ Syntax error in statement starting at line " 
+                              << statement_start_line << "\033[0m" << std::endl;
+                }
+                
                 failed++;
             } else {
-                std::cout << "[SUCCESS] " << result << std::endl;
+                std::cout << "\033[32m[SUCCESS]\033[0m " << result << std::endl;
                 successful++;
             }
             
@@ -348,6 +408,20 @@ bool ExecuteFSQLFile(FrancoClient& client, const std::string& filepath, const st
     }
     
     file.close();
+    
+    // Check for incomplete statement
+    if (!statement.empty()) {
+        std::string trimmed = statement;
+        size_t pos = trimmed.find_last_not_of(" \t\r\n");
+        if (pos != std::string::npos) {
+            trimmed = trimmed.substr(0, pos + 1);
+        }
+        if (!trimmed.empty()) {
+            std::cout << "\n\033[33m[WARNING] Incomplete statement at end of file (missing semicolon?):\033[0m" << std::endl;
+            std::cout << "  Starting at line " << statement_start_line << ": " << trimmed << std::endl;
+            failed++;
+        }
+    }
     
     std::cout << "\n+============================================================+" << std::endl;
     std::cout << "|  EXECUTION SUMMARY" << std::string(37, ' ') << "   |" << std::endl;
@@ -520,6 +594,57 @@ int main(int argc, char* argv[]) {
              } else {
                  return 1;
              }
+        }
+        
+        // --- FSQL FILE EXECUTION FROM COMMAND LINE ---
+        // Usage: francodb_shell file.fsql
+        //        francodb_shell run file.fsql
+        //        francodb_shell exec file.fsql
+        //        francodb_shell -f file.fsql
+        std::string fsql_file = "";
+        if (cmd1 == "run" || cmd1 == "exec" || cmd1 == "-f") {
+            fsql_file = cmd2;
+        } else if (cmd1.size() > 5 && cmd1.substr(cmd1.size() - 5) == ".fsql") {
+            fsql_file = cmd1;
+        } else if (cmd2.size() > 5 && cmd2.substr(cmd2.size() - 5) == ".fsql") {
+            fsql_file = cmd2;
+        }
+        
+        if (!fsql_file.empty()) {
+            // Need to connect first if not already connected
+            if (!connected) {
+                std::cout << "==========================================" << std::endl;
+                std::cout << "     FrancoDB FSQL Script Executor        " << std::endl;
+                std::cout << "==========================================" << std::endl;
+                
+                std::string password, host, port_str;
+                int port = net::DEFAULT_PORT;
+                
+                std::cout << "\nConnect to execute: " << fsql_file << std::endl;
+                std::cout << "\nUsername: ";
+                if (!std::getline(std::cin, username)) return 0;
+                std::cout << "Password: ";
+                if (!std::getline(std::cin, password)) return 0;
+                
+                std::cout << "Host [localhost]: ";
+                std::getline(std::cin, host);
+                if (host.empty()) host = "127.0.0.1";
+                
+                std::cout << "Port [2501]: ";
+                std::getline(std::cin, port_str);
+                if (!port_str.empty()) try { port = std::stoi(port_str); } catch(...) {}
+                
+                if (!db_client.Connect(host, port, username, password)) {
+                    std::cerr << "[FATAL] Connection Failed." << std::endl;
+                    return 1;
+                }
+                connected = true;
+            }
+            
+            // Execute the FSQL file
+            bool success = ExecuteFSQLFile(db_client, fsql_file, current_db);
+            db_client.Disconnect();
+            return success ? 0 : 1;
         }
     }
 
