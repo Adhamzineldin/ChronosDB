@@ -1,775 +1,337 @@
-#include "execution/execution_engine.h"
-#include "execution/executors/insert_executor.h"
-#include "execution/executors/seq_scan_executor.h"
-#include "execution/executors/delete_executor.h"
-#include "execution/executors/index_scan_executor.h"
-#include "execution/executors/update_executor.h"
-#include "execution/executors/join_executor.h"
-#include "recovery/checkpoint_manager.h"
-#include "recovery/recovery_manager.h"
-#include "common/exception.h"
+/**
+ * execution_engine.cpp
+ * 
+ * Query Execution Coordinator - SOLID Compliant
+ * 
+ * This file has been completely refactored to follow SOLID principles:
+ * - Single Responsibility: Each executor handles one category of operations
+ * - Open/Closed: New statement types can be added without modifying this file
+ * - Dependency Inversion: Depends on executor abstractions
+ * 
+ * The ExecutionEngine now only handles:
+ * 1. Concurrency gatekeeper (global lock management)
+ * 2. Delegation to appropriate specialized executor
+ * 3. Recovery operations (CHECKPOINT, RECOVER)
+ * 
+ * @author FrancoDB Team
+ */
 
-// NEW: Factory pattern components for eliminating switch statement
-#include "execution/executor_factory.h"
+#include "execution/execution_engine.h"
+
+// Specialized Executors (SOLID - SRP)
 #include "execution/ddl_executor.h"
 #include "execution/dml_executor.h"
+#include "execution/system_executor.h"
+#include "execution/user_executor.h"
+#include "execution/database_executor.h"
+#include "execution/transaction_executor.h"
 
-#include <algorithm>
+// Recovery
+#include "recovery/checkpoint_manager.h"
+#include "recovery/recovery_manager.h"
+
+// Common
+#include "common/exception.h"
+
 #include <sstream>
-#include <filesystem>
-#include <set>
-#include <map>
-
-#include "recovery/snapshot_manager.h"
-
-#include "common/auth_manager.h"
-#include "../include/network/session_context.h"
+#include <iostream>
+#include <chrono>
 
 namespace francodb {
-    struct SessionContext;
-    std::shared_mutex ExecutionEngine::global_lock_;
 
-
-    SessionContext *g_session_context = nullptr;
-
-    ExecutionEngine::ExecutionEngine(BufferPoolManager *bpm, Catalog *catalog,
-                                     AuthManager *auth_manager, DatabaseRegistry *db_registry,
-                                     LogManager *log_manager)
-        : bpm_(bpm), 
-          catalog_(catalog), 
-          auth_manager_(auth_manager),
-          db_registry_(db_registry), 
-          log_manager_(log_manager), 
-          exec_ctx_(nullptr),
-          current_transaction_(nullptr), 
-          next_txn_id_(1),
-          in_explicit_transaction_(false) {
-        exec_ctx_ = new ExecutorContext(bpm_, catalog_, nullptr, log_manager_);
-        
-        // Initialize specialized executors (SRP - Issue #11 fix)
-        ddl_executor_ = std::make_unique<DDLExecutor>(catalog_, log_manager_);
-        dml_executor_ = std::make_unique<DMLExecutor>(bpm_, catalog_, log_manager_);
-        
-        // Initialize the executor factory (OCP - Issue #10 fix)
-        InitializeExecutorFactory();
-    }
-
-    ExecutionEngine::~ExecutionEngine() {
-        if (current_transaction_) delete current_transaction_;
-        delete exec_ctx_;
-    }
-
-    Transaction *ExecutionEngine::GetCurrentTransaction() { return current_transaction_; }
-
-    Transaction *ExecutionEngine::GetCurrentTransactionForWrite() {
-        if (current_transaction_ == nullptr) {
-            // Atomic increment ensures unique transaction IDs under concurrency
-            int txn_id = next_txn_id_.fetch_add(1, std::memory_order_relaxed);
-            current_transaction_ = new Transaction(txn_id);
-        }
-        return current_transaction_;
-    }
-
-    void ExecutionEngine::AutoCommitIfNeeded() {
-        if (!in_explicit_transaction_ && current_transaction_ != nullptr &&
-            current_transaction_->GetState() == Transaction::TransactionState::RUNNING) {
-            ExecuteCommit();
-        }
-    }
-
-
-    // ========================================================================
-    // FACTORY PATTERN INITIALIZATION (Issue #10 - OCP Fix)
-    // ========================================================================
-    void ExecutionEngine::InitializeExecutorFactory() {
-        // The ExecutorRegistry handles registration of all statement handlers
-        // This is called once at startup
-        // See executor_registry.cpp for the full registration list
-    }
-
-    // ========================================================================
-    // MAIN EXECUTE METHOD - Factory Pattern (Issue #10 & #11 Fix)
-    // ========================================================================
-    ExecutionResult ExecutionEngine::Execute(Statement *stmt, SessionContext *session) {
-        if (stmt == nullptr) return ExecutionResult::Error("Empty Statement");
-
-        // =================================================================================
-        // [ENTERPRISE] CONCURRENCY GATEKEEPER
-        // =================================================================================
-
-        // Pointer to the lock we might acquire
-        std::unique_lock<std::shared_mutex> exclusive_lock;
-        std::shared_lock<std::shared_mutex> shared_lock;
-
-        // Check the statement type to decide locking strategy
-        bool requires_exclusive = (stmt->GetType() == StatementType::RECOVER ||
-                                   stmt->GetType() == StatementType::CHECKPOINT);
-
-        if (requires_exclusive) {
-            // STOP THE WORLD: Wait for all queries to finish, then block new ones.
-            exclusive_lock = std::unique_lock<std::shared_mutex>(global_lock_);
-        } else {
-            // SHARED ACCESS: Allow concurrent execution, but fail if System is recovering.
-            shared_lock = std::shared_lock<std::shared_mutex>(global_lock_);
-        }
-
-        // =================================================================================
-
-        try {
-            // Get transaction for DML operations
-            Transaction* txn = GetCurrentTransactionForWrite();
-            StatementType type = stmt->GetType();
-            
-            // =================================================================
-            // DELEGATION TO SPECIALIZED EXECUTORS (Issue #10 & #11 Fix)
-            // =================================================================
-            // Instead of a giant switch statement, we delegate to focused classes:
-            // - DDLExecutor: CREATE/DROP/ALTER operations
-            // - DMLExecutor: INSERT/SELECT/UPDATE/DELETE operations
-            // - Inline: System/Transaction/Database operations (minimal)
-            // =================================================================
-            
-            ExecutionResult res;
-            
-            // --- DDL OPERATIONS (Delegated to DDLExecutor) ---
-            if (type == StatementType::CREATE || type == StatementType::CREATE_TABLE) {
-                auto* create_stmt = dynamic_cast<CreateStatement*>(stmt);
-                if (session && !session->current_db.empty()) {
-                    if ((session->current_db == "francodb" || session->current_db == "system") 
-                        && session->role != UserRole::SUPERADMIN) {
-                        return ExecutionResult::Error("Cannot create tables in reserved database");
-                    }
-                }
-                res = ddl_executor_->CreateTable(create_stmt);
-            }
-            else if (type == StatementType::CREATE_INDEX) {
-                res = ddl_executor_->CreateIndex(dynamic_cast<CreateIndexStatement*>(stmt));
-            }
-            else if (type == StatementType::DROP) {
-                if (session && session->current_db == "system" && session->role != UserRole::SUPERADMIN) {
-                    return ExecutionResult::Error("Cannot drop tables in system database");
-                }
-                res = ddl_executor_->DropTable(dynamic_cast<DropStatement*>(stmt));
-            }
-            else if (type == StatementType::DESCRIBE_TABLE) {
-                res = ddl_executor_->DescribeTable(dynamic_cast<DescribeTableStatement*>(stmt));
-            }
-            else if (type == StatementType::SHOW_CREATE_TABLE) {
-                res = ddl_executor_->ShowCreateTable(dynamic_cast<ShowCreateTableStatement*>(stmt));
-            }
-            else if (type == StatementType::ALTER_TABLE) {
-                res = ddl_executor_->AlterTable(dynamic_cast<AlterTableStatement*>(stmt));
-            }
-            
-            // --- DML OPERATIONS (Delegated to DMLExecutor) ---
-            else if (type == StatementType::INSERT) {
-                if (session && session->current_db == "system" && session->role != UserRole::SUPERADMIN) {
-                    return ExecutionResult::Error("Cannot modify system database tables");
-                }
-                res = dml_executor_->Insert(dynamic_cast<InsertStatement*>(stmt), txn);
-            }
-            else if (type == StatementType::SELECT) {
-                res = dml_executor_->Select(dynamic_cast<SelectStatement*>(stmt), session, txn);
-            }
-            else if (type == StatementType::UPDATE_CMD) {
-                if (session && session->current_db == "system" && session->role != UserRole::SUPERADMIN) {
-                    return ExecutionResult::Error("Cannot modify system database tables");
-                }
-                res = dml_executor_->Update(dynamic_cast<UpdateStatement*>(stmt), txn);
-            }
-            else if (type == StatementType::DELETE_CMD) {
-                if (session && session->current_db == "system" && session->role != UserRole::SUPERADMIN) {
-                    return ExecutionResult::Error("Cannot modify system database tables");
-                }
-                res = dml_executor_->Delete(dynamic_cast<DeleteStatement*>(stmt), txn);
-            }
-            
-            // --- TRANSACTION OPERATIONS ---
-            else if (type == StatementType::BEGIN) {
-                res = ExecuteBegin();
-            }
-            else if (type == StatementType::COMMIT) {
-                res = ExecuteCommit();
-            }
-            else if (type == StatementType::ROLLBACK) {
-                res = ExecuteRollback();
-            }
-            
-            // --- DATABASE MANAGEMENT ---
-            else if (type == StatementType::CREATE_DB) {
-                res = ExecuteCreateDatabase(dynamic_cast<CreateDatabaseStatement*>(stmt), session);
-            }
-            else if (type == StatementType::USE_DB) {
-                res = ExecuteUseDatabase(dynamic_cast<UseDatabaseStatement*>(stmt), session);
-            }
-            else if (type == StatementType::DROP_DB) {
-                res = ExecuteDropDatabase(dynamic_cast<DropDatabaseStatement*>(stmt), session);
-            }
-            
-            // --- USER MANAGEMENT ---
-            else if (type == StatementType::CREATE_USER) {
-                res = ExecuteCreateUser(dynamic_cast<CreateUserStatement*>(stmt));
-            }
-            else if (type == StatementType::ALTER_USER_ROLE) {
-                res = ExecuteAlterUserRole(dynamic_cast<AlterUserRoleStatement*>(stmt));
-            }
-            else if (type == StatementType::DELETE_USER) {
-                res = ExecuteDeleteUser(dynamic_cast<DeleteUserStatement*>(stmt));
-            }
-            
-            // --- SYSTEM OPERATIONS ---
-            else if (type == StatementType::SHOW_DATABASES) {
-                res = ExecuteShowDatabases(dynamic_cast<ShowDatabasesStatement*>(stmt), session);
-            }
-            else if (type == StatementType::SHOW_TABLES) {
-                res = ExecuteShowTables(dynamic_cast<ShowTablesStatement*>(stmt), session);
-            }
-            else if (type == StatementType::SHOW_STATUS) {
-                res = ExecuteShowStatus(dynamic_cast<ShowStatusStatement*>(stmt), session);
-            }
-            else if (type == StatementType::SHOW_USERS) {
-                res = ExecuteShowUsers(dynamic_cast<ShowUsersStatement*>(stmt));
-            }
-            else if (type == StatementType::WHOAMI) {
-                res = ExecuteWhoAmI(dynamic_cast<WhoAmIStatement*>(stmt), session);
-            }
-            
-            // --- RECOVERY OPERATIONS ---
-            else if (type == StatementType::CHECKPOINT) {
-                res = ExecuteCheckpoint();
-            }
-            else if (type == StatementType::RECOVER) {
-                res = ExecuteRecover(dynamic_cast<RecoverStatement*>(stmt));
-            }
-            
-            else {
-                return ExecutionResult::Error("Unknown Statement Type");
-            }
-
-            // Auto-commit for single DML statements
-            if (type == StatementType::INSERT ||
-                type == StatementType::UPDATE_CMD ||
-                type == StatementType::DELETE_CMD) {
-                AutoCommitIfNeeded();
-            }
-            return res;
-        } catch (const std::exception &e) {
-            if (current_transaction_ && current_transaction_->GetState() == Transaction::TransactionState::RUNNING) {
-                // Force Rollback to release row-level locks
-                bool was_explicit = in_explicit_transaction_;
-                in_explicit_transaction_ = true;
-                ExecuteRollback();
-                in_explicit_transaction_ = was_explicit;
-            }
-            return ExecutionResult::Error(e.what());
-        }
-    }
-
-    std::string ExecutionEngine::ValueToString(const Value &v) {
-        std::ostringstream oss;
-        oss << v;
-        return oss.str();
-    }
-
-    // ========================================================================
-    // TRANSACTION METHODS (Kept inline - simple coordination)
-    // ========================================================================
-
-    ExecutionResult ExecutionEngine::ExecuteBegin() {
-        if (current_transaction_ && in_explicit_transaction_) return ExecutionResult::Error("Transaction in progress");
-        if (current_transaction_) ExecuteCommit();
-
-        current_transaction_ = new Transaction(next_txn_id_++);
-        in_explicit_transaction_ = true;
-
-        // [ACID] Log BEGIN
-        if (log_manager_) {
-            LogRecord rec(current_transaction_->GetTransactionId(), current_transaction_->GetPrevLSN(),
-                          LogRecordType::BEGIN);
-            auto lsn = log_manager_->AppendLogRecord(rec);
-            current_transaction_->SetPrevLSN(lsn);
-        }
-
-        return ExecutionResult::Message(
-            "BEGIN TRANSACTION " + std::to_string(current_transaction_->GetTransactionId()));
-    }
-
-    ExecutionResult ExecutionEngine::ExecuteRollback() {
-        if (!current_transaction_ || !in_explicit_transaction_)
-            return ExecutionResult::Error("No transaction to rollback");
-
-        // [ACID] Log ABORT (Before rolling back memory)
-        if (log_manager_) {
-            LogRecord rec(current_transaction_->GetTransactionId(), current_transaction_->GetPrevLSN(),
-                          LogRecordType::ABORT);
-            log_manager_->AppendLogRecord(rec);
-            // No flush needed for abort usually
-        }
-
-        // ... (Existing in-memory Rollback Logic) ...
-        const auto &modifications = current_transaction_->GetModifications();
-        std::vector<std::pair<RID, Transaction::TupleModification> > mods_vec;
-        for (const auto &[rid, mod]: modifications) mods_vec.push_back({rid, mod});
-        std::reverse(mods_vec.begin(), mods_vec.end());
-
-        for (const auto &[rid, mod]: mods_vec) {
-            if (mod.table_name.empty()) continue;
-            TableMetadata *table_info = catalog_->GetTable(mod.table_name);
-            if (!table_info) continue;
-            if (mod.is_deleted) table_info->table_heap_->UnmarkDelete(rid, nullptr);
-            else if (mod.old_tuple.GetLength() == 0) table_info->table_heap_->MarkDelete(rid, nullptr);
-            else table_info->table_heap_->UnmarkDelete(rid, nullptr);
-        }
-
-        current_transaction_->SetState(Transaction::TransactionState::ABORTED);
-        delete current_transaction_;
-        current_transaction_ = nullptr;
-        in_explicit_transaction_ = false;
-        return ExecutionResult::Message("ROLLBACK SUCCESS");
-    }
-
-    ExecutionResult ExecutionEngine::ExecuteCommit() {
-        if (current_transaction_) {
-            // [ACID] Log COMMIT and FLUSH
-            if (log_manager_) {
-                LogRecord rec(current_transaction_->GetTransactionId(), current_transaction_->GetPrevLSN(),
-                              LogRecordType::COMMIT);
-                log_manager_->AppendLogRecord(rec);
-                // FORCE FLUSH ensures Durability
-                log_manager_->Flush(true);
-            }
-
-            current_transaction_->SetState(Transaction::TransactionState::COMMITTED);
-            delete current_transaction_;
-            current_transaction_ = nullptr;
-        }
-        in_explicit_transaction_ = false;
-        return ExecutionResult::Message("COMMIT SUCCESS");
-    }
-
-    ExecutionResult ExecutionEngine::ExecuteWhoAmI(WhoAmIStatement *stmt, SessionContext *session) {
-        auto rs = std::make_shared<ResultSet>();
-        rs->column_names = {"Current User", "Current DB", "Role"};
-
-        std::string role_str = "USER";
-        if (session->role == UserRole::SUPERADMIN) role_str = "SUPERADMIN";
-        else if (session->role == UserRole::ADMIN) role_str = "ADMIN";
-        else if (session->role == UserRole::READONLY) role_str = "READONLY";
-
-        rs->AddRow({session->current_user, session->current_db, role_str});
-        return ExecutionResult::Data(rs);
-    }
-
-    ExecutionResult ExecutionEngine::ExecuteShowDatabases(ShowDatabasesStatement *stmt, SessionContext *session) {
-        auto rs = std::make_shared<ResultSet>();
-        rs->column_names.push_back("Database");
-
-        // Use a set to avoid duplicates
-        std::set<std::string> db_names;
-
-        // Always show francodb if user has access
-        if (auth_manager_->HasDatabaseAccess(session->current_user, "francodb")) {
-            db_names.insert("francodb");
-        }
-
-        // Scan filesystem directory for persisted databases
-        namespace fs = std::filesystem;
-        auto &config = ConfigManager::GetInstance();
-        std::string data_dir = config.GetDataDirectory();
-
-        if (fs::exists(data_dir)) {
-            for (const auto &entry: fs::directory_iterator(data_dir)) {
-                // Check for database directories
-                std::string db_name;
-                if (entry.is_directory()) {
-                    db_name = entry.path().filename().string();
-
-                    // Verify it's a valid database directory (contains .francodb file)
-                    fs::path db_file = entry.path() / (db_name + ".francodb");
-                    if (!fs::exists(db_file)) {
-                        continue; // Skip if no .francodb file inside
-                    }
-                }
-
-                if (!db_name.empty() && db_name != "system") {
-                    if (auth_manager_->HasDatabaseAccess(session->current_user, db_name)) {
-                        db_names.insert(db_name);
-                    }
-                }
-            }
-        }
-
-        // Add all unique database names to result set
-        for (const auto &db_name: db_names) {
-            rs->AddRow({db_name});
-        }
-
-        return ExecutionResult::Data(rs);
-    }
-
-    ExecutionResult ExecutionEngine::ExecuteShowUsers(ShowUsersStatement *stmt) {
-        std::vector<UserInfo> users = auth_manager_->GetAllUsers();
-        auto rs = std::make_shared<ResultSet>();
-        rs->column_names = {"Username", "Roles"};
-
-        for (const auto &user: users) {
-            std::string roles_desc;
-            for (const auto &[db, role]: user.db_roles) {
-                if (!roles_desc.empty()) roles_desc += ", ";
-                roles_desc += db + ":";
-                switch (role) {
-                    case UserRole::SUPERADMIN: roles_desc += "SUPER";
-                        break;
-                    case UserRole::ADMIN: roles_desc += "ADMIN";
-                        break;
-                    case UserRole::NORMAL: roles_desc += "NORMAL";
-                        break;
-                    case UserRole::READONLY: roles_desc += "READONLY";
-                        break;
-                    case UserRole::DENIED: roles_desc += "DENIED";
-                        break;
-                    default: roles_desc += "UNKNOWN";
-                        break;
-                }
-            }
-            rs->AddRow({user.username, roles_desc});
-        }
-        return ExecutionResult::Data(rs);
-    }
-
-    ExecutionResult ExecutionEngine::ExecuteCreateUser(CreateUserStatement *stmt) {
-        UserRole r = UserRole::NORMAL;
-        std::string role_upper = stmt->role_;
-        std::transform(role_upper.begin(), role_upper.end(), role_upper.begin(), ::toupper);
-
-        if (role_upper == "ADMIN") r = UserRole::ADMIN;
-        else if (role_upper == "SUPERADMIN") r = UserRole::SUPERADMIN;
-        else if (role_upper == "READONLY") r = UserRole::READONLY;
-
-        if (auth_manager_->CreateUser(stmt->username_, stmt->password_, r)) {
-            return ExecutionResult::Message("User created successfully.");
-        }
-        return ExecutionResult::Error("User creation failed.");
-    }
-
-
-    ExecutionResult ExecutionEngine::ExecuteShowStatus(ShowStatusStatement *stmt, SessionContext *session) {
-        auto rs = std::make_shared<ResultSet>();
-        rs->column_names = {"Variable", "Value"};
-
-        // 1. Current User
-        rs->AddRow({"Current User", session->current_user.empty() ? "Guest" : session->current_user});
-
-        // 2. Current Database
-        rs->AddRow({"Current Database", session->current_db});
-
-        // 3. Current Role
-        std::string role_str;
-        switch (session->role) {
-            case UserRole::SUPERADMIN: role_str = "SUPERADMIN (Full Access)";
-                break;
-            case UserRole::ADMIN: role_str = "ADMIN (Read/Write)";
-                break;
-            case UserRole::NORMAL: role_str = "NORMAL (Read/Write)";
-                break;
-            case UserRole::READONLY: role_str = "READONLY (Select Only)";
-                break;
-            case UserRole::DENIED: role_str = "DENIED (No Access)";
-                break;
-        }
-        rs->AddRow({"Current Role", role_str});
-
-        // 4. Auth Status
-        rs->AddRow({"Authenticated", session->is_authenticated ? "Yes" : "No"});
-
-        return ExecutionResult::Data(rs);
-    }
-
-    ExecutionResult ExecutionEngine::ExecuteShowTables(ShowTablesStatement *stmt, SessionContext *session) {
-        auto rs = std::make_shared<ResultSet>();
-        rs->column_names = {"Tables_in_" + session->current_db};
-
-        // Tables are stored inside the .francodb file and tracked by the catalog
-        // We should read from the current catalog instance
-        if (!catalog_) {
-            return ExecutionResult::Error("No catalog available");
-        }
-
-        try {
-            // Get all table names from the current catalog
-            std::vector<std::string> table_names = catalog_->GetAllTableNames();
-
-            // Sort for nice output
-            std::sort(table_names.begin(), table_names.end());
-
-            for (const auto &name: table_names) {
-                rs->AddRow({name});
-            }
-
-            return ExecutionResult::Data(rs);
-        } catch (const std::exception &e) {
-            return ExecutionResult::Error("Failed to retrieve tables: " + std::string(e.what()));
-        }
-    }
-
-
-    ExecutionResult ExecutionEngine::ExecuteAlterUserRole(AlterUserRoleStatement *stmt) {
-        // 1. Convert String Role to Enum
-        UserRole r = UserRole::NORMAL; // Default
-
-        std::string role_upper = stmt->role_;
-        std::transform(role_upper.begin(), role_upper.end(), role_upper.begin(), ::toupper);
-
-        if (role_upper == "SUPERADMIN") r = UserRole::SUPERADMIN;
-        else if (role_upper == "ADMIN") r = UserRole::ADMIN;
-        else if (role_upper == "NORMAL") r = UserRole::NORMAL;
-        else if (role_upper == "READONLY") r = UserRole::READONLY;
-        else if (role_upper == "DENIED") r = UserRole::DENIED;
-        else return ExecutionResult::Error("Invalid Role: " + stmt->role_);
-
-        // 2. Determine Target DB (Default to "francodb" if not specified)
-        std::string target_db = stmt->db_name_.empty() ? "francodb" : stmt->db_name_;
-
-        // 3. Call AuthManager
-        if (auth_manager_->SetUserRole(stmt->username_, target_db, r)) {
-            return ExecutionResult::Message("User role updated successfully for DB: " + target_db);
-        }
-
-        return ExecutionResult::Error("Failed to update user role (User might not exist or is Root).");
-    }
-
-    ExecutionResult ExecutionEngine::ExecuteDeleteUser(DeleteUserStatement *stmt) {
-        // Safety: Prevent deleting the current user to avoid locking yourself out?
-        // (Optional check, but AuthManager::DeleteUser handles Root protection already)
-
-        if (auth_manager_->DeleteUser(stmt->username_)) {
-            return ExecutionResult::Message("User '" + stmt->username_ + "' deleted successfully.");
-        }
-        return ExecutionResult::Error("Failed to delete user (User might not exist or is Root).");
-    }
-
-
-    ExecutionResult ExecutionEngine::ExecuteCreateDatabase(
-        CreateDatabaseStatement *stmt, SessionContext *session) {
-        // Check permissions
-        if (!auth_manager_->HasPermission(session->role, StatementType::CREATE_DB)) {
-            return ExecutionResult::Error("Permission denied: CREATE DATABASE requires ADMIN role");
-        }
-
-        try {
-            // Protect system/reserved database names
-            std::string db_lower = stmt->db_name_;
-            std::transform(db_lower.begin(), db_lower.end(), db_lower.begin(), ::tolower);
-            if (db_lower == "system" || db_lower == "francodb") {
-                return ExecutionResult::Error("Cannot create database with reserved name: " + stmt->db_name_);
-            }
-
-            // Check if database already exists
-            if (db_registry_->Get(stmt->db_name_) != nullptr) {
-                return ExecutionResult::Error("Database '" + stmt->db_name_ + "' already exists");
-            }
-
-            // Create the database (this initializes DiskManager, BufferPool, Catalog)
-            // Now creates a DIRECTORY structure: data/dbname/
-            auto entry = db_registry_->GetOrCreate(stmt->db_name_);
-
-            if (!entry) {
-                return ExecutionResult::Error("Failed to create database '" + stmt->db_name_ + "'");
-            }
-
-            // CRITICAL: Create the WAL log directory for this database
-            if (log_manager_) {
-                log_manager_->CreateDatabaseLog(stmt->db_name_);
-            }
-
-            // Grant creator ADMIN rights on this database
-            UserRole creator_role = (session->role == UserRole::SUPERADMIN)
-                                        ? UserRole::SUPERADMIN
-                                        : UserRole::ADMIN;
-            auth_manager_->SetUserRole(session->current_user, stmt->db_name_, creator_role);
-
-            return ExecutionResult::Message("Database '" + stmt->db_name_ + "' created successfully");
-        } catch (const std::exception &e) {
-            return ExecutionResult::Error("Failed to create database: " + std::string(e.what()));
-        }
-    }
-
-    // ====================================================================
-    // USE DATABASE
-    // ====================================================================
-    ExecutionResult ExecutionEngine::ExecuteUseDatabase(
-        UseDatabaseStatement *stmt, SessionContext *session) {
-        // Check access permissions
-        if (!auth_manager_->HasDatabaseAccess(session->current_user, stmt->db_name_)) {
-            return ExecutionResult::Error("Access denied to database '" + stmt->db_name_ + "'");
-        }
-
-        try {
-            // Try registry first
-            auto entry = db_registry_->Get(stmt->db_name_);
-
-            // If not already loaded, try to load from disk (database directory exists)
-            if (!entry) {
-                namespace fs = std::filesystem;
-                auto &config = ConfigManager::GetInstance();
-                fs::path db_dir = fs::path(config.GetDataDirectory()) / stmt->db_name_;
-                fs::path db_file = db_dir / (stmt->db_name_ + ".francodb");
-                if (fs::exists(db_file)) {
-                    entry = db_registry_->GetOrCreate(stmt->db_name_);
-                }
-            }
-
-            if (!entry) {
-                return ExecutionResult::Error("Database '" + stmt->db_name_ + "' does not exist");
-            }
-
-            // CRITICAL: Update the execution engine's pointers
-            // Check if this is an external registration or owned entry
-            if (db_registry_->ExternalBpm(stmt->db_name_)) {
-                bpm_ = db_registry_->ExternalBpm(stmt->db_name_);
-                catalog_ = db_registry_->ExternalCatalog(stmt->db_name_);
-            } else {
-                bpm_ = entry->bpm.get();
-                catalog_ = entry->catalog.get();
-            }
-
-            // CRITICAL: Switch the log manager to the new database's WAL file
-            if (log_manager_) {
-                log_manager_->SwitchDatabase(stmt->db_name_);
-            }
-
-            // Update executor context
-            if (exec_ctx_) {
-                delete exec_ctx_;
-            }
-            exec_ctx_ = new ExecutorContext(bpm_, catalog_, current_transaction_, log_manager_);
-
-            // Update session context
-            session->current_db = stmt->db_name_;
-            session->role = auth_manager_->GetUserRole(session->current_user, stmt->db_name_);
-
-            if (auth_manager_->IsSuperAdmin(session->current_user)) {
-                session->role = UserRole::SUPERADMIN;
-            }
-
-            return ExecutionResult::Message("Now using database: " + stmt->db_name_);
-        } catch (const std::exception &e) {
-            return ExecutionResult::Error("Failed to switch database: " + std::string(e.what()));
-        }
-    }
-
-    // ====================================================================
-    // DROP DATABASE
-    // ====================================================================
-    ExecutionResult ExecutionEngine::ExecuteDropDatabase(
-        DropDatabaseStatement *stmt, SessionContext *session) {
-        // Check permissions
-        if (!auth_manager_->HasPermission(session->role, StatementType::DROP_DB)) {
-            return ExecutionResult::Error("Permission denied: DROP DATABASE requires ADMIN role");
-        }
-
-        try {
-            // Protect system/reserved databases
-            std::string db_lower = stmt->db_name_;
-            std::transform(db_lower.begin(), db_lower.end(), db_lower.begin(), ::tolower);
-            if (db_lower == "system" || db_lower == "francodb") {
-                return ExecutionResult::Error("Cannot drop system database: " + stmt->db_name_);
-            }
-
-            auto entry = db_registry_->Get(stmt->db_name_);
-
-            if (!entry) {
-                return ExecutionResult::Error("Database '" + stmt->db_name_ + "' does not exist");
-            }
-
-            // Prevent dropping currently active database
-            if (session->current_db == stmt->db_name_) {
-                return ExecutionResult::Error(
-                    "Cannot drop currently active database. Switch to another database first.");
-            }
-
-            // Flush and close the database
-            if (entry->bpm) {
-                entry->bpm->FlushAllPages();
-            }
-            if (entry->catalog) {
-                entry->catalog->SaveCatalog();
-            }
-
-            // Remove from registry first
-            bool removed = db_registry_->Remove(stmt->db_name_);
-
-            // Delete the entire database DIRECTORY
-            auto &config = ConfigManager::GetInstance();
-            std::string data_dir = config.GetDataDirectory();
-            std::filesystem::path db_dir = std::filesystem::path(data_dir) / stmt->db_name_;
-
-            if (std::filesystem::exists(db_dir) && std::filesystem::is_directory(db_dir)) {
-                std::filesystem::remove_all(db_dir); // Recursively delete directory and contents
-            }
-
-            return ExecutionResult::Message("Database '" + stmt->db_name_ + "' dropped successfully");
-        } catch (const std::exception &e) {
-            return ExecutionResult::Error("Failed to drop database: " + std::string(e.what()));
-        }
-    }
-
-    // ========================================================================
-    // DDL METHODS REMOVED - Now handled by DDLExecutor
-    // ExecuteDescribeTable, ExecuteShowCreateTable, ExecuteAlterTable
-    // See: ddl_executor.cpp
-    // ========================================================================
-
-    ExecutionResult ExecutionEngine::ExecuteCheckpoint() {
-        // Permission Check (Optional: restrict to Admin)
-        // if (!auth_manager_->HasPermission(UserRole::ADMIN, StatementType::CHECKPOINT_CMD)) ...
-
-        CheckpointManager cp_mgr(bpm_, log_manager_);
-        cp_mgr.BeginCheckpoint();
-        return ExecutionResult::Message("CHECKPOINT SUCCESS");
-    }
-
-
+std::shared_mutex ExecutionEngine::global_lock_;
+
+// ============================================================================
+// CONSTRUCTOR / DESTRUCTOR
+// ============================================================================
+
+ExecutionEngine::ExecutionEngine(BufferPoolManager* bpm, Catalog* catalog,
+                                 AuthManager* auth_manager, DatabaseRegistry* db_registry,
+                                 LogManager* log_manager)
+    : bpm_(bpm), 
+      catalog_(catalog), 
+      auth_manager_(auth_manager),
+      db_registry_(db_registry), 
+      log_manager_(log_manager), 
+      exec_ctx_(nullptr),
+      next_txn_id_(1) {
     
-    ExecutionResult ExecutionEngine::ExecuteRecover(RecoverStatement *stmt) {
-        std::cout << "[SYSTEM] Global Lock Verified. Preparing for Time Travel..." << std::endl;
-        
-        
-        uint64_t now = std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count();
+    // Create executor context
+    exec_ctx_ = new ExecutorContext(bpm_, catalog_, nullptr, log_manager_);
+    
+    // Initialize all specialized executors (SOLID - SRP)
+    ddl_executor_ = std::make_unique<DDLExecutor>(catalog_, log_manager_);
+    dml_executor_ = std::make_unique<DMLExecutor>(bpm_, catalog_, log_manager_);
+    system_executor_ = std::make_unique<SystemExecutor>(catalog_, auth_manager_, db_registry_);
+    user_executor_ = std::make_unique<UserExecutor>(auth_manager_);
+    database_executor_ = std::make_unique<DatabaseExecutor>(auth_manager_, db_registry_, log_manager_);
+    transaction_executor_ = std::make_unique<TransactionExecutor>(log_manager_, catalog_);
+    
+    // Share the atomic counter with transaction executor
+    transaction_executor_->SetNextTxnId(&next_txn_id_);
+}
 
-        if (stmt->timestamp_ > now) {
-            return ExecutionResult::Error("Cannot travel to the future! Timestamp is > Now.");
-        }
-        
-        if (stmt->timestamp_ == 0) {
-            return ExecutionResult::Error("Invalid timestamp (0).");
-        }
+ExecutionEngine::~ExecutionEngine() {
+    delete exec_ctx_;
+}
 
-        // 3. Force Buffer Pool Flush
-        // We ensure the current state is safely on disk before we mess with it.
-        bpm_->FlushAllPages();
-        bpm_->Clear(); 
-        log_manager_->StopFlushThread();
-        
-        std::cout << "[SYSTEM] Initiating Time Travel to: " << stmt->timestamp_ << std::endl;
+// ============================================================================
+// TRANSACTION ACCESS (Delegates to TransactionExecutor)
+// ============================================================================
 
-        try {
-            // Create checkpoint manager for recovery operations
-            CheckpointManager cp_mgr(bpm_, log_manager_);
-            RecoveryManager recovery(log_manager_, catalog_, bpm_, &cp_mgr);
-            
-            // This now calls RollbackToTime internally
-            recovery.RecoverToTime(stmt->timestamp_);
-            
-            // Create a new checkpoint after recovery
-            cp_mgr.BeginCheckpoint();
-            
-        } catch (const std::exception& e) {
-            return ExecutionResult::Error(std::string("Recovery Failed: ") + e.what());
-        }
+Transaction* ExecutionEngine::GetCurrentTransaction() { 
+    return transaction_executor_->GetCurrentTransaction(); 
+}
 
-        std::cout << "[SYSTEM] Time Travel Complete. Resuming normal operations." << std::endl;
-        return ExecutionResult::Message("TIME TRAVEL COMPLETE. System state reverted.");
+Transaction* ExecutionEngine::GetCurrentTransactionForWrite() {
+    return transaction_executor_->GetCurrentTransactionForWrite();
+}
+
+// ============================================================================
+// FACTORY INITIALIZATION (Reserved for future extension)
+// ============================================================================
+
+void ExecutionEngine::InitializeExecutorFactory() {
+    // ExecutorRegistry handles registration - see executor_registry.cpp
+}
+
+// ============================================================================
+// MAIN EXECUTE METHOD - Clean Delegation
+// ============================================================================
+
+ExecutionResult ExecutionEngine::Execute(Statement* stmt, SessionContext* session) {
+    if (stmt == nullptr) {
+        return ExecutionResult::Error("Empty Statement");
     }
+
+    // ==========================================================================
+    // CONCURRENCY GATEKEEPER
+    // ==========================================================================
+    std::unique_lock<std::shared_mutex> exclusive_lock;
+    std::shared_lock<std::shared_mutex> shared_lock;
+
+    bool requires_exclusive = (stmt->GetType() == StatementType::RECOVER ||
+                               stmt->GetType() == StatementType::CHECKPOINT);
+
+    if (requires_exclusive) {
+        exclusive_lock = std::unique_lock<std::shared_mutex>(global_lock_);
+    } else {
+        shared_lock = std::shared_lock<std::shared_mutex>(global_lock_);
+    }
+
+    // ==========================================================================
+    // DELEGATION TO SPECIALIZED EXECUTORS
+    // ==========================================================================
+    try {
+        Transaction* txn = GetCurrentTransactionForWrite();
+        StatementType type = stmt->GetType();
+        ExecutionResult res;
+        
+        // ----- DDL OPERATIONS (DDLExecutor) -----
+        if (type == StatementType::CREATE || type == StatementType::CREATE_TABLE) {
+            auto* create_stmt = dynamic_cast<CreateStatement*>(stmt);
+            if (session && !session->current_db.empty()) {
+                if ((session->current_db == "francodb" || session->current_db == "system") 
+                    && session->role != UserRole::SUPERADMIN) {
+                    return ExecutionResult::Error("Cannot create tables in reserved database");
+                }
+            }
+            res = ddl_executor_->CreateTable(create_stmt);
+        }
+        else if (type == StatementType::CREATE_INDEX) {
+            res = ddl_executor_->CreateIndex(dynamic_cast<CreateIndexStatement*>(stmt));
+        }
+        else if (type == StatementType::DROP) {
+            if (session && session->current_db == "system" && session->role != UserRole::SUPERADMIN) {
+                return ExecutionResult::Error("Cannot drop tables in system database");
+            }
+            res = ddl_executor_->DropTable(dynamic_cast<DropStatement*>(stmt));
+        }
+        else if (type == StatementType::DESCRIBE_TABLE) {
+            res = ddl_executor_->DescribeTable(dynamic_cast<DescribeTableStatement*>(stmt));
+        }
+        else if (type == StatementType::SHOW_CREATE_TABLE) {
+            res = ddl_executor_->ShowCreateTable(dynamic_cast<ShowCreateTableStatement*>(stmt));
+        }
+        else if (type == StatementType::ALTER_TABLE) {
+            res = ddl_executor_->AlterTable(dynamic_cast<AlterTableStatement*>(stmt));
+        }
+        
+        // ----- DML OPERATIONS (DMLExecutor) -----
+        else if (type == StatementType::INSERT) {
+            if (session && session->current_db == "system" && session->role != UserRole::SUPERADMIN) {
+                return ExecutionResult::Error("Cannot modify system database tables");
+            }
+            res = dml_executor_->Insert(dynamic_cast<InsertStatement*>(stmt), txn);
+        }
+        else if (type == StatementType::SELECT) {
+            res = dml_executor_->Select(dynamic_cast<SelectStatement*>(stmt), session, txn);
+        }
+        else if (type == StatementType::UPDATE_CMD) {
+            if (session && session->current_db == "system" && session->role != UserRole::SUPERADMIN) {
+                return ExecutionResult::Error("Cannot modify system database tables");
+            }
+            res = dml_executor_->Update(dynamic_cast<UpdateStatement*>(stmt), txn);
+        }
+        else if (type == StatementType::DELETE_CMD) {
+            if (session && session->current_db == "system" && session->role != UserRole::SUPERADMIN) {
+                return ExecutionResult::Error("Cannot modify system database tables");
+            }
+            res = dml_executor_->Delete(dynamic_cast<DeleteStatement*>(stmt), txn);
+        }
+        
+        // ----- TRANSACTION OPERATIONS (TransactionExecutor) -----
+        else if (type == StatementType::BEGIN) {
+            res = transaction_executor_->Begin();
+        }
+        else if (type == StatementType::COMMIT) {
+            res = transaction_executor_->Commit();
+        }
+        else if (type == StatementType::ROLLBACK) {
+            res = transaction_executor_->Rollback();
+        }
+        
+        // ----- DATABASE OPERATIONS (DatabaseExecutor) -----
+        else if (type == StatementType::CREATE_DB) {
+            res = database_executor_->CreateDatabase(dynamic_cast<CreateDatabaseStatement*>(stmt), session);
+        }
+        else if (type == StatementType::USE_DB) {
+            BufferPoolManager* new_bpm = nullptr;
+            Catalog* new_catalog = nullptr;
+            res = database_executor_->UseDatabase(
+                dynamic_cast<UseDatabaseStatement*>(stmt), session, &new_bpm, &new_catalog);
+            
+            // Update engine state after USE DATABASE
+            if (res.success && new_bpm && new_catalog) {
+                bpm_ = new_bpm;
+                catalog_ = new_catalog;
+                
+                // Update executor context
+                delete exec_ctx_;
+                exec_ctx_ = new ExecutorContext(bpm_, catalog_, txn, log_manager_);
+                
+                // Update executors with new catalog
+                transaction_executor_->SetCatalog(catalog_);
+            }
+        }
+        else if (type == StatementType::DROP_DB) {
+            res = database_executor_->DropDatabase(dynamic_cast<DropDatabaseStatement*>(stmt), session);
+        }
+        
+        // ----- USER OPERATIONS (UserExecutor) -----
+        else if (type == StatementType::CREATE_USER) {
+            res = user_executor_->CreateUser(dynamic_cast<CreateUserStatement*>(stmt));
+        }
+        else if (type == StatementType::ALTER_USER_ROLE) {
+            res = user_executor_->AlterUserRole(dynamic_cast<AlterUserRoleStatement*>(stmt));
+        }
+        else if (type == StatementType::DELETE_USER) {
+            res = user_executor_->DeleteUser(dynamic_cast<DeleteUserStatement*>(stmt));
+        }
+        
+        // ----- SYSTEM OPERATIONS (SystemExecutor) -----
+        else if (type == StatementType::SHOW_DATABASES) {
+            res = system_executor_->ShowDatabases(dynamic_cast<ShowDatabasesStatement*>(stmt), session);
+        }
+        else if (type == StatementType::SHOW_TABLES) {
+            res = system_executor_->ShowTables(dynamic_cast<ShowTablesStatement*>(stmt), session);
+        }
+        else if (type == StatementType::SHOW_STATUS) {
+            res = system_executor_->ShowStatus(dynamic_cast<ShowStatusStatement*>(stmt), session);
+        }
+        else if (type == StatementType::SHOW_USERS) {
+            res = system_executor_->ShowUsers(dynamic_cast<ShowUsersStatement*>(stmt));
+        }
+        else if (type == StatementType::WHOAMI) {
+            res = system_executor_->WhoAmI(dynamic_cast<WhoAmIStatement*>(stmt), session);
+        }
+        
+        // ----- RECOVERY OPERATIONS (Kept inline - special handling) -----
+        else if (type == StatementType::CHECKPOINT) {
+            res = ExecuteCheckpoint();
+        }
+        else if (type == StatementType::RECOVER) {
+            res = ExecuteRecover(dynamic_cast<RecoverStatement*>(stmt));
+        }
+        
+        else {
+            return ExecutionResult::Error("Unknown Statement Type");
+        }
+
+        // Auto-commit for single DML statements
+        if (type == StatementType::INSERT ||
+            type == StatementType::UPDATE_CMD ||
+            type == StatementType::DELETE_CMD) {
+            transaction_executor_->AutoCommitIfNeeded();
+        }
+        
+        return res;
+        
+    } catch (const std::exception& e) {
+        // Force rollback on error
+        if (transaction_executor_->GetCurrentTransaction() && 
+            transaction_executor_->GetCurrentTransaction()->GetState() == Transaction::TransactionState::RUNNING) {
+            transaction_executor_->Rollback();
+        }
+        return ExecutionResult::Error(e.what());
+    }
+}
+
+// ============================================================================
+// HELPER METHODS
+// ============================================================================
+
+std::string ExecutionEngine::ValueToString(const Value& v) {
+    std::ostringstream oss;
+    oss << v;
+    return oss.str();
+}
+
+// ============================================================================
+// RECOVERY OPERATIONS (Kept inline - require special handling)
+// ============================================================================
+
+ExecutionResult ExecutionEngine::ExecuteCheckpoint() {
+    CheckpointManager cp_mgr(bpm_, log_manager_);
+    cp_mgr.BeginCheckpoint();
+    return ExecutionResult::Message("CHECKPOINT SUCCESS");
+}
+
+ExecutionResult ExecutionEngine::ExecuteRecover(RecoverStatement* stmt) {
+    std::cout << "[SYSTEM] Global Lock Verified. Preparing for Time Travel..." << std::endl;
+    
+    uint64_t now = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+
+    if (stmt->timestamp_ > now) {
+        return ExecutionResult::Error("Cannot travel to the future! Timestamp is > Now.");
+    }
+    
+    if (stmt->timestamp_ == 0) {
+        return ExecutionResult::Error("Invalid timestamp (0).");
+    }
+
+    // Force Buffer Pool Flush
+    bpm_->FlushAllPages();
+    bpm_->Clear(); 
+    log_manager_->StopFlushThread();
+    
+    std::cout << "[SYSTEM] Initiating Time Travel to: " << stmt->timestamp_ << std::endl;
+
+    try {
+        CheckpointManager cp_mgr(bpm_, log_manager_);
+        RecoveryManager recovery(log_manager_, catalog_, bpm_, &cp_mgr);
+        
+        recovery.RecoverToTime(stmt->timestamp_);
+        cp_mgr.BeginCheckpoint();
+        
+    } catch (const std::exception& e) {
+        return ExecutionResult::Error(std::string("Recovery Failed: ") + e.what());
+    }
+
+    std::cout << "[SYSTEM] Time Travel Complete. Resuming normal operations." << std::endl;
+    return ExecutionResult::Message("TIME TRAVEL COMPLETE. System state reverted.");
+}
+
 } // namespace francodb
+
