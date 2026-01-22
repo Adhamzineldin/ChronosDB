@@ -141,7 +141,11 @@ namespace francodb {
         NOW,        // "NOW" / "DELWA2TY" - current time
         CURRENT,    // "CURRENT" / "7ALY" - current state
         AS,         // "AS" / "K" - for AS OF queries
-        OF          // "OF" / "MEN" - for AS OF queries
+        OF,         // "OF" / "MEN" - for AS OF queries
+        
+        // --- SERVER CONTROL ---
+        STOP,       // "STOP" / "WA2AF" - stop server
+        SHUTDOWN    // "SHUTDOWN" - shutdown server
     };
 
     struct Token {

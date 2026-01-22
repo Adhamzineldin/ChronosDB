@@ -133,15 +133,21 @@ namespace francodb {
                 
             return std::make_unique<RecoverStatement>(timestamp);
         }
-        // 10. USE database
+        // 10. STOP / SHUTDOWN server
+        else if (current_token_.type == TokenType::STOP || current_token_.type == TokenType::SHUTDOWN) {
+            Advance(); // Eat STOP/SHUTDOWN
+            Match(TokenType::SEMICOLON); // Optional semicolon
+            return std::make_unique<StopServerStatement>();
+        }
+        // 11. USE database
         else if (current_token_.type == TokenType::USE) {
             return ParseUseDatabase();
         }
-        // 11. LOGIN user pass
+        // 12. LOGIN user pass
         else if (current_token_.type == TokenType::LOGIN) {
             return ParseLogin();
         }
-        // 12. WHOAMI
+        // 13. WHOAMI
         else if (current_token_.type == TokenType::WHOAMI) {
             return ParseWhoAmI();
         }

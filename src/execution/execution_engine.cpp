@@ -197,6 +197,11 @@ namespace francodb {
         dispatch_map_[StatementType::RECOVER] = [this](Statement *s, SessionContext *ctx, Transaction *t) {
             return ExecuteRecover(dynamic_cast<RecoverStatement *>(s));
         };
+        
+        // ----- SERVER CONTROL -----
+        dispatch_map_[StatementType::STOP_SERVER] = [this](Statement *s, SessionContext *ctx, Transaction *t) {
+            return ExecuteStopServer(ctx);
+        };
     }
 
     // ============================================================================
@@ -410,5 +415,20 @@ namespace francodb {
             return ExecutionResult::Message("RECOVERED TO LATEST. System state restored to most recent.");
         }
         return ExecutionResult::Message("TIME TRAVEL COMPLETE. System state reverted.");
+    }
+    
+    ExecutionResult ExecutionEngine::ExecuteStopServer(SessionContext* session) {
+        // Only SUPERADMIN can stop the server
+        if (session && session->role != UserRole::SUPERADMIN) {
+            return ExecutionResult::Error("Permission denied. Only SUPERADMIN can stop the server.");
+        }
+        
+        std::cout << "[STOP] Server shutdown requested by user: " 
+                  << (session ? session->current_user : "unknown") << std::endl;
+        
+        // Set the shutdown flag - this will be checked by the server
+        shutdown_requested_ = true;
+        
+        return ExecutionResult::Message("SHUTDOWN INITIATED. Server will stop after completing current operations.");
     }
 } // namespace francodb

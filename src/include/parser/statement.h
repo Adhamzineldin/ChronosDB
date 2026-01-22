@@ -12,7 +12,7 @@ namespace francodb {
         LOGIN, CREATE_USER, ALTER_USER_ROLE, DELETE_USER, SHOW_USERS, SHOW_DATABASES, SHOW_TABLES, SHOW_STATUS, WHOAMI,
         DROP_DB, CREATE_TABLE,
         DESCRIBE_TABLE, ALTER_TABLE, SHOW_CREATE_TABLE,
-        CHECKPOINT, RECOVER
+        CHECKPOINT, RECOVER, STOP_SERVER
     };
 
     enum class LogicType { NONE, AND, OR };
@@ -294,8 +294,9 @@ namespace francodb {
         explicit RecoverStatement(uint64_t timestamp) : timestamp_(timestamp) {}
     };
     
-    
-   
-    
+    class StopServerStatement : public Statement {
+    public:
+        StatementType GetType() const override { return StatementType::STOP_SERVER; }
+    };
     
 } // namespace francodb

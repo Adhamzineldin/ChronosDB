@@ -360,7 +360,15 @@ namespace francodb {
         {"AUTO_INCREMENT", TokenType::AUTO_INCREMENT},
         {"AUTOINCREMENT",  TokenType::AUTO_INCREMENT},
         {"SERIAL",         TokenType::AUTO_INCREMENT},  // PostgreSQL style
-        {"TAZAYED",        TokenType::AUTO_INCREMENT}   // Franco: "tazayed" = increment
+        {"TAZAYED",        TokenType::AUTO_INCREMENT},  // Franco: "tazayed" = increment
+        
+        // =====================================================================
+        // SERVER CONTROL
+        // =====================================================================
+        {"STOP",       TokenType::STOP},
+        {"WA2AF",      TokenType::STOP},        // Franco: "wa2af" = stop
+        {"SHUTDOWN",   TokenType::SHUTDOWN},
+        {"2AFOL",      TokenType::SHUTDOWN}     // Franco: "2afol" = close/shutdown
     };
 
     Token Lexer::NextToken() {
@@ -572,6 +580,8 @@ namespace francodb {
             case TokenType::CURRENT:    return "CURRENT";
             case TokenType::AS:         return "AS";
             case TokenType::OF:         return "OF";
+            case TokenType::STOP:       return "STOP";
+            case TokenType::SHUTDOWN:   return "SHUTDOWN";
             
             // GROUP BY & Aggregates
             case TokenType::GROUP: return "GROUP";

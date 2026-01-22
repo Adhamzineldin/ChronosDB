@@ -94,6 +94,11 @@ private:
     // ========================================================================
     ExecutionResult ExecuteCheckpoint();
     ExecutionResult ExecuteRecover(RecoverStatement* stmt);
+    
+    // ========================================================================
+    // SERVER CONTROL
+    // ========================================================================
+    ExecutionResult ExecuteStopServer(SessionContext* session);
 
     // ========================================================================
     // CORE DEPENDENCIES (order matches constructor initialization)
@@ -120,6 +125,18 @@ private:
     // ========================================================================
     std::unique_ptr<LockManager> lock_manager_;
     
+    // ========================================================================
+    // SERVER STATE
+    // ========================================================================
+    std::atomic<bool> shutdown_requested_{false};
+    
+public:
+    /**
+     * Check if a shutdown has been requested via STOP command.
+     */
+    bool IsShutdownRequested() const { return shutdown_requested_.load(); }
+    
+private:
     // ========================================================================
     // THREAD SAFETY (Issue #4 & #5 Fix)
     // ========================================================================

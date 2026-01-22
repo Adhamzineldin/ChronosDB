@@ -33,6 +33,7 @@ typedef int socket_t;
 #include <filesystem>
 #include <chrono>
 #include <thread>
+#include <future>
 
 namespace francodb {
     
@@ -61,14 +62,39 @@ namespace francodb {
     }
 
     FrancoServer::~FrancoServer() {
+        std::cout << "[SHUTDOWN] Server destructor called..." << std::endl;
+        
+        // 1. Signal stop first
         running_ = false;
+        is_running_ = false;
+        
+        // 2. Wait for auto-save thread with timeout
         if (auto_save_thread_.joinable()) {
-            auto_save_thread_.join();
+            std::cout << "[SHUTDOWN] Waiting for auto-save thread..." << std::endl;
+            
+            // Give it a reasonable time to finish current checkpoint
+            auto future = std::async(std::launch::async, [this]() {
+                if (auto_save_thread_.joinable()) {
+                    auto_save_thread_.join();
+                }
+            });
+            
+            // Wait max 5 seconds for the auto-save thread
+            if (future.wait_for(std::chrono::seconds(5)) == std::future_status::timeout) {
+                std::cerr << "[SHUTDOWN] Warning: Auto-save thread did not finish in time" << std::endl;
+                // Thread will be abandoned - this is better than deadlock
+            } else {
+                std::cout << "[SHUTDOWN] Auto-save thread finished cleanly" << std::endl;
+            }
         }
+        
+        // 3. Now do the shutdown flush
         Shutdown();
+        
 #ifdef _WIN32
         WSACleanup();
 #endif
+        std::cout << "[SHUTDOWN] Server destructor complete" << std::endl;
     }
 
     void FrancoServer::Start(int port) {
@@ -177,27 +203,55 @@ namespace francodb {
     void FrancoServer::AutoSaveLoop() {
         CheckpointManager cp_manager(bpm_, log_manager_);
         while (running_) {
+            // Sleep in small increments to respond to shutdown quickly
             for (int i = 0; i < 300 && running_; ++i) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
-            if (running_) {
-                std::cout << "[SERVER] Auto-Checkpoint Initiating..." << std::endl;
-                
-                {
-                    std::unique_lock<std::shared_mutex> lock(ExecutionEngine::global_lock_);
-                    
-                    if (bpm_) bpm_->FlushAllPages();
-                    if (catalog_) catalog_->SaveCatalog();
-                    if (system_bpm_) system_bpm_->FlushAllPages();
-                    if (system_catalog_) system_catalog_->SaveCatalog();
-                    
-                    cp_manager.BeginCheckpoint();
-                
-                } // Lock releases here -> Transactions resume automatically.
-
-                std::cout << "[SERVER] Auto-Checkpoint Complete." << std::endl;
+            
+            // Check again after sleep - might have been signaled to stop
+            if (!running_) {
+                std::cout << "[AUTO-SAVE] Shutdown detected, exiting loop..." << std::endl;
+                break;
             }
+            
+            std::cout << "[SERVER] Auto-Checkpoint Initiating..." << std::endl;
+            
+            // Try to acquire lock with timeout to avoid deadlock during shutdown
+            {
+                std::unique_lock<std::shared_mutex> lock(ExecutionEngine::global_lock_, std::defer_lock);
+                
+                // Try to lock with timeout
+                auto start = std::chrono::steady_clock::now();
+                bool acquired = false;
+                while (!acquired && running_) {
+                    acquired = lock.try_lock();
+                    if (!acquired) {
+                        auto elapsed = std::chrono::steady_clock::now() - start;
+                        if (elapsed > std::chrono::seconds(5)) {
+                            std::cerr << "[AUTO-SAVE] Could not acquire lock, skipping checkpoint" << std::endl;
+                            break;
+                        }
+                        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                    }
+                }
+                
+                if (!acquired || !running_) {
+                    continue;
+                }
+                
+                if (bpm_) bpm_->FlushAllPages();
+                if (catalog_) catalog_->SaveCatalog();
+                if (system_bpm_) system_bpm_->FlushAllPages();
+                if (system_catalog_) system_catalog_->SaveCatalog();
+                
+                cp_manager.BeginCheckpoint();
+            
+            } // Lock releases here -> Transactions resume automatically.
+
+            std::cout << "[SERVER] Auto-Checkpoint Complete." << std::endl;
         }
+        
+        std::cout << "[AUTO-SAVE] Thread exiting cleanly" << std::endl;
     }
 
     void FrancoServer::InitializeSystemResources() {
@@ -236,6 +290,31 @@ namespace francodb {
     std::string FrancoServer::DispatchCommand(const std::string &sql, ClientConnectionHandler *handler) {
         std::string upper_sql = sql;
         std::transform(upper_sql.begin(), upper_sql.end(), upper_sql.begin(), ::toupper);
+
+        // Handle STOP/SHUTDOWN command - requires SUPERADMIN
+        if (upper_sql.find("STOP") == 0 || upper_sql.find("SHUTDOWN") == 0 ||
+            upper_sql.find("WA2AF") == 0 || upper_sql.find("2AFOL") == 0) {
+            
+            if (!handler->IsAuthenticated()) {
+                return "ERROR: Authentication required to stop server.";
+            }
+            
+            // Check for SUPERADMIN role
+            auto session = handler->GetSession();
+            if (!session || session->role != UserRole::SUPERADMIN) {
+                return "ERROR: Permission denied. Only SUPERADMIN can stop the server.";
+            }
+            
+            std::cout << "[STOP] Server shutdown requested by user: " << session->current_user << std::endl;
+            
+            // Start graceful shutdown in a separate thread to allow response to be sent
+            std::thread([this]() {
+                std::this_thread::sleep_for(std::chrono::milliseconds(500)); // Allow response to be sent
+                this->Stop();
+            }).detach();
+            
+            return "SHUTDOWN INITIATED. Server will stop in 500ms.";
+        }
 
         if (upper_sql.find("WHOAMI") != std::string::npos) {
             return "Current User: " + (handler->IsAuthenticated() ? handler->GetCurrentUser() : "Guest");
@@ -276,11 +355,16 @@ namespace francodb {
     }
 
     void FrancoServer::Stop() {
+        std::cout << "[STOP] Initiating graceful shutdown..." << std::endl;
+        
+        // 1. Signal all loops to stop FIRST (non-blocking)
         running_ = false;
         is_running_ = false;
 
+        // 2. Close the listening socket to unblock accept()
         if (listen_sock_ != 0) {
 #ifdef _WIN32
+            // Shutdown first to unblock any blocking recv/send calls
             shutdown((socket_t) listen_sock_, SD_BOTH);
             closesocket((socket_t) listen_sock_);
 #else
@@ -289,6 +373,8 @@ namespace francodb {
 #endif
             listen_sock_ = 0;
         }
+        
+        std::cout << "[STOP] Socket closed, waiting for threads to finish..." << std::endl;
     }
 
 
