@@ -11,9 +11,10 @@
 using namespace francodb;
 
 // --- SHARED BANK SIMULATION ---
+// Note: Using regular mutex instead of shared_mutex due to potential MinGW bugs
 struct Bank {
     std::map<int, int> accounts;
-    std::shared_mutex rw_lock; 
+    mutable std::mutex rw_lock;  // Use regular mutex (more reliable on MinGW)
 
     Bank(int num_accounts, int initial_balance) {
         for(int i=0; i<num_accounts; ++i) {
@@ -23,7 +24,7 @@ struct Bank {
 
     // WRITER TASK
     void Transfer(int from, int to, int amount) {
-        std::unique_lock<std::shared_mutex> lock(rw_lock); 
+        std::lock_guard<std::mutex> lock(rw_lock); 
         
         // Safety check: Ensure accounts exist so we don't accidentally create new ones
         if (accounts.find(from) != accounts.end() && accounts.find(to) != accounts.end()) {
@@ -35,8 +36,8 @@ struct Bank {
     }
 
     // READER TASK
-    long long GetTotalBalance() {
-        std::shared_lock<std::shared_mutex> lock(rw_lock); 
+    long long GetTotalBalance() const {
+        std::lock_guard<std::mutex> lock(rw_lock); 
         long long total = 0;
         for(auto const& [id, bal] : accounts) {
             total += bal;

@@ -402,7 +402,7 @@ bool InsertExecutor::Next(Tuple *tuple) {
     }
 
     is_finished_ = true;
-    return false;
+    return true;  // Return true for the single successful insert, count will be 1
 }
 
 const Schema *InsertExecutor::GetOutputSchema() {

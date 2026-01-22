@@ -361,7 +361,7 @@ namespace francodb {
     }
 
     ExecutionResult ExecutionEngine::ExecuteRecover(RecoverStatement *stmt) {
-        std::cout << "[SYSTEM] Global Lock Verified. Preparing for Time Travel..." << std::endl;
+        std::cout << "[SYSTEM] Preparing for Time Travel..." << std::endl;
 
         uint64_t now = std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
@@ -374,10 +374,9 @@ namespace francodb {
             return ExecutionResult::Error("Invalid timestamp (0).");
         }
 
-        // Force Buffer Pool Flush
+        // Force Buffer Pool Flush (but don't stop the flush thread - that causes deadlock)
         bpm_->FlushAllPages();
-        bpm_->Clear();
-        log_manager_->StopFlushThread();
+        log_manager_->Flush(true);  // Force flush the log
 
         std::cout << "[SYSTEM] Initiating Time Travel to: " << stmt->timestamp_ << std::endl;
 
@@ -386,7 +385,10 @@ namespace francodb {
             RecoveryManager recovery(log_manager_, catalog_, bpm_, &cp_mgr);
 
             recovery.RecoverToTime(stmt->timestamp_);
-            cp_mgr.BeginCheckpoint();
+            
+            // Flush after recovery to persist changes
+            bpm_->FlushAllPages();
+            log_manager_->Flush(true);
         } catch (const std::exception &e) {
             return ExecutionResult::Error(std::string("Recovery Failed: ") + e.what());
         }
