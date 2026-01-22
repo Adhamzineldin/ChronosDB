@@ -117,17 +117,25 @@ ExecutionResult DMLExecutor::Select(SelectStatement* stmt, SessionContext* sessi
         // TIME TRAVEL (AS OF) - Build Snapshot
         // =================================================================
         if (stmt->as_of_timestamp_ > 0) {
+            // Determine the database to use for time travel
+            // Priority: 1) session->current_db, 2) log_manager->GetCurrentDatabase(), 3) "system"
+            std::string db_name;
+            if (session && !session->current_db.empty()) {
+                db_name = session->current_db;
+            } else if (log_manager_) {
+                db_name = log_manager_->GetCurrentDatabase();
+            }
+            if (db_name.empty()) {
+                db_name = "system";
+            }
+            
             std::cout << "[TIME TRAVEL] Building snapshot as of " << stmt->as_of_timestamp_ 
-                      << " for database '" << (session ? session->current_db : "unknown") << "'..." << std::endl;
+                      << " for database '" << db_name << "'..." << std::endl;
             
             // **CRITICAL**: Flush the log to ensure all records are on disk
             if (log_manager_) {
                 log_manager_->Flush(true);  // Force flush
             }
-            
-            // Build the snapshot
-            std::string db_name = (session && !session->current_db.empty()) 
-                                  ? session->current_db : "system";
             
             snapshot_heap = SnapshotManager::BuildSnapshot(
                 stmt->table_name_,
