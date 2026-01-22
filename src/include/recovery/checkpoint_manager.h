@@ -1,6 +1,6 @@
 #pragma once
 
-#include "buffer/buffer_pool_manager.h"
+#include "storage/storage_interface.h"  // For IBufferManager
 #include "recovery/log_manager.h"
 #include <mutex>
 #include <iostream>
@@ -67,7 +67,7 @@ namespace francodb {
          * @param log_manager Log manager for writing checkpoint records
          * @param master_record_path Path to the master record file
          */
-        CheckpointManager(BufferPoolManager* bpm, LogManager* log_manager,
+        CheckpointManager(IBufferManager* bpm, LogManager* log_manager,
                           const std::string& master_record_path = "data/system/master_record");
         
         /**
@@ -219,7 +219,7 @@ namespace francodb {
         // DATA MEMBERS
         // ========================================================================
 
-        BufferPoolManager* bpm_;
+        IBufferManager* bpm_;
         LogManager* log_manager_;
         std::string master_record_path_;
         

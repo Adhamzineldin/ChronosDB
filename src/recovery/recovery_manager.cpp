@@ -18,7 +18,7 @@ namespace francodb {
     // ========================================================================
 
     RecoveryManager::RecoveryManager(LogManager* log_manager, Catalog* catalog, 
-                                     BufferPoolManager* bpm, CheckpointManager* checkpoint_mgr)
+                                     IBufferManager* bpm, CheckpointManager* checkpoint_mgr)
         : log_manager_(log_manager), catalog_(catalog), bpm_(bpm), checkpoint_mgr_(checkpoint_mgr) {
         std::cout << "[RecoveryManager] Initialized" << std::endl;
     }

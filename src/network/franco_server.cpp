@@ -36,8 +36,9 @@ typedef int socket_t;
 
 namespace francodb {
     
-    // [FIX] Accept LogManager pointer in Constructor
-    FrancoServer::FrancoServer(BufferPoolManager *bpm, Catalog *catalog, LogManager *log_manager)
+    // Accept IBufferManager for polymorphic buffer pool usage
+    // Works with both BufferPoolManager and PartitionedBufferPoolManager
+    FrancoServer::FrancoServer(IBufferManager *bpm, Catalog *catalog, LogManager *log_manager)
         : bpm_(bpm), catalog_(catalog), log_manager_(log_manager) {
         try {
             // Initialize Registry FIRST

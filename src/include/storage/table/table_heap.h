@@ -1,6 +1,5 @@
 #pragma once
 
-#include "buffer/buffer_pool_manager.h"
 #include "storage/table/table_page.h"
 #include "storage/table/tuple.h"
 #include "concurrency/transaction.h"
@@ -8,6 +7,9 @@
 #include "storage/storage_interface.h"
 
 namespace francodb {
+
+    // Forward declaration
+    class BufferPoolManager;
 
     /**
      * TableHeap represents a physical table on disk.
@@ -19,10 +21,10 @@ namespace francodb {
      */
     class TableHeap : public ITableStorage {
     public:
-        // FIX: Just DECLARE it here (removed the {} body)
-        TableHeap(BufferPoolManager *bpm, page_id_t first_page_id);
+        // Accept IBufferManager interface for polymorphic buffer pool usage
+        TableHeap(IBufferManager *bpm, page_id_t first_page_id);
         
-        TableHeap(BufferPoolManager *bpm, Transaction *txn = nullptr);
+        TableHeap(IBufferManager *bpm, Transaction *txn = nullptr);
         
         // Virtual destructor for interface
         ~TableHeap() override = default;
@@ -49,7 +51,7 @@ namespace francodb {
         
         class Iterator {
         public:
-            Iterator(BufferPoolManager *bpm, page_id_t page_id, uint32_t slot_id, 
+            Iterator(IBufferManager *bpm, page_id_t page_id, uint32_t slot_id, 
                      Transaction *txn, bool is_end = false);
             
             /**
@@ -83,7 +85,7 @@ namespace francodb {
             void AdvanceToNextValidTuple();
             void CacheTuple();  // Load current tuple into cache
             
-            BufferPoolManager *bpm_;
+            IBufferManager *bpm_;
             page_id_t current_page_id_;
             uint32_t current_slot_;
             Transaction *txn_;
@@ -102,7 +104,7 @@ namespace francodb {
         std::unique_ptr<ITableStorage::Iterator> CreateIterator(Transaction* txn) override;
 
     private:
-        BufferPoolManager *buffer_pool_manager_;
+        IBufferManager *buffer_pool_manager_;
         page_id_t first_page_id_;
     };
 

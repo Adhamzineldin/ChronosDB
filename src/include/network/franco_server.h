@@ -11,7 +11,7 @@
 // [FIX] Include the new ThreadPool
 #include "common/thread_pool.h"
 
-#include "buffer/buffer_pool_manager.h"
+#include "storage/storage_interface.h"  // For IBufferManager
 #include "catalog/catalog.h"
 #include "execution/execution_engine.h"
 #include "network/connection_handler.h"
@@ -25,14 +25,15 @@ namespace francodb {
 
     class FrancoServer {
     public:
-        FrancoServer(BufferPoolManager *bpm, Catalog *catalog, LogManager *log_manager);
+        // Accept IBufferManager for polymorphic buffer pool usage
+        FrancoServer(IBufferManager *bpm, Catalog *catalog, LogManager *log_manager);
         ~FrancoServer();
 
         void Start(int port);
         void Shutdown();
         void RequestShutdown() { running_ = false; }
         
-        BufferPoolManager* GetSystemBpm() { return system_bpm_.get(); }
+        IBufferManager* GetSystemBpm() { return system_bpm_.get(); }
         Catalog* GetSystemCatalog() { return system_catalog_.get(); }
         AuthManager* GetAuthManager() { return auth_manager_.get(); }
         
@@ -47,7 +48,7 @@ namespace francodb {
         std::string DispatchCommand(const std::string& sql, ClientConnectionHandler* handler);
 
         // Core Components
-        BufferPoolManager* bpm_;
+        IBufferManager* bpm_;
         Catalog* catalog_;
         LogManager *log_manager_;
         

@@ -4,6 +4,7 @@
 #include "execution/executor_context.h"
 #include "concurrency/transaction.h"
 #include "recovery/log_manager.h"
+#include "storage/storage_interface.h"  // For IBufferManager
 
 namespace francodb {
 
@@ -13,7 +14,6 @@ class SelectStatement;
 class UpdateStatement;
 class DeleteStatement;
 class SessionContext;
-class BufferPoolManager;
 class Catalog;
 class TableMetadata;
 
@@ -33,7 +33,8 @@ class TableMetadata;
  */
 class DMLExecutor {
 public:
-    DMLExecutor(BufferPoolManager* bpm, Catalog* catalog, LogManager* log_manager = nullptr)
+    // Accept IBufferManager for polymorphic buffer pool usage
+    DMLExecutor(IBufferManager* bpm, Catalog* catalog, LogManager* log_manager = nullptr)
         : bpm_(bpm), catalog_(catalog), log_manager_(log_manager) {}
     
     // ========================================================================
@@ -81,16 +82,16 @@ public:
     // CONFIGURATION
     // ========================================================================
     
-    void SetBufferPoolManager(BufferPoolManager* bpm) { bpm_ = bpm; }
+    void SetBufferPoolManager(IBufferManager* bpm) { bpm_ = bpm; }
     void SetCatalog(Catalog* catalog) { catalog_ = catalog; }
     void SetLogManager(LogManager* log_manager) { log_manager_ = log_manager; }
     
-    BufferPoolManager* GetBufferPoolManager() const { return bpm_; }
+    IBufferManager* GetBufferPoolManager() const { return bpm_; }
     Catalog* GetCatalog() const { return catalog_; }
     LogManager* GetLogManager() const { return log_manager_; }
 
 private:
-    BufferPoolManager* bpm_;
+    IBufferManager* bpm_;
     Catalog* catalog_;
     LogManager* log_manager_;
     

@@ -10,6 +10,7 @@
 #include "execution/database_executor.h"
 #include "parser/statement.h"
 #include "network/session_context.h"
+#include "storage/storage_interface.h"  // For IBufferManager
 #include "buffer/buffer_pool_manager.h"
 #include "catalog/catalog.h"
 #include "common/franco_net_config.h"
@@ -73,7 +74,7 @@ ExecutionResult DatabaseExecutor::CreateDatabase(CreateDatabaseStatement* stmt, 
 // ============================================================================
 ExecutionResult DatabaseExecutor::UseDatabase(UseDatabaseStatement* stmt, 
                                                SessionContext* session,
-                                               BufferPoolManager** bpm_out,
+                                               IBufferManager** bpm_out,
                                                Catalog** catalog_out) {
     if (!stmt) {
         return ExecutionResult::Error("[Database] Invalid USE DATABASE statement");

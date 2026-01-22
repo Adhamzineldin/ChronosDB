@@ -9,7 +9,7 @@ namespace francodb {
     // CONSTRUCTOR / DESTRUCTOR
     // ========================================================================
 
-    CheckpointManager::CheckpointManager(BufferPoolManager* bpm, LogManager* log_manager,
+    CheckpointManager::CheckpointManager(IBufferManager* bpm, LogManager* log_manager,
                                          const std::string& master_record_path)
         : bpm_(bpm), 
           log_manager_(log_manager), 

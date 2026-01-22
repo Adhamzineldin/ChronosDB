@@ -9,25 +9,34 @@
 #include "storage/disk/disk_manager.h"
 #include "storage/page/page.h"
 #include "buffer/replacer.h" // Use the generic interface
+#include "storage/storage_interface.h"  // For IBufferManager
 
 namespace francodb {
 
     // Forward declaration
     class LogManager;
 
-    class BufferPoolManager {
+    /**
+     * BufferPoolManager - Standard buffer pool with single mutex.
+     * 
+     * For high-concurrency workloads, consider using PartitionedBufferPoolManager
+     * which reduces lock contention via partitioned latching.
+     * 
+     * Implements IBufferManager interface for polymorphic usage.
+     */
+    class BufferPoolManager : public IBufferManager {
     public:
         BufferPoolManager(size_t pool_size, DiskManager *disk_manager);
-        ~BufferPoolManager();
+        ~BufferPoolManager() override;
 
-        Page *FetchPage(page_id_t page_id);
-        bool UnpinPage(page_id_t page_id, bool is_dirty);
-        bool FlushPage(page_id_t page_id);
-        Page *NewPage(page_id_t *page_id);
-        bool DeletePage(page_id_t page_id);
-        void FlushAllPages();
+        Page *FetchPage(page_id_t page_id) override;
+        bool UnpinPage(page_id_t page_id, bool is_dirty) override;
+        bool FlushPage(page_id_t page_id) override;
+        Page *NewPage(page_id_t *page_id) override;
+        bool DeletePage(page_id_t page_id) override;
+        void FlushAllPages() override;
         
-        DiskManager *GetDiskManager() { return disk_manager_; }
+        DiskManager *GetDiskManager() override { return disk_manager_; }
         
         /**
          * Set the log manager for WAL protocol enforcement.
@@ -36,7 +45,7 @@ namespace francodb {
          */
         void SetLogManager(LogManager* log_manager) { log_manager_ = log_manager; }
 
-        void Clear();
+        void Clear() override;
 
     private:
         bool FindFreeFrame(frame_id_t *out_frame_id);

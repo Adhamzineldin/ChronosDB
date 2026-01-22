@@ -32,8 +32,8 @@ namespace francodb {
         // --- Accessors ---
         inline char *GetData() { return data_; }
         inline page_id_t GetPageId() { return page_id_; }
-        inline int GetPinCount() { return pin_count_; }
-        inline bool IsDirty() { return is_dirty_; }
+        inline int GetPinCount() const { return pin_count_; }
+        inline bool IsDirty() const { return is_dirty_; }
         
         // --- LSN Accessors (for WAL protocol) ---
         inline lsn_t GetPageLSN() const { return page_lsn_; }

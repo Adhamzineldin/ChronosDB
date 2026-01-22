@@ -50,7 +50,8 @@ public:
     // Handler function type for dispatch map
     using StatementHandler = std::function<ExecutionResult(Statement*, SessionContext*, Transaction*)>;
     
-    ExecutionEngine(BufferPoolManager* bpm, Catalog* catalog, AuthManager* auth_manager, 
+    // Accept IBufferManager for polymorphic buffer pool usage
+    ExecutionEngine(IBufferManager* bpm, Catalog* catalog, AuthManager* auth_manager, 
                     DatabaseRegistry* db_registry, LogManager* log_manager);
 
     ~ExecutionEngine();
@@ -97,7 +98,7 @@ private:
     // ========================================================================
     // CORE DEPENDENCIES (order matches constructor initialization)
     // ========================================================================
-    BufferPoolManager* bpm_;
+    IBufferManager* bpm_;
     Catalog* catalog_;
     AuthManager* auth_manager_;
     DatabaseRegistry* db_registry_;

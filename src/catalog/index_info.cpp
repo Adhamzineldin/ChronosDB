@@ -7,7 +7,7 @@
 namespace francodb {
 
 IndexInfo::IndexInfo(std::string name, std::string table_name, std::string col_name, 
-              TypeId key_type, BufferPoolManager *bpm)
+              TypeId key_type, IBufferManager *bpm)
     : name_(std::move(name)), table_name_(std::move(table_name)), col_name_(std::move(col_name)) {
 
     // Calculate max_size for leaf and internal pages

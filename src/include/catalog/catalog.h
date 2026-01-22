@@ -10,14 +10,19 @@
 
 #include "catalog/table_metadata.h"
 #include "catalog/index_info.h"
-#include "buffer/buffer_pool_manager.h"
+#include "storage/storage_interface.h"  // For IBufferManager
 #include "storage/page/free_page_manager.h"
 
 namespace francodb {
 
+    // Forward declaration
+    class BufferPoolManager;
+
     class Catalog {
     public:
-        Catalog(BufferPoolManager *bpm);
+        // Accept IBufferManager interface for polymorphic buffer pool usage
+        // Allows both BufferPoolManager and PartitionedBufferPoolManager
+        Catalog(IBufferManager *bpm);
         ~Catalog();
 
         TableMetadata *CreateTable(const std::string &table_name, const Schema &schema);
@@ -31,7 +36,7 @@ namespace francodb {
         std::vector<std::string> GetAllTableNames();
 
     private:
-        BufferPoolManager *bpm_;
+        IBufferManager *bpm_;
         std::mutex latch_;
         std::atomic<uint32_t> next_table_oid_;
         std::unordered_map<uint32_t, std::unique_ptr<TableMetadata>> tables_;

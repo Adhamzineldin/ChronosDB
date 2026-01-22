@@ -4,7 +4,7 @@
 #include "recovery/log_record.h"
 #include "recovery/checkpoint_manager.h"
 #include "catalog/catalog.h"
-#include "buffer/buffer_pool_manager.h"
+#include "storage/storage_interface.h"  // For IBufferManager
 #include <map>
 #include <set>
 #include <filesystem>
@@ -82,11 +82,11 @@ namespace francodb {
          * 
          * @param log_manager Log manager for reading/writing logs
          * @param catalog Catalog for table access
-         * @param bpm Buffer pool manager
+         * @param bpm Buffer pool manager (IBufferManager interface)
          * @param checkpoint_mgr Checkpoint manager for checkpoint info
          */
         RecoveryManager(LogManager* log_manager, Catalog* catalog, 
-                       BufferPoolManager* bpm, CheckpointManager* checkpoint_mgr);
+                       IBufferManager* bpm, CheckpointManager* checkpoint_mgr);
 
         // ========================================================================
         // ARIES CRASH RECOVERY
@@ -330,7 +330,7 @@ namespace francodb {
 
         LogManager* log_manager_;
         Catalog* catalog_;             
-        BufferPoolManager* bpm_;
+        IBufferManager* bpm_;
         CheckpointManager* checkpoint_mgr_;
 
         // ARIES Tables (built during Analysis phase)

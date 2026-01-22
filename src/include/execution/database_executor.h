@@ -4,6 +4,7 @@
 #include "common/auth_manager.h"
 #include "recovery/log_manager.h"
 #include "network/database_registry.h"
+#include "storage/storage_interface.h"  // For IBufferManager
 
 namespace francodb {
 
@@ -12,7 +13,6 @@ class CreateDatabaseStatement;
 class UseDatabaseStatement;
 class DropDatabaseStatement;
 class SessionContext;
-class BufferPoolManager;
 class Catalog;
 class ExecutorContext;
 
@@ -50,12 +50,12 @@ public:
      * Switch to a different database.
      * Updates session context and switches WAL file.
      * 
-     * @param bpm_out Output: new BufferPoolManager pointer
+     * @param bpm_out Output: new IBufferManager pointer (polymorphic)
      * @param catalog_out Output: new Catalog pointer
      */
     ExecutionResult UseDatabase(UseDatabaseStatement* stmt, 
                                 SessionContext* session,
-                                BufferPoolManager** bpm_out,
+                                IBufferManager** bpm_out,
                                 Catalog** catalog_out);
     
     /**

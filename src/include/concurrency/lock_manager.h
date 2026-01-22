@@ -7,6 +7,7 @@
 #include <condition_variable>
 #include <vector>
 #include <queue>
+#include <list>
 #include <atomic>
 #include <thread>
 #include <chrono>

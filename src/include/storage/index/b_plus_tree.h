@@ -6,7 +6,7 @@
 #include "storage/index/index_iterator.h"
 #include "storage/page/b_plus_tree_internal_page.h"
 #include "storage/page/b_plus_tree_leaf_page.h"
-#include "buffer/buffer_pool_manager.h"
+#include "storage/storage_interface.h"  // For IBufferManager
 #include "common/rwlatch.h" 
 
 namespace francodb {
@@ -16,7 +16,8 @@ namespace francodb {
 template <typename KeyType, typename ValueType, typename KeyComparator>
 class BPlusTree {
 public:
-    explicit BPlusTree(std::string name, BufferPoolManager *buffer_pool_manager, const KeyComparator &comparator,
+    // Accept IBufferManager for polymorphic buffer pool usage
+    explicit BPlusTree(std::string name, IBufferManager *buffer_pool_manager, const KeyComparator &comparator,
                        int leaf_max_size = 0, int internal_max_size = 0);
 
     bool IsEmpty() const;
@@ -33,8 +34,8 @@ public:
     void SetRootPageId(page_id_t root_page_id) { root_page_id_ = root_page_id; }
     page_id_t GetRootPageId() const { return root_page_id_; }
 
-    void Print(BufferPoolManager *bpm);
-    void Draw(BufferPoolManager *bpm, const std::string &outf);
+    void Print(IBufferManager *bpm);
+    void Draw(IBufferManager *bpm, const std::string &outf);
 
 private:
     void StartNewTree(const KeyType &key, const ValueType &value);
@@ -61,7 +62,7 @@ private:
 
     std::string index_name_;
     page_id_t root_page_id_;
-    BufferPoolManager *buffer_pool_manager_;
+    IBufferManager *buffer_pool_manager_;
     KeyComparator comparator_;
     int leaf_max_size_;
     int internal_max_size_;

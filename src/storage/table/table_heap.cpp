@@ -4,14 +4,14 @@
 
 namespace francodb {
     // Constructor 1: Open existing
-    TableHeap::TableHeap(BufferPoolManager *bpm, page_id_t first_page_id)
+    TableHeap::TableHeap(IBufferManager *bpm, page_id_t first_page_id)
         : buffer_pool_manager_(bpm), first_page_id_(first_page_id) {
     }
 
     // Constructor 2: Create New
     // Note: Can't use PageGuard here since page doesn't exist yet
     // NewPage returns an already-pinned page that we must manually handle
-    TableHeap::TableHeap(BufferPoolManager *bpm, Transaction *txn) : buffer_pool_manager_(bpm) {
+    TableHeap::TableHeap(IBufferManager *bpm, Transaction *txn) : buffer_pool_manager_(bpm) {
         (void) txn;
         page_id_t new_page_id;
         Page *page = bpm->NewPage(&new_page_id);
@@ -153,7 +153,7 @@ namespace francodb {
 
 
     // Iterator implementation
-    TableHeap::Iterator::Iterator(BufferPoolManager *bpm, page_id_t page_id,
+    TableHeap::Iterator::Iterator(IBufferManager *bpm, page_id_t page_id,
                                   uint32_t slot_id, Transaction *txn, bool is_end)
         : bpm_(bpm), current_page_id_(page_id), current_slot_(slot_id),
           txn_(txn), is_end_(is_end), has_cached_tuple_(false) {

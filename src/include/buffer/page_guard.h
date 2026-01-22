@@ -1,6 +1,6 @@
 #pragma once
 
-#include "buffer/buffer_pool_manager.h"
+#include "storage/storage_interface.h"  // For IBufferManager
 #include "storage/page/page.h"
 
 namespace francodb {
@@ -22,17 +22,20 @@ namespace francodb {
  *       page->InsertTuple(...);
  *       guard.SetDirty();
  *   }  // Auto-unpin and unlock here
+ * 
+ * Works with both BufferPoolManager and PartitionedBufferPoolManager
+ * via IBufferManager interface.
  */
 class PageGuard {
 public:
     /**
      * Construct a PageGuard that fetches and optionally locks a page.
      * 
-     * @param bpm Buffer pool manager
+     * @param bpm Buffer pool manager (any IBufferManager implementation)
      * @param page_id Page to fetch
      * @param is_write If true, acquire WLock; if false, acquire RLock
      */
-    PageGuard(BufferPoolManager* bpm, page_id_t page_id, bool is_write = false)
+    PageGuard(IBufferManager* bpm, page_id_t page_id, bool is_write = false)
         : bpm_(bpm), 
           page_id_(page_id), 
           page_(nullptr),
@@ -238,7 +241,7 @@ public:
     }
     
 private:
-    BufferPoolManager* bpm_;
+    IBufferManager* bpm_;
     page_id_t page_id_;
     Page* page_;
     bool is_dirty_;
@@ -252,7 +255,7 @@ private:
  */
 class WritePageGuard : public PageGuard {
 public:
-    WritePageGuard(BufferPoolManager* bpm, page_id_t page_id)
+    WritePageGuard(IBufferManager* bpm, page_id_t page_id)
         : PageGuard(bpm, page_id, true) {}
 };
 
@@ -261,7 +264,7 @@ public:
  */
 class ReadPageGuard : public PageGuard {
 public:
-    ReadPageGuard(BufferPoolManager* bpm, page_id_t page_id)
+    ReadPageGuard(IBufferManager* bpm, page_id_t page_id)
         : PageGuard(bpm, page_id, false) {}
 };
 

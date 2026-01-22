@@ -21,6 +21,7 @@
 #include "network/franco_server.h"
 #include "storage/disk/disk_manager.h"
 #include "buffer/buffer_pool_manager.h"
+#include "buffer/partitioned_buffer_pool_manager.h"
 #include "catalog/catalog.h"
 #include "common/config.h"
 #include "common/franco_net_config.h"
@@ -149,12 +150,30 @@ int main(int argc, char *argv[]) {
         auto disk_manager = std::make_unique<DiskManager>((system_dir / "disk_manager.francodb").string());
         if (config.IsEncryptionEnabled()) disk_manager->SetEncryptionKey(config.GetEncryptionKey());
 
-        auto bpm = std::make_unique<BufferPoolManager>(BUFFER_POOL_SIZE, disk_manager.get());
+        // ========================================================================
+        // BUFFER POOL INITIALIZATION (Issue #7 - High Concurrency Support)
+        // ========================================================================
+        // Use PartitionedBufferPoolManager for reduced lock contention under
+        // high concurrent read/write workloads. Partitions pages across 16
+        // independent buffer pools, each with its own latch.
+        // Based on PostgreSQL's buffer partition design.
+        // ========================================================================
+        auto bpm = std::make_unique<PartitionedBufferPoolManager>(
+            BUFFER_POOL_SIZE, 
+            disk_manager.get(),
+            BUFFER_POOL_PARTITIONS  // Default: 16 partitions
+        );
+        std::cout << "[INFO] Using PartitionedBufferPoolManager with " 
+                  << BUFFER_POOL_PARTITIONS << " partitions for high-concurrency support" << std::endl;
+        
         auto catalog = std::make_unique<Catalog>(bpm.get());
         
         // NEW: LogManager now takes base data directory, not specific log file
         auto log_manager = std::make_unique<LogManager>(data_dir.string());
         std::cout << "[INFO] Log Manager initialized with base directory: " << data_dir.string() << std::endl;
+        
+        // Connect log manager to buffer pool for WAL protocol
+        bpm->SetLogManager(log_manager.get());
 
         if (catalog->GetAllTableNames().empty()) {
             try { catalog->LoadCatalog(); } catch (...) {

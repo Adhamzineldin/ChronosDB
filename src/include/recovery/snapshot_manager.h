@@ -5,7 +5,7 @@
 #include "recovery/checkpoint_manager.h"
 #include "storage/table/table_heap.h"
 #include "catalog/catalog.h"
-#include "buffer/buffer_pool_manager.h"
+#include "storage/storage_interface.h"  // For IBufferManager
 #include <memory>
 #include <chrono>
 
@@ -41,7 +41,7 @@ namespace francodb {
          * 
          * @param table_name Name of the table to snapshot
          * @param target_time Target timestamp (microseconds since epoch)
-         * @param bpm Buffer pool manager
+         * @param bpm Buffer pool manager (IBufferManager interface)
          * @param log_manager Log manager for reading logs
          * @param catalog Catalog for table metadata
          * @param db_name Database name to read logs from (optional, uses current if empty)
@@ -50,7 +50,7 @@ namespace francodb {
         static std::unique_ptr<TableHeap> BuildSnapshot(
             const std::string& table_name,
             uint64_t target_time, 
-            BufferPoolManager* bpm, 
+            IBufferManager* bpm, 
             LogManager* log_manager,
             Catalog* catalog,
             const std::string& db_name = "") 
@@ -89,7 +89,7 @@ namespace francodb {
          * 
          * @param table_name Name of the table
          * @param timestamp_str Human-readable timestamp
-         * @param bpm Buffer pool manager
+         * @param bpm Buffer pool manager (IBufferManager interface)
          * @param log_manager Log manager
          * @param catalog Catalog
          * @return unique_ptr to the snapshot TableHeap
@@ -97,7 +97,7 @@ namespace francodb {
         static std::unique_ptr<TableHeap> BuildSnapshotFromString(
             const std::string& table_name,
             const std::string& timestamp_str,
-            BufferPoolManager* bpm,
+            IBufferManager* bpm,
             LogManager* log_manager,
             Catalog* catalog)
         {
@@ -110,7 +110,7 @@ namespace francodb {
          * 
          * @param table_name Name of the table
          * @param seconds_ago Number of seconds in the past
-         * @param bpm Buffer pool manager
+         * @param bpm Buffer pool manager (IBufferManager interface)
          * @param log_manager Log manager
          * @param catalog Catalog
          * @return unique_ptr to the snapshot TableHeap
@@ -118,7 +118,7 @@ namespace francodb {
         static std::unique_ptr<TableHeap> BuildSnapshotSecondsAgo(
             const std::string& table_name,
             uint64_t seconds_ago,
-            BufferPoolManager* bpm,
+            IBufferManager* bpm,
             LogManager* log_manager,
             Catalog* catalog)
         {

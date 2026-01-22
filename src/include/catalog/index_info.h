@@ -6,12 +6,14 @@
 #include "storage/index/index_key.h" 
 #include "common/config.h"
 #include "common/rid.h"
+#include "storage/storage_interface.h"  // For IBufferManager
 
 namespace francodb {
 
     struct IndexInfo {
+        // Accept IBufferManager for polymorphic buffer pool usage
         IndexInfo(std::string name, std::string table_name, std::string col_name, 
-                  TypeId key_type, BufferPoolManager *bpm);
+                  TypeId key_type, IBufferManager *bpm);
 
         std::string name_;
         std::string table_name_;

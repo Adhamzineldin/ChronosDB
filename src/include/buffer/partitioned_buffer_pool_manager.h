@@ -9,7 +9,9 @@
 #include "common/config.h"
 #include "storage/page/page.h"
 #include "buffer/replacer.h"
+#include "buffer/lru_replacer.h"  // For CreateReplacer implementation
 #include "storage/disk/disk_manager.h"
+#include "storage/storage_interface.h"  // For IBufferManager
 
 namespace francodb {
 
@@ -19,7 +21,7 @@ class LogManager;
 /**
  * PartitionedBufferPoolManager - High-concurrency buffer pool with partitioned latching
  * 
- * PROBLEM SOLVED:
+ * PROBLEM SOLVED (Issue #7):
  * - Single mutex in BufferPoolManager causes contention under high concurrency
  * - All page fetches serialize on one lock
  * 
@@ -30,8 +32,10 @@ class LogManager;
  * - Reduces lock contention by factor of N
  * 
  * Based on PostgreSQL's buffer partition design.
+ * 
+ * Implements IBufferManager interface for polymorphic usage.
  */
-class PartitionedBufferPoolManager {
+class PartitionedBufferPoolManager : public IBufferManager {
 public:
     /**
      * Constructor
@@ -53,19 +57,22 @@ public:
             pages_per_partition = 1;
         }
         
-        // Initialize partitions
-        partitions_.resize(num_partitions);
+        // Initialize partitions using unique_ptr (mutex can't be copied/moved)
+        partitions_.reserve(num_partitions);
         for (size_t i = 0; i < num_partitions; i++) {
-            partitions_[i].pages = new Page[pages_per_partition];
-            partitions_[i].pool_size = pages_per_partition;
+            auto partition = std::make_unique<Partition>();
+            partition->pages = new Page[pages_per_partition];
+            partition->pool_size = pages_per_partition;
             
             // Initialize free list
             for (size_t j = 0; j < pages_per_partition; j++) {
-                partitions_[i].free_list.push_back(static_cast<frame_id_t>(j));
+                partition->free_list.push_back(static_cast<frame_id_t>(j));
             }
             
             // Create replacer (LRU for each partition)
-            partitions_[i].replacer = CreateReplacer(pages_per_partition);
+            partition->replacer = CreateReplacer(pages_per_partition);
+            
+            partitions_.push_back(std::move(partition));
         }
         
         // Initialize next page ID
@@ -75,30 +82,30 @@ public:
         }
     }
     
-    ~PartitionedBufferPoolManager() {
+    ~PartitionedBufferPoolManager() override {
         FlushAllPages();
         
         for (auto& partition : partitions_) {
-            delete[] partition.pages;
-            delete partition.replacer;
+            delete[] partition->pages;
+            delete partition->replacer;
         }
     }
     
     // ========================================================================
-    // PAGE OPERATIONS
+    // PAGE OPERATIONS (IBufferManager interface)
     // ========================================================================
     
     /**
      * Fetch a page from the buffer pool.
      * Routes to appropriate partition based on page_id.
      */
-    Page* FetchPage(page_id_t page_id) {
+    Page* FetchPage(page_id_t page_id) override {
         if (page_id == INVALID_PAGE_ID || page_id < 0) {
             return nullptr;
         }
         
         size_t partition_idx = GetPartitionIndex(page_id);
-        Partition& partition = partitions_[partition_idx];
+        Partition& partition = *partitions_[partition_idx];
         
         std::lock_guard<std::mutex> lock(partition.latch);
         
@@ -139,12 +146,12 @@ public:
     /**
      * Create a new page.
      */
-    Page* NewPage(page_id_t* page_id) {
+    Page* NewPage(page_id_t* page_id) override {
         // Allocate new page ID atomically
         *page_id = next_page_id_.fetch_add(1);
         
         size_t partition_idx = GetPartitionIndex(*page_id);
-        Partition& partition = partitions_[partition_idx];
+        Partition& partition = *partitions_[partition_idx];
         
         std::lock_guard<std::mutex> lock(partition.latch);
         
@@ -165,13 +172,13 @@ public:
     /**
      * Unpin a page.
      */
-    bool UnpinPage(page_id_t page_id, bool is_dirty) {
+    bool UnpinPage(page_id_t page_id, bool is_dirty) override {
         if (page_id == INVALID_PAGE_ID) {
             return false;
         }
         
         size_t partition_idx = GetPartitionIndex(page_id);
-        Partition& partition = partitions_[partition_idx];
+        Partition& partition = *partitions_[partition_idx];
         
         std::lock_guard<std::mutex> lock(partition.latch);
         
@@ -202,13 +209,13 @@ public:
     /**
      * Flush a page to disk.
      */
-    bool FlushPage(page_id_t page_id) {
+    bool FlushPage(page_id_t page_id) override {
         if (page_id == INVALID_PAGE_ID || page_id == 0) {
             return false;
         }
         
         size_t partition_idx = GetPartitionIndex(page_id);
-        Partition& partition = partitions_[partition_idx];
+        Partition& partition = *partitions_[partition_idx];
         
         std::lock_guard<std::mutex> lock(partition.latch);
         
@@ -237,13 +244,13 @@ public:
     /**
      * Delete a page from the buffer pool.
      */
-    bool DeletePage(page_id_t page_id) {
+    bool DeletePage(page_id_t page_id) override {
         if (page_id == INVALID_PAGE_ID) {
             return true;
         }
         
         size_t partition_idx = GetPartitionIndex(page_id);
-        Partition& partition = partitions_[partition_idx];
+        Partition& partition = *partitions_[partition_idx];
         
         std::lock_guard<std::mutex> lock(partition.latch);
         
@@ -269,7 +276,7 @@ public:
     /**
      * Flush all dirty pages to disk.
      */
-    void FlushAllPages() {
+    void FlushAllPages() override {
         // Flush log first
         if (log_manager_ != nullptr) {
             log_manager_->Flush(true);
@@ -277,12 +284,12 @@ public:
         
         // Flush all partitions
         for (auto& partition : partitions_) {
-            std::lock_guard<std::mutex> lock(partition.latch);
+            std::lock_guard<std::mutex> lock(partition->latch);
             
-            for (const auto& [page_id, frame_id] : partition.page_table) {
+            for (const auto& [page_id, frame_id] : partition->page_table) {
                 if (page_id == 0) continue;
                 
-                Page* page = &partition.pages[frame_id];
+                Page* page = &partition->pages[frame_id];
                 if (page->IsDirty()) {
                     disk_manager_->WritePage(page_id, page->GetData());
                     page->SetDirty(false);
@@ -299,7 +306,29 @@ public:
         log_manager_ = log_manager;
     }
     
-    DiskManager* GetDiskManager() { return disk_manager_; }
+    DiskManager* GetDiskManager() override { return disk_manager_; }
+    
+    /**
+     * Clear the buffer pool (flush all and reset).
+     * Used during recovery operations.
+     */
+    void Clear() override {
+        FlushAllPages();
+        
+        for (auto& partition : partitions_) {
+            std::lock_guard<std::mutex> lock(partition->latch);
+            
+            // Reset all pages and free list
+            for (size_t i = 0; i < partition->pool_size; i++) {
+                partition->pages[i].Init(INVALID_PAGE_ID);
+            }
+            partition->page_table.clear();
+            partition->free_list.clear();
+            for (size_t i = 0; i < partition->pool_size; i++) {
+                partition->free_list.push_back(static_cast<frame_id_t>(i));
+            }
+        }
+    }
     
     size_t GetTotalPoolSize() const { return total_pool_size_; }
     size_t GetNumPartitions() const { return num_partitions_; }
@@ -318,13 +347,13 @@ public:
         Stats stats = {0, 0, 0, 0};
         
         for (const auto& partition : partitions_) {
-            std::lock_guard<std::mutex> lock(partition.latch);
+            std::lock_guard<std::mutex> lock(partition->latch);
             
-            stats.total_pages += partition.pool_size;
-            stats.used_pages += partition.page_table.size();
+            stats.total_pages += partition->pool_size;
+            stats.used_pages += partition->page_table.size();
             
-            for (const auto& [_, frame_id] : partition.page_table) {
-                const Page* page = &partition.pages[frame_id];
+            for (const auto& [_, frame_id] : partition->page_table) {
+                const Page* page = &partition->pages[frame_id];
                 if (page->IsDirty()) stats.dirty_pages++;
                 if (page->GetPinCount() > 0) stats.pinned_pages++;
             }
@@ -386,8 +415,11 @@ private:
     
     /**
      * Create a replacer for a partition.
+     * Uses LRU eviction policy by default.
      */
-    Replacer* CreateReplacer(size_t capacity);  // Implemented in .cpp
+    Replacer* CreateReplacer(size_t capacity) {
+        return new LRUReplacer(capacity);
+    }
     
     // ========================================================================
     // DATA MEMBERS
@@ -398,7 +430,7 @@ private:
     DiskManager* disk_manager_;
     LogManager* log_manager_;
     
-    std::vector<Partition> partitions_;
+    std::vector<std::unique_ptr<Partition>> partitions_;
     std::atomic<page_id_t> next_page_id_;
 };
 

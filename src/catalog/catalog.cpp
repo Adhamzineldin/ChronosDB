@@ -13,7 +13,7 @@
 
 namespace francodb {
 
-Catalog::Catalog(BufferPoolManager *bpm) : bpm_(bpm), next_table_oid_(0) {
+Catalog::Catalog(IBufferManager *bpm) : bpm_(bpm), next_table_oid_(0) {
     LoadCatalog();
 }
 

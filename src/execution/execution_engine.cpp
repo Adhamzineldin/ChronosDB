@@ -46,7 +46,7 @@ namespace francodb {
     // CONSTRUCTOR / DESTRUCTOR
     // ============================================================================
 
-    ExecutionEngine::ExecutionEngine(BufferPoolManager *bpm, Catalog *catalog,
+    ExecutionEngine::ExecutionEngine(IBufferManager *bpm, Catalog *catalog,
                                      AuthManager *auth_manager, DatabaseRegistry *db_registry,
                                      LogManager *log_manager)
         : bpm_(bpm),
@@ -315,7 +315,7 @@ namespace francodb {
     ExecutionResult ExecutionEngine::HandleUseDatabase(UseDatabaseStatement *stmt,
                                                        SessionContext *session,
                                                        Transaction *txn) {
-        BufferPoolManager *new_bpm = nullptr;
+        IBufferManager *new_bpm = nullptr;
         Catalog *new_catalog = nullptr;
 
         ExecutionResult res = database_executor_->UseDatabase(stmt, session, &new_bpm, &new_catalog);

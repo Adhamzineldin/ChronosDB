@@ -167,6 +167,19 @@ public:
      * Flush all dirty pages to disk.
      */
     virtual void FlushAllPages() = 0;
+    
+    /**
+     * Get the disk manager for metadata operations.
+     * 
+     * @return Pointer to the disk manager
+     */
+    virtual class DiskManager* GetDiskManager() = 0;
+    
+    /**
+     * Clear the buffer pool (flush all and reset).
+     * Used during recovery operations.
+     */
+    virtual void Clear() = 0;
 };
 
 /**

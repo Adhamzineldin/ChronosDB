@@ -43,6 +43,11 @@ namespace francodb {
     // Number of buffer pool partitions for reduced contention
     static constexpr size_t BUFFER_POOL_PARTITIONS = 16;
     
+    // Enable partitioned buffer pool for high-concurrency workloads
+    // When true, uses PartitionedBufferPoolManager with 16 independent partitions
+    // This reduces lock contention under heavy concurrent access
+    static constexpr bool USE_PARTITIONED_BUFFER_POOL = true;
+    
     // Eviction batch size (for background eviction)
     static constexpr size_t EVICTION_BATCH_SIZE = 8;
 

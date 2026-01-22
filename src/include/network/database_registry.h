@@ -9,6 +9,7 @@
 
 #include "storage/disk/disk_manager.h"
 #include "buffer/buffer_pool_manager.h"
+#include "storage/storage_interface.h"  // For IBufferManager
 #include "catalog/catalog.h"
 #include "common/config.h"
 #include "common/config_manager.h"
@@ -25,7 +26,8 @@ class DatabaseRegistry {
 public:
     DatabaseRegistry() = default;
 
-    void RegisterExternal(const std::string &name, BufferPoolManager *bpm, Catalog *catalog) {
+    // Accept IBufferManager for polymorphic buffer pool usage
+    void RegisterExternal(const std::string &name, IBufferManager *bpm, Catalog *catalog) {
         auto entry = std::make_shared<DbEntry>();
         entry->dm = nullptr;
         entry->bpm.reset();
@@ -78,7 +80,8 @@ public:
         return entry;
     }
 
-    BufferPoolManager* ExternalBpm(const std::string &name) const {
+    // Returns IBufferManager for polymorphic usage
+    IBufferManager* ExternalBpm(const std::string &name) const {
         auto it = external_bpm_.find(name);
         return (it == external_bpm_.end()) ? nullptr : it->second;
     }
@@ -116,7 +119,7 @@ public:
 
 private:
     std::map<std::string, std::shared_ptr<DbEntry>> registry_;
-    std::map<std::string, BufferPoolManager*> external_bpm_;
+    std::map<std::string, IBufferManager*> external_bpm_;
     std::map<std::string, Catalog*> external_catalog_;
 };
 

@@ -11,7 +11,7 @@ namespace francodb {
     // --- CONSTRUCTOR ---
     template<typename KeyType, typename ValueType, typename KeyComparator>
     BPlusTree<KeyType, ValueType, KeyComparator>::BPlusTree(
-        std::string name, BufferPoolManager *buffer_pool_manager, const KeyComparator &comparator,
+        std::string name, IBufferManager *buffer_pool_manager, const KeyComparator &comparator,
         int leaf_max_size, int internal_max_size)
         : index_name_(std::move(name)),
           root_page_id_(INVALID_PAGE_ID),
