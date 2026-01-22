@@ -2,7 +2,7 @@
 
 #include <memory>
 #include "common/config.h"
-#include "storage/tuple.h"
+#include "storage/table/tuple.h"
 #include "common/rid.h"
 
 namespace francodb {

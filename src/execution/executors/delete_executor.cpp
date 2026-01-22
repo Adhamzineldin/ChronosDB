@@ -1,10 +1,12 @@
 #include "execution/executors/delete_executor.h"
 #include "execution/predicate_evaluator.h"
+#include "concurrency/lock_manager.h"
 #include "common/exception.h"
 #include "catalog/index_info.h"
 #include "storage/index/index_key.h"
 #include "storage/table/table_page.h"
 #include "buffer/buffer_pool_manager.h"
+#include "buffer/page_guard.h"
 #include "storage/page/page.h"
 #include <iostream>
 #include <cmath>
@@ -25,16 +27,19 @@ bool DeleteExecutor::Next(Tuple *tuple) {
     // 1. Gather all RIDs and tuples to delete
     std::vector<std::pair<RID, Tuple>> tuples_to_delete;
     
-    // --- SCAN LOGIC (Similar to SeqScan) ---
+    // Get lock manager for row-level locking (Issue #2 Fix - Consistent Lock Order)
+    LockManager* lock_mgr = exec_ctx_->GetLockManager();
+    
+    // --- SCAN LOGIC with PageGuard (Issue #1 Fix) ---
     page_id_t curr_page_id = table_info_->first_page_id_;
     auto bpm = exec_ctx_->GetBufferPoolManager();
 
     while (curr_page_id != INVALID_PAGE_ID) {
-        Page *page = bpm->FetchPage(curr_page_id);
-        if (page == nullptr) {
+        PageGuard guard(bpm, curr_page_id, false);  // Read lock for scan
+        if (!guard.IsValid()) {
             break; // Skip if page fetch fails
         }
-        auto *table_page = reinterpret_cast<TablePage *>(page->GetData());
+        auto *table_page = guard.As<TablePage>();
         
         // Loop over all slots in page
         for (uint32_t i = 0; i < table_page->GetTupleCount(); ++i) {
@@ -49,16 +54,24 @@ bool DeleteExecutor::Next(Tuple *tuple) {
                 }
             }
         }
-        page_id_t next = table_page->GetNextPageId();
-        bpm->UnpinPage(curr_page_id, false);
-        curr_page_id = next;
+        curr_page_id = table_page->GetNextPageId();
+        // PageGuard auto-releases here
     }
 
-    // 2. Perform Deletes (with index updates)
+    // 2. Perform Deletes (with index updates and row locking)
     int count = 0;
     for (const auto &pair : tuples_to_delete) {
         const RID &rid = pair.first;
         const Tuple &tuple = pair.second;
+        
+        // Issue #2 Fix: Acquire exclusive lock on this row before modifying
+        if (lock_mgr && txn_) {
+            txn_id_t txn_id = txn_->GetTransactionId();
+            if (!lock_mgr->LockRow(txn_id, rid, LockMode::EXCLUSIVE)) {
+                throw Exception(ExceptionType::EXECUTION, 
+                    "Could not acquire lock on row - transaction aborted");
+            }
+        }
         
         // Verify the tuple still exists (might have been deleted by another thread)
         Tuple verify_tuple;
@@ -67,7 +80,7 @@ bool DeleteExecutor::Next(Tuple *tuple) {
             continue;
         }
         
-        // Verify it still matches the predicate
+        // Verify it still matches the predicate (re-check after lock acquisition)
         if (!EvaluatePredicate(verify_tuple)) {
             // Tuple no longer matches predicate, skip
             continue;

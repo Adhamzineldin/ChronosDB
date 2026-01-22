@@ -6,6 +6,7 @@
 #include "storage/index/index_key.h"
 #include "storage/table/table_page.h"
 #include "buffer/buffer_pool_manager.h"
+#include "buffer/page_guard.h"
 #include "storage/page/page.h"
 #include "storage/table/column.h"
 #include <iostream>
@@ -75,17 +76,17 @@ bool UpdateExecutor::Next(Tuple *tuple) {
     LockManager* lock_mgr = exec_ctx_->GetLockManager();
     
     // 1. SCAN PHASE - Acquire exclusive locks on matching rows
+    // Issue #1 Fix: Use PageGuard for RAII-based pin/unpin
     page_id_t curr_page_id = table_info_->first_page_id_;
     auto bpm = exec_ctx_->GetBufferPoolManager();
 
     while (curr_page_id != INVALID_PAGE_ID) {
-        Page *page = bpm->FetchPage(curr_page_id);
-        if (page == nullptr) {
+        PageGuard guard(bpm, curr_page_id, false);  // Read lock for initial scan
+        if (!guard.IsValid()) {
             break; // Skip if page fetch fails
         }
         
-        try {
-        auto *table_page = reinterpret_cast<TablePage *>(page->GetData());
+        auto *table_page = guard.As<TablePage>();
         
         for (uint32_t i = 0; i < table_page->GetTupleCount(); ++i) {
             RID rid(curr_page_id, i);
@@ -98,7 +99,6 @@ bool UpdateExecutor::Next(Tuple *tuple) {
                         txn_id_t txn_id = txn_->GetTransactionId();
                         if (!lock_mgr->LockRow(txn_id, rid, LockMode::EXCLUSIVE)) {
                             // Lock acquisition failed (deadlock, timeout)
-                            bpm->UnpinPage(curr_page_id, false);
                             throw Exception(ExceptionType::EXECUTION, 
                                 "Could not acquire lock on row - transaction aborted");
                         }
@@ -123,15 +123,8 @@ bool UpdateExecutor::Next(Tuple *tuple) {
                 }
             }
         }
-        page_id_t next = table_page->GetNextPageId();
-        bpm->UnpinPage(curr_page_id, false);
-        curr_page_id = next;
-            
-        } catch (...) {
-            // CRITICAL: Unpin if we crash here (e.g. Type mismatch exception)
-            bpm->UnpinPage(curr_page_id, false);
-            throw; 
-        }
+        curr_page_id = table_page->GetNextPageId();
+        // PageGuard auto-releases here
     }
 
     // 2. APPLY PHASE (Update indexes, Delete Old, Insert New)
