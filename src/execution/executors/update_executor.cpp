@@ -1,4 +1,5 @@
 #include "execution/executors/update_executor.h"
+#include "execution/predicate_evaluator.h"
 #include "common/exception.h"
 #include "catalog/index_info.h"
 #include "storage/index/index_key.h"
@@ -348,63 +349,8 @@ Tuple UpdateExecutor::CreateUpdatedTuple(const Tuple &old_tuple) {
 }
 
 bool UpdateExecutor::EvaluatePredicate(const Tuple &tuple) {
-    if (plan_->where_clause_.empty()) return true;
-
-    bool result = true;
-    for (size_t i = 0; i < plan_->where_clause_.size(); ++i) {
-        const auto &cond = plan_->where_clause_[i];
-        Value tuple_val = tuple.GetValue(table_info_->schema_, table_info_->schema_.GetColIdx(cond.column));
-        bool match = false;
-        
-        // Handle IN operator
-        if (cond.op == "IN") {
-            for (const auto& in_val : cond.in_values) {
-                if (tuple_val.GetTypeId() == TypeId::INTEGER) {
-                    if (tuple_val.GetAsInteger() == in_val.GetAsInteger()) {
-                        match = true;
-                        break;
-                    }
-                } else if (tuple_val.GetTypeId() == TypeId::DECIMAL) {
-                    if (std::abs(tuple_val.GetAsDouble() - in_val.GetAsDouble()) < 0.0001) {
-                        match = true;
-                        break;
-                    }
-                } else {
-                    if (tuple_val.GetAsString() == in_val.GetAsString()) {
-                        match = true;
-                        break;
-                    }
-                }
-            }
-        } else if (cond.op == "=") {
-            match = (tuple_val.GetAsString() == cond.value.GetAsString());
-            if (tuple_val.GetTypeId() == TypeId::INTEGER) match = (tuple_val.GetAsInteger() == cond.value.GetAsInteger());
-            else if (tuple_val.GetTypeId() == TypeId::DECIMAL) match = (std::abs(tuple_val.GetAsDouble() - cond.value.GetAsDouble()) < 0.0001);
-        } else if (cond.op == ">") {
-            if (tuple_val.GetTypeId() == TypeId::INTEGER) match = (tuple_val.GetAsInteger() > cond.value.GetAsInteger());
-            else if (tuple_val.GetTypeId() == TypeId::DECIMAL) match = (tuple_val.GetAsDouble() > cond.value.GetAsDouble());
-            else match = (tuple_val.GetAsString() > cond.value.GetAsString());
-        } else if (cond.op == "<") {
-            if (tuple_val.GetTypeId() == TypeId::INTEGER) match = (tuple_val.GetAsInteger() < cond.value.GetAsInteger());
-            else if (tuple_val.GetTypeId() == TypeId::DECIMAL) match = (tuple_val.GetAsDouble() < cond.value.GetAsDouble());
-            else match = (tuple_val.GetAsString() < cond.value.GetAsString());
-        } else if (cond.op == ">=") {
-            if (tuple_val.GetTypeId() == TypeId::INTEGER) match = (tuple_val.GetAsInteger() >= cond.value.GetAsInteger());
-            else if (tuple_val.GetTypeId() == TypeId::DECIMAL) match = (tuple_val.GetAsDouble() >= cond.value.GetAsDouble());
-            else match = (tuple_val.GetAsString() >= cond.value.GetAsString());
-        } else if (cond.op == "<=") {
-            if (tuple_val.GetTypeId() == TypeId::INTEGER) match = (tuple_val.GetAsInteger() <= cond.value.GetAsInteger());
-            else if (tuple_val.GetTypeId() == TypeId::DECIMAL) match = (tuple_val.GetAsDouble() <= cond.value.GetAsDouble());
-            else match = (tuple_val.GetAsString() <= cond.value.GetAsString());
-        }
-
-        if (i == 0) result = match;
-        else {
-            if (plan_->where_clause_[i-1].next_logic == LogicType::AND) result = result && match;
-            else if (plan_->where_clause_[i-1].next_logic == LogicType::OR) result = result || match;
-        }
-    }
-    return result;
+    // Issue #12 Fix: Use shared PredicateEvaluator to eliminate code duplication
+    return PredicateEvaluator::Evaluate(tuple, table_info_->schema_, plan_->where_clause_);
 }
 
 } // namespace francodb

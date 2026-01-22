@@ -1,4 +1,5 @@
 #include "storage/table/table_heap.h"
+#include "buffer/page_guard.h"
 #include "common/exception.h"
 
 namespace francodb {
@@ -165,18 +166,18 @@ namespace francodb {
             return;
         }
         
-        Page *page = bpm_->FetchPage(current_page_id_);
-        if (page == nullptr) {
+        // Use PageGuard for automatic pin/unpin (RAII - Issue #1 fix)
+        PageGuard guard(bpm_, current_page_id_, false);  // Read lock
+        if (!guard.IsValid()) {
             has_cached_tuple_ = false;
             return;
         }
         
-        auto *table_page = reinterpret_cast<TablePage *>(page->GetData());
+        auto *table_page = guard.As<TablePage>();
         RID rid(current_page_id_, current_slot_);
         
         has_cached_tuple_ = table_page->GetTuple(rid, &cached_tuple_, txn_);
-        
-        bpm_->UnpinPage(current_page_id_, false);
+        // PageGuard destructor automatically unpins
     }
 
     TableHeap::Iterator &TableHeap::Iterator::operator++() {
@@ -194,14 +195,15 @@ namespace francodb {
 
     void TableHeap::Iterator::AdvanceToNextValidTuple() {
         while (current_page_id_ != INVALID_PAGE_ID) {
-            Page *page = bpm_->FetchPage(current_page_id_);
-            if (page == nullptr) {
+            // Use PageGuard for automatic pin/unpin (RAII - Issue #1 fix)
+            PageGuard guard(bpm_, current_page_id_, false);  // Read lock
+            if (!guard.IsValid()) {
                 is_end_ = true;
                 has_cached_tuple_ = false;
                 return;
             }
 
-            auto *table_page = reinterpret_cast<TablePage *>(page->GetData());
+            auto *table_page = guard.As<TablePage>();
             uint32_t tuple_count = table_page->GetTupleCount();
 
             // Find next valid tuple in current page
@@ -209,18 +211,16 @@ namespace francodb {
                 RID rid(current_page_id_, current_slot_);
                 if (table_page->GetTuple(rid, &cached_tuple_, txn_)) {
                     has_cached_tuple_ = true;
-                    bpm_->UnpinPage(current_page_id_, false);
-                    return; // Found valid tuple and cached it
+                    return; // Found valid tuple and cached it - guard auto-unpins
                 }
                 current_slot_++;
             }
 
             // Move to next page
             page_id_t next_page = table_page->GetNextPageId();
-            bpm_->UnpinPage(current_page_id_, false);
-
             current_page_id_ = next_page;
             current_slot_ = 0;
+            // guard auto-unpins here when it goes out of scope
         }
 
         is_end_ = true;

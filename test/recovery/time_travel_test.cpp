@@ -7,7 +7,7 @@
 
 using namespace francodb;
 
-void TestTimeTravel() {
+void TestTimeTravel2() {
     std::string log_file = "time_machine.log";
     if (std::filesystem::exists(log_file)) std::filesystem::remove(log_file);
 

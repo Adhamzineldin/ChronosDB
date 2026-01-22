@@ -5,25 +5,16 @@
 #include <string>
 #include "common/value.h"
 #include "common/type.h"
-#include "storage/tuple.h"
-#include "catalog/schema.h"
+#include "storage/table/tuple.h"
+#include "storage/table/schema.h"
+#include "parser/statement.h"  // For WhereCondition
 
 namespace francodb {
 
 /**
- * WhereCondition structure (should match your parser's definition)
- */
-struct WhereCondition;  // Forward declaration - use your existing parser definition
-
-/**
- * LogicType for chaining conditions
- */
-enum class LogicType { NONE, AND, OR };
-
-/**
  * PredicateEvaluator - Shared utility for evaluating WHERE clauses.
  * 
- * PROBLEM SOLVED:
+ * PROBLEM SOLVED (Issue #12 - DRY Violation):
  * - Eliminates ~180 lines of duplicated code across:
  *   - SeqScanExecutor::EvaluatePredicate()
  *   - DeleteExecutor::EvaluatePredicate()
@@ -89,6 +80,64 @@ public:
             }
         }
         
+        return result;
+    }
+
+    /**
+     * Evaluate a tuple against parser's WhereCondition vector.
+     * This overload provides seamless integration with the parser.
+     * 
+     * @param tuple The tuple to evaluate
+     * @param schema Schema for column lookup
+     * @param conditions Parser's WHERE conditions
+     * @return true if tuple matches all conditions
+     */
+    static bool Evaluate(const Tuple& tuple,
+                         const Schema& schema,
+                         const std::vector<WhereCondition>& conditions) {
+        if (conditions.empty()) {
+            return true;
+        }
+
+        bool result = true;
+
+        for (size_t i = 0; i < conditions.size(); ++i) {
+            const auto& cond = conditions[i];
+
+            int col_idx = schema.GetColIdx(cond.column);
+            if (col_idx < 0) {
+                return false;
+            }
+
+            Value tuple_val = tuple.GetValue(schema, col_idx);
+            bool match = false;
+
+            // Handle IN operator
+            if (cond.op == "IN") {
+                for (const auto& in_val : cond.in_values) {
+                    if (ValuesEqual(tuple_val, in_val)) {
+                        match = true;
+                        break;
+                    }
+                }
+            } else {
+                // Standard comparison operators
+                match = CompareValues(tuple_val, cond.value, cond.op);
+            }
+
+            // Logic chaining (AND/OR)
+            if (i == 0) {
+                result = match;
+            } else {
+                LogicType logic = conditions[i - 1].next_logic;
+                if (logic == LogicType::AND) {
+                    result = result && match;
+                } else if (logic == LogicType::OR) {
+                    result = result || match;
+                }
+            }
+        }
+
         return result;
     }
 
