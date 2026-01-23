@@ -8,7 +8,7 @@
 
 -- Create main users table with constraints
 2E3MEL GADWAL users (
-    id RAKAM MOFTA7 ASASI TAZAYED,
+    id RAKAM ASASI TAZAYED,
     name GOMLA(100) MESH FADY,
     email GOMLA(255) WAHED MESH FADY,
     age RAKAM CHECK (age >= 18),
@@ -18,18 +18,18 @@
 
 -- Create orders table with foreign key
 2E3MEL GADWAL orders (
-    order_id RAKAM MOFTA7 ASASI TAZAYED,
+    order_id RAKAM ASASI TAZAYED,
     user_id RAKAM MESH FADY,
     product_name GOMLA(100),
     quantity RAKAM DEFAULT 1,
     price KASR,
     order_date TARE5,
-    5AREGY MOFTA7 (user_id) YOSHEER users(id) 3END MA7W CASCADE
+    FOREIGN KEY (user_id) YOSHEER users(id) ON DELETE CASCADE
 );
 
 -- Create products table
 2E3MEL GADWAL products (
-    id RAKAM MOFTA7 ASASI TAZAYED,
+    id RAKAM ASASI TAZAYED,
     name GOMLA(200) MESH FADY WAHED,
     category GOMLA(50),
     price KASR CHECK (price > 0),
