@@ -1,6 +1,7 @@
 #include "recovery/log_manager.h"
+#include "recovery/checkpoint_manager.h"
 #include "common/crc32.h"
-#include <cstring>
+#include <iostream>
 #include <iostream>
 #include <chrono>
 #include <filesystem>
@@ -244,6 +245,11 @@ namespace francodb {
 
             // 8. Update file offset tracking
             current_file_offset_ += final_size;
+
+            // 9. Notify checkpoint manager for operation-based checkpointing (Bug #6 fix)
+            if (checkpoint_mgr_ != nullptr && log_record.IsDataModification()) {
+                checkpoint_mgr_->OnLogOperation();
+            }
 
             return log_record.lsn_;
         } catch (const std::exception& e) {

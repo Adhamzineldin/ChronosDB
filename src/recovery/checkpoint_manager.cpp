@@ -1,4 +1,5 @@
 #include "recovery/checkpoint_manager.h"
+#include "catalog/catalog.h"
 #include <fstream>
 #include <iostream>
 #include <chrono>
@@ -13,6 +14,7 @@ namespace francodb {
                                          const std::string& master_record_path)
         : bpm_(bpm), 
           log_manager_(log_manager), 
+          catalog_(nullptr),
           master_record_path_(master_record_path),
           checkpoint_offset_(0),
           last_checkpoint_timestamp_(0),
@@ -86,8 +88,20 @@ namespace francodb {
         // 9. Write master record (atomically)
         std::cout << "[CHECKPOINT] Phase 7: Updating master record..." << std::endl;
         WriteMasterRecord(checkpoint_lsn, offset, checkpoint_timestamp);
+        
+        // 10. Update checkpoint LSN on ALL tables (for O(delta) time travel - Bug #6 fix)
+        if (catalog_ != nullptr) {
+            std::cout << "[CHECKPOINT] Phase 8: Updating table checkpoint LSNs..." << std::endl;
+            auto all_tables = catalog_->GetAllTables();
+            for (auto* table : all_tables) {
+                if (table) {
+                    table->SetCheckpointLSN(checkpoint_lsn);
+                }
+            }
+            std::cout << "[CHECKPOINT]   - Updated " << all_tables.size() << " tables" << std::endl;
+        }
 
-        // 10. Update statistics
+        // 11. Update statistics
         checkpoint_count_++;
 
         auto end_time = std::chrono::high_resolution_clock::now();

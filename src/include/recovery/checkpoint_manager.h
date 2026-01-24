@@ -12,6 +12,9 @@
 
 namespace francodb {
 
+    // Forward declaration
+    class Catalog;
+
     /**
      * Master Record Structure
      * 
@@ -178,6 +181,41 @@ namespace francodb {
         uint32_t GetCheckpointInterval() const { 
             return checkpoint_interval_seconds_; 
         }
+        
+        /**
+         * Set operation-based checkpoint threshold.
+         * A checkpoint will be triggered after this many log operations.
+         * Set to 0 to disable operation-based checkpoints.
+         * 
+         * @param ops_threshold Number of operations before auto-checkpoint
+         */
+        void SetOperationThreshold(uint32_t ops_threshold) {
+            ops_checkpoint_threshold_ = ops_threshold;
+        }
+        
+        /**
+         * Get the operation threshold for checkpoints
+         */
+        uint32_t GetOperationThreshold() const {
+            return ops_checkpoint_threshold_;
+        }
+        
+        /**
+         * Called by LogManager after each operation to track operation count.
+         * Triggers checkpoint if threshold is exceeded.
+         */
+        void OnLogOperation() {
+            if (ops_checkpoint_threshold_ == 0) return;
+            
+            uint32_t count = ++ops_since_checkpoint_;
+            if (count >= ops_checkpoint_threshold_) {
+                ops_since_checkpoint_ = 0;
+                // Trigger async checkpoint (don't block the writer)
+                if (background_checkpointing_enabled_.load()) {
+                    background_cv_.notify_one();
+                }
+            }
+        }
 
         /**
          * Get the number of checkpoints taken since startup
@@ -221,6 +259,7 @@ namespace francodb {
 
         IBufferManager* bpm_;
         LogManager* log_manager_;
+        Catalog* catalog_;  // For updating table checkpoint LSNs
         std::string master_record_path_;
         
         // Thread safety
@@ -238,6 +277,16 @@ namespace francodb {
         std::condition_variable background_cv_;
         std::mutex background_mutex_;
         uint32_t checkpoint_interval_seconds_;
+        
+        // Operation-based checkpointing (Bug #6 optimization)
+        std::atomic<uint32_t> ops_since_checkpoint_{0};
+        uint32_t ops_checkpoint_threshold_{1000};  // Default: checkpoint every 1k ops
+        
+    public:
+        /**
+         * Set the catalog for updating table checkpoint LSNs
+         */
+        void SetCatalog(Catalog* catalog) { catalog_ = catalog; }
     };
 
 } // namespace francodb

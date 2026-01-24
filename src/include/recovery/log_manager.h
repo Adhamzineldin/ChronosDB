@@ -248,6 +248,14 @@ namespace francodb {
          * Check if log manager is running
          */
         bool IsRunning() const { return !stop_flush_thread_.load(); }
+        
+        /**
+         * Set the checkpoint manager for operation-based checkpoint triggering.
+         * Called after both LogManager and CheckpointManager are created.
+         */
+        void SetCheckpointManager(class CheckpointManager* checkpoint_mgr) {
+            checkpoint_mgr_ = checkpoint_mgr;
+        }
 
     private:
         // ========================================================================
@@ -321,6 +329,9 @@ namespace francodb {
         // Background Flush Thread
         std::thread flush_thread_;
         std::atomic<bool> stop_flush_thread_;
+        
+        // Operation-based checkpoint triggering
+        class CheckpointManager* checkpoint_mgr_{nullptr};
     };
 
 } // namespace francodb
