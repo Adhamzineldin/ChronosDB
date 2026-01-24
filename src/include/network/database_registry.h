@@ -116,6 +116,19 @@ public:
 
     // Flush all databases (save all catalogs and unpin all pages)
     void FlushAllDatabases();
+    
+    /**
+     * Iterate over all loaded databases and call a callback for each.
+     * Used for checkpointing all databases.
+     */
+    template<typename Func>
+    void ForEachDatabase(Func callback) {
+        for (auto& [name, entry] : registry_) {
+            if (entry) {
+                callback(name, entry.get());
+            }
+        }
+    }
 
 private:
     std::map<std::string, std::shared_ptr<DbEntry>> registry_;

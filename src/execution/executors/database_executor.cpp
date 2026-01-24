@@ -155,7 +155,15 @@ ExecutionResult DatabaseExecutor::DropDatabase(DropDatabaseStatement* stmt, Sess
 
         auto entry = db_registry_->Get(stmt->db_name_);
 
-        if (!entry) {
+        // Also check if database exists on disk even if not loaded
+        auto& config = ConfigManager::GetInstance();
+        std::string data_dir = config.GetDataDirectory();
+        std::filesystem::path db_dir = std::filesystem::path(data_dir) / stmt->db_name_;
+        std::filesystem::path db_file = db_dir / (stmt->db_name_ + ".francodb");
+        
+        bool exists_on_disk = std::filesystem::exists(db_file);
+        
+        if (!entry && !exists_on_disk) {
             return ExecutionResult::Error("Database '" + stmt->db_name_ + "' does not exist");
         }
 
@@ -165,22 +173,20 @@ ExecutionResult DatabaseExecutor::DropDatabase(DropDatabaseStatement* stmt, Sess
                 "Cannot drop currently active database. Switch to another database first.");
         }
 
-        // Flush and close the database
-        if (entry->bpm) {
-            entry->bpm->FlushAllPages();
+        // Flush and close the database if loaded
+        if (entry) {
+            if (entry->bpm) {
+                entry->bpm->FlushAllPages();
+            }
+            if (entry->catalog) {
+                entry->catalog->SaveCatalog();
+            }
+
+            // Remove from registry
+            db_registry_->Remove(stmt->db_name_);
         }
-        if (entry->catalog) {
-            entry->catalog->SaveCatalog();
-        }
 
-        // Remove from registry
-        db_registry_->Remove(stmt->db_name_);
-
-        // Delete the entire database directory
-        auto& config = ConfigManager::GetInstance();
-        std::string data_dir = config.GetDataDirectory();
-        std::filesystem::path db_dir = std::filesystem::path(data_dir) / stmt->db_name_;
-
+        // Delete the entire database directory (db_dir already defined above)
         if (std::filesystem::exists(db_dir) && std::filesystem::is_directory(db_dir)) {
             std::filesystem::remove_all(db_dir);
         }

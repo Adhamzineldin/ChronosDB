@@ -398,6 +398,7 @@ namespace francodb {
 
         try {
             CheckpointManager cp_mgr(bpm_, log_manager_);
+            cp_mgr.SetCatalog(catalog_);  // CRITICAL: Set catalog so checkpoint updates table LSNs
             RecoveryManager recovery(log_manager_, catalog_, bpm_, &cp_mgr);
 
             recovery.RecoverToTime(target_time);

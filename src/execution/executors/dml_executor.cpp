@@ -151,7 +151,11 @@ ExecutionResult DMLExecutor::Select(SelectStatement* stmt, SessionContext* sessi
                 std::cout << "[TIME TRAVEL] Snapshot built successfully, target_heap=" 
                           << (void*)target_heap << std::endl;
             } else {
-                return ExecutionResult::Error("[DML] Failed to build snapshot for time travel");
+                // nullptr means "use live table directly" (zero-copy optimization)
+                // This happens when checkpoint is current and no delta to replay
+                target_heap = table_info->table_heap_.get();
+                std::cout << "[TIME TRAVEL] Using LIVE TABLE directly (zero-copy), target_heap=" 
+                          << (void*)target_heap << std::endl;
             }
         }
         

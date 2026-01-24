@@ -25,6 +25,8 @@ typedef int socket_t;
 #include "network/database_registry.h"
 #include "recovery/log_manager.h" // [FIX] Include LogManager
 #include "recovery/checkpoint_manager.h"
+#include "recovery/log_record.h"
+#include "catalog/table_metadata.h"
 
 #include <iostream>
 #include <cstring>
@@ -256,7 +258,6 @@ namespace francodb {
 
 
     void FrancoServer::AutoSaveLoop() {
-        CheckpointManager cp_manager(bpm_, log_manager_);
         while (running_.load()) {
             // Sleep in small increments to respond to shutdown quickly
             for (int i = 0; i < 300 && running_.load(); ++i) {
@@ -294,12 +295,37 @@ namespace francodb {
                     continue;
                 }
                 
+                // Flush and save ALL loaded databases
                 if (bpm_) bpm_->FlushAllPages();
                 if (catalog_) catalog_->SaveCatalog();
                 if (system_bpm_) system_bpm_->FlushAllPages();
                 if (system_catalog_) system_catalog_->SaveCatalog();
                 
+                // Checkpoint with current catalog AND update ALL loaded database catalogs
+                CheckpointManager cp_manager(bpm_, log_manager_);
+                cp_manager.SetCatalog(catalog_);
                 cp_manager.BeginCheckpoint();
+                
+                // Also flush and update checkpoint LSN for all other loaded databases
+                if (registry_) {
+                    registry_->ForEachDatabase([&](const std::string& db_name, DbEntry* entry) {
+                        if (entry && entry->catalog) {
+                            // Update checkpoint LSN for all tables in this database
+                            auto all_tables = entry->catalog->GetAllTables();
+                            LogRecord::lsn_t current_lsn = log_manager_ ? log_manager_->GetNextLSN() : 0;
+                            for (auto* table : all_tables) {
+                                if (table) {
+                                    table->SetCheckpointLSN(current_lsn);
+                                }
+                            }
+                            // Save the catalog with updated checkpoint LSNs
+                            entry->catalog->SaveCatalog();
+                            if (entry->bpm) {
+                                entry->bpm->FlushAllPages();
+                            }
+                        }
+                    });
+                }
             
             } // Lock releases here -> Transactions resume automatically.
 

@@ -8,6 +8,7 @@
 #include "storage/table/tuple.h"
 #include "common/value.h"
 #include "storage/index/index_key.h"
+#include "recovery/log_record.h"
 #include <iostream>
 #include <sstream>
 
@@ -133,6 +134,8 @@ void Catalog::SaveCatalog() {
     for (auto &pair : tables_) {
         TableMetadata *t = pair.second.get();
         ss << "TABLE " << t->name_ << " " << t->first_page_id_ << " " << t->oid_ << " ";
+        // Save checkpoint LSN for time-travel optimization (Bug #6 fix)
+        ss << t->GetCheckpointLSN() << " ";
         auto columns = t->schema_.GetColumns();
         ss << columns.size() << " ";
         for (auto &col : columns) {
@@ -168,9 +171,26 @@ void Catalog::LoadCatalog() {
             std::string name;
             page_id_t first_page;
             uint32_t oid;
+            LogRecord::lsn_t checkpoint_lsn = LogRecord::INVALID_LSN;
             int col_count;
             
-            in >> name >> first_page >> oid >> col_count;
+            in >> name >> first_page >> oid;
+            
+            // Try to read checkpoint LSN (may not exist in old databases)
+            // Peek ahead to see if next token is a number (checkpoint_lsn) or column count
+            int64_t next_val;
+            in >> next_val;
+            
+            // If this value is negative (like -1 for INVALID_LSN) or very large (an LSN),
+            // it's the checkpoint_lsn. Otherwise it might be the column count.
+            // We can distinguish because col_count is typically small (< 100)
+            if (next_val < 0 || next_val > 1000) {
+                checkpoint_lsn = static_cast<LogRecord::lsn_t>(next_val);
+                in >> col_count;
+            } else {
+                // Old format without checkpoint_lsn - next_val is col_count
+                col_count = static_cast<int>(next_val);
+            }
             
             std::vector<Column> cols;
             for (int i = 0; i < col_count; i++) {
@@ -190,6 +210,9 @@ void Catalog::LoadCatalog() {
             // Reconnect to existing heap
             auto table_heap = std::make_unique<TableHeap>(bpm_, first_page); 
             auto metadata = std::make_unique<TableMetadata>(schema, name, std::move(table_heap), first_page, oid);
+            
+            // Restore checkpoint LSN (Bug #6 fix)
+            metadata->SetCheckpointLSN(checkpoint_lsn);
             
             tables_[oid] = std::move(metadata);
             names_to_oid_[name] = oid;

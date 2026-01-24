@@ -38,7 +38,7 @@ namespace francodb {
     // ========================================================================
     
     // Default number of pages the BufferPoolManager can hold in memory.
-    static constexpr uint32_t BUFFER_POOL_SIZE = 100;
+    static constexpr uint32_t BUFFER_POOL_SIZE = 2097152;
     
     // Number of buffer pool partitions for reduced contention
     static constexpr size_t BUFFER_POOL_PARTITIONS = 16;
