@@ -295,9 +295,15 @@ namespace francodb {
         std::vector<char> log_buffer_;       // Active write buffer
         std::vector<char> flush_buffer_;     // Buffer being flushed to disk
 
-        // Thread Safety
-        mutable std::mutex latch_;           // Protects log_buffer_ and file operations
+        // Thread Safety - Separate locks for different concerns (SOLID: Single Responsibility)
+        mutable std::mutex latch_;           // Protects log_buffer_ and in-memory state
+        mutable std::mutex write_latch_;     // Protects disk write ordering (prevents race condition)
         std::condition_variable cv_;         // Wakes up flush thread
+        
+        // LSN ordering tracking for write serialization
+        std::atomic<LogRecord::lsn_t> last_written_lsn_{LogRecord::INVALID_LSN};  // Last LSN written to disk
+        LogRecord::lsn_t buffer_start_lsn_{LogRecord::INVALID_LSN};               // First LSN in current buffer
+        LogRecord::lsn_t buffer_end_lsn_{LogRecord::INVALID_LSN};                 // Last LSN in current buffer
 
         // Multi-Database Support
         std::string base_data_dir_;          // Base directory (e.g., "data")

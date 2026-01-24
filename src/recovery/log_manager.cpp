@@ -236,6 +236,12 @@ namespace francodb {
             // 7. Append to Log Buffer
             log_buffer_.insert(log_buffer_.end(), record_buf.begin(), record_buf.end());
 
+            // 7.5. Track LSN range in current buffer for write ordering
+            if (buffer_start_lsn_ == LogRecord::INVALID_LSN) {
+                buffer_start_lsn_ = log_record.lsn_;
+            }
+            buffer_end_lsn_ = log_record.lsn_;
+
             // 8. Update file offset tracking
             current_file_offset_ += final_size;
 
@@ -272,14 +278,50 @@ namespace francodb {
 
     void LogManager::Flush(bool force) {
         if (force) {
-            // Synchronous flush - write directly to disk
-            std::unique_lock<std::mutex> lock(latch_);
+            // Synchronous flush - write directly to disk with proper ordering
+            std::vector<char> buffer_to_write;
+            LogRecord::lsn_t start_lsn, end_lsn;
             
-            if (!log_buffer_.empty() && log_file_.is_open()) {
-                log_file_.write(log_buffer_.data(), static_cast<std::streamsize>(log_buffer_.size()));
-                log_file_.flush();
+            // Step 1: Extract buffer under latch_
+            {
+                std::unique_lock<std::mutex> lock(latch_);
+                if (log_buffer_.empty() || !log_file_.is_open()) {
+                    return;
+                }
+                buffer_to_write = std::move(log_buffer_);
                 log_buffer_.clear();
-                persistent_lsn_.store(next_lsn_.load() - 1);
+                start_lsn = buffer_start_lsn_;
+                end_lsn = buffer_end_lsn_;
+                buffer_start_lsn_ = LogRecord::INVALID_LSN;
+                buffer_end_lsn_ = LogRecord::INVALID_LSN;
+            }
+            
+            // Step 2: Serialize disk writes with write_latch_ to guarantee LSN ordering
+            {
+                std::unique_lock<std::mutex> write_lock(write_latch_);
+                
+                // Wait until all prior LSNs are written (prevents out-of-order writes)
+                while (start_lsn != LogRecord::INVALID_LSN && 
+                       last_written_lsn_.load() != LogRecord::INVALID_LSN &&
+                       start_lsn > last_written_lsn_.load() + 1) {
+                    // Another flush is in progress with earlier LSNs - wait
+                    write_lock.unlock();
+                    std::this_thread::sleep_for(std::chrono::microseconds(100));
+                    write_lock.lock();
+                }
+                
+                // Now safe to write
+                std::unique_lock<std::mutex> file_lock(latch_);
+                if (log_file_.is_open() && !buffer_to_write.empty()) {
+                    log_file_.write(buffer_to_write.data(), static_cast<std::streamsize>(buffer_to_write.size()));
+                    log_file_.flush();
+                    
+                    // Update tracking atomically
+                    if (end_lsn != LogRecord::INVALID_LSN) {
+                        last_written_lsn_.store(end_lsn);
+                    }
+                    persistent_lsn_.store(next_lsn_.load() - 1);
+                }
             }
         } else {
             // Asynchronous flush - just notify the background thread
@@ -302,6 +344,9 @@ namespace francodb {
         }
         
         // Need to flush - synchronously write to disk
+        std::vector<char> buffer_to_write;
+        LogRecord::lsn_t start_lsn, end_lsn;
+        
         {
             std::unique_lock<std::mutex> lock(latch_);
             
@@ -310,8 +355,34 @@ namespace francodb {
                 return;
             }
             
-            if (!log_buffer_.empty() && log_file_.is_open()) {
-                log_file_.write(log_buffer_.data(), static_cast<std::streamsize>(log_buffer_.size()));
+            if (log_buffer_.empty() || !log_file_.is_open()) {
+                return;
+            }
+            
+            buffer_to_write = std::move(log_buffer_);
+            log_buffer_.clear();
+            start_lsn = buffer_start_lsn_;
+            end_lsn = buffer_end_lsn_;
+            buffer_start_lsn_ = LogRecord::INVALID_LSN;
+            buffer_end_lsn_ = LogRecord::INVALID_LSN;
+        }
+        
+        // Serialize disk writes with write_latch_ to guarantee LSN ordering
+        {
+            std::unique_lock<std::mutex> write_lock(write_latch_);
+            
+            // Wait until prior LSNs are written (prevents out-of-order writes)
+            while (start_lsn != LogRecord::INVALID_LSN &&
+                   last_written_lsn_.load() != LogRecord::INVALID_LSN &&
+                   start_lsn > last_written_lsn_.load() + 1) {
+                write_lock.unlock();
+                std::this_thread::sleep_for(std::chrono::microseconds(100));
+                write_lock.lock();
+            }
+            
+            std::unique_lock<std::mutex> file_lock(latch_);
+            if (log_file_.is_open() && !buffer_to_write.empty()) {
+                log_file_.write(buffer_to_write.data(), static_cast<std::streamsize>(buffer_to_write.size()));
                 log_file_.flush();
                 
                 // Force fsync for true durability
@@ -323,7 +394,10 @@ namespace francodb {
                 // fsync(fileno(...)) would work if using FILE*
                 #endif
                 
-                log_buffer_.clear();
+                // Update tracking atomically
+                if (end_lsn != LogRecord::INVALID_LSN) {
+                    last_written_lsn_.store(end_lsn);
+                }
                 persistent_lsn_.store(next_lsn_.load() - 1);
             }
         }
@@ -385,6 +459,9 @@ namespace francodb {
         try {
             while (true) {
                 std::vector<char> local_flush_buffer;
+                LogRecord::lsn_t start_lsn = LogRecord::INVALID_LSN;
+                LogRecord::lsn_t end_lsn = LogRecord::INVALID_LSN;
+                
                 {
                     std::unique_lock<std::mutex> lock(latch_);
 
@@ -401,21 +478,42 @@ namespace francodb {
                         continue;
                     }
 
+                    // Capture the LSN range before swapping
+                    start_lsn = buffer_start_lsn_;
+                    end_lsn = buffer_end_lsn_;
+                    buffer_start_lsn_ = LogRecord::INVALID_LSN;
+                    buffer_end_lsn_ = LogRecord::INVALID_LSN;
+
                     SwapBuffers();
                     local_flush_buffer = std::move(flush_buffer_);
                     flush_buffer_.clear();
                 }
 
-                // --- I/O OPERATION (outside lock) ---
+                // --- I/O OPERATION (outside latch_, but serialized by write_latch_) ---
                 if (!local_flush_buffer.empty()) {
                     try {
+                        // Serialize disk writes to guarantee LSN ordering
+                        std::unique_lock<std::mutex> write_lock(write_latch_);
+                        
+                        // Wait until prior LSNs are written (prevents race condition)
+                        while (start_lsn != LogRecord::INVALID_LSN &&
+                               last_written_lsn_.load() != LogRecord::INVALID_LSN &&
+                               start_lsn > last_written_lsn_.load() + 1) {
+                            write_lock.unlock();
+                            std::this_thread::sleep_for(std::chrono::microseconds(100));
+                            write_lock.lock();
+                        }
+                        
                         std::unique_lock<std::mutex> file_lock(latch_);
                         if (log_file_.is_open() && log_file_.good()) {
                             log_file_.write(local_flush_buffer.data(), 
                                           static_cast<std::streamsize>(local_flush_buffer.size()));
                             log_file_.flush();  // Ensure durability
                             
-                            // Update persistent LSN
+                            // Update tracking atomically
+                            if (end_lsn != LogRecord::INVALID_LSN) {
+                                last_written_lsn_.store(end_lsn);
+                            }
                             persistent_lsn_.store(next_lsn_.load() - 1);
                         }
                     } catch (const std::exception& e) {

@@ -4,6 +4,7 @@
 #include "recovery/log_record.h"
 #include "recovery/checkpoint_manager.h"
 #include "catalog/catalog.h"
+#include "catalog/table_metadata.h"
 #include "storage/storage_interface.h"  // For IBufferManager
 #include <map>
 #include <set>
@@ -280,13 +281,15 @@ namespace francodb {
 
         /**
          * Read a complete log record from a file stream
+         * Public for use by SnapshotManager for efficient incremental replay
          * 
          * @param log_file Input file stream
          * @param record Output record
          * @return true if record was read successfully
          */
-        bool ReadLogRecord(std::ifstream& log_file, LogRecord& record);
-
+        static bool ReadLogRecord(std::ifstream& log_file, LogRecord& record);
+        
+    private:
         /**
          * Scan log file to find a specific LSN
          * 
@@ -310,11 +313,34 @@ namespace francodb {
 
         /**
          * Collect all log records for a specific database
+         * WARNING: This loads all records into memory - use StreamingUndo for large logs
          * 
          * @param db_name Database name
          * @return Vector of log records
          */
         std::vector<LogRecord> CollectLogRecords(const std::string& db_name);
+        
+        /**
+         * Build LSN-to-offset index for efficient backward traversal
+         * Only indexes records for specified transactions to limit memory usage
+         * 
+         * @param db_name Database name
+         * @param target_txns Set of transaction IDs to index
+         * @return Map of LSN to file offset
+         */
+        std::map<LogRecord::lsn_t, std::streampos> BuildLSNIndex(
+            const std::string& db_name,
+            const std::set<LogRecord::txn_id_t>& target_txns);
+        
+        /**
+         * Streaming undo phase - processes undo without loading entire log into memory
+         * Uses LSN index for efficient backward traversal following prev_lsn chains
+         * 
+         * @param losers Set of transaction IDs to undo
+         * @param db_name Database to read logs from
+         */
+        void StreamingUndoPhase(const std::set<LogRecord::txn_id_t>& losers, 
+                                 const std::string& db_name);
 
         /**
          * Read helpers for deserialization
@@ -323,6 +349,22 @@ namespace francodb {
         static Value ReadValue(std::ifstream& in);
         static int32_t ReadInt32(std::ifstream& in);
         static uint64_t ReadUInt64(std::ifstream& in);
+        
+        /**
+         * Binary-safe tuple serialization/deserialization
+         * Uses length-prefixed encoding to handle pipe characters in data
+         */
+        static std::string SerializeTupleBinary(const std::vector<Value>& values);
+        static std::vector<std::string> DeserializeTupleBinary(const std::string& data);
+        
+        /**
+         * Parse tuple string with fallback for both binary and legacy pipe formats
+         * @param tuple_str The serialized tuple string
+         * @param table_info Table metadata for type information
+         * @return Vector of parsed values
+         */
+        std::vector<Value> ParseTupleStringSafe(const std::string& tuple_str, 
+                                                 const TableMetadata* table_info) const;
 
         // ========================================================================
         // DATA MEMBERS

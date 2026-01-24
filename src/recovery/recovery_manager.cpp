@@ -67,6 +67,111 @@ namespace francodb {
     }
 
     // ========================================================================
+    // BINARY-SAFE TUPLE SERIALIZATION (Bug #4 Fix)
+    // Uses length-prefixed encoding to safely handle pipe characters in data
+    // ========================================================================
+    
+    // Binary format: [field_count:4][len1:4][data1][len2:4][data2]...
+    // Magic header byte 0x02 identifies binary format vs legacy pipe format
+    std::string RecoveryManager::SerializeTupleBinary(const std::vector<Value>& values) {
+        std::string result;
+        
+        // Magic byte to identify binary format
+        result.push_back(0x02);
+        
+        // Field count
+        uint32_t count = static_cast<uint32_t>(values.size());
+        result.append(reinterpret_cast<const char*>(&count), sizeof(uint32_t));
+        
+        // Each field: [length:4][data]
+        for (const auto& val : values) {
+            std::string field_data = val.ToString();
+            uint32_t len = static_cast<uint32_t>(field_data.length());
+            result.append(reinterpret_cast<const char*>(&len), sizeof(uint32_t));
+            result.append(field_data);
+        }
+        
+        return result;
+    }
+    
+    std::vector<std::string> RecoveryManager::DeserializeTupleBinary(const std::string& data) {
+        std::vector<std::string> result;
+        
+        if (data.empty()) return result;
+        
+        // Check for binary format magic byte
+        if (static_cast<unsigned char>(data[0]) != 0x02) {
+            // Legacy pipe format - use fallback parsing
+            return result;  // Empty signals caller to use legacy parsing
+        }
+        
+        size_t pos = 1;  // Skip magic byte
+        
+        // Read field count
+        if (pos + sizeof(uint32_t) > data.size()) return result;
+        uint32_t count = 0;
+        std::memcpy(&count, data.data() + pos, sizeof(uint32_t));
+        pos += sizeof(uint32_t);
+        
+        // Sanity check
+        if (count > 1000) return result;
+        
+        // Read each field
+        for (uint32_t i = 0; i < count; i++) {
+            if (pos + sizeof(uint32_t) > data.size()) break;
+            
+            uint32_t len = 0;
+            std::memcpy(&len, data.data() + pos, sizeof(uint32_t));
+            pos += sizeof(uint32_t);
+            
+            if (pos + len > data.size()) break;
+            
+            result.push_back(data.substr(pos, len));
+            pos += len;
+        }
+        
+        return result;
+    }
+    
+    std::vector<Value> RecoveryManager::ParseTupleStringSafe(const std::string& tuple_str,
+                                                              const TableMetadata* table_info) const {
+        std::vector<Value> vals;
+        if (!table_info || tuple_str.empty()) return vals;
+        
+        // Try binary format first
+        std::vector<std::string> fields = DeserializeTupleBinary(tuple_str);
+        
+        if (fields.empty()) {
+            // Fallback to legacy pipe-separated format for backward compatibility
+            std::stringstream ss(tuple_str);
+            std::string item;
+            while (std::getline(ss, item, '|')) {
+                fields.push_back(item);
+            }
+        }
+        
+        // Convert string fields to Values based on schema
+        uint32_t col_count = table_info->schema_.GetColumnCount();
+        for (uint32_t col_idx = 0; col_idx < fields.size() && col_idx < col_count; col_idx++) {
+            const Column& col = table_info->schema_.GetColumn(col_idx);
+            TypeId type = col.GetType();
+            const std::string& item = fields[col_idx];
+            
+            if (type == TypeId::INTEGER) {
+                try { vals.push_back(Value(type, std::stoi(item))); }
+                catch (...) { vals.push_back(Value(type, 0)); }
+            } else if (type == TypeId::DECIMAL) {
+                try { vals.push_back(Value(type, std::stod(item))); }
+                catch (...) { vals.push_back(Value(type, 0.0)); }
+            } else {
+                vals.push_back(Value(type, item));
+            }
+        }
+        
+        return vals;
+    }
+
+    // ========================================================================
     // LOG RECORD READING
     // ========================================================================
 
@@ -294,14 +399,61 @@ namespace francodb {
 
         LogRecord::lsn_t min_lsn = LogRecord::INVALID_LSN;
         LogRecord record(0, 0, LogRecordType::INVALID);
-
+        
+        // =========================================================================
+        // ARIES FIX: Two-pass approach for proper checkpoint handling
+        // Pass 1: Find the last checkpoint and initialize ATT/DPT from it
+        // Pass 2: Scan forward from checkpoint to update ATT with post-checkpoint changes
+        // =========================================================================
+        
+        std::streampos checkpoint_offset = 0;
+        bool found_checkpoint = false;
+        
+        // Pass 1: Find the LAST checkpoint and initialize ATT/DPT
+        while (ReadLogRecord(log_file, record)) {
+            if (record.log_record_type_ == LogRecordType::CHECKPOINT_END) {
+                // Remember this checkpoint position - we'll restart from here
+                checkpoint_offset = log_file.tellg();
+                found_checkpoint = true;
+                
+                // Initialize ATT and DPT from checkpoint (ARIES standard)
+                active_transaction_table_.clear();
+                dirty_page_table_.clear();
+                
+                for (const auto& att_entry : record.active_transactions_) {
+                    active_transaction_table_[att_entry.txn_id] = att_entry.last_lsn;
+                }
+                for (const auto& dpt_entry : record.dirty_pages_) {
+                    dirty_page_table_[dpt_entry.page_id] = dpt_entry.recovery_lsn;
+                }
+                
+                std::cout << "[ANALYSIS] Initialized from checkpoint LSN " << record.lsn_ 
+                          << ": ATT=" << active_transaction_table_.size() 
+                          << ", DPT=" << dirty_page_table_.size() << std::endl;
+            }
+        }
+        
+        // Pass 2: Scan forward from checkpoint (or beginning) to update state
+        if (found_checkpoint) {
+            // Seek back to just after the checkpoint
+            log_file.clear();  // Clear EOF flag
+            log_file.seekg(checkpoint_offset);
+        } else {
+            // No checkpoint found - start from beginning
+            log_file.clear();
+            log_file.seekg(0);
+        }
+        
+        // Now scan forward and track transaction state changes AFTER the checkpoint
         while (ReadLogRecord(log_file, record)) {
             last_recovery_stats_.records_read++;
 
-            // Track transactions
+            // Track transactions - this updates ATT based on post-checkpoint activity
             if (record.log_record_type_ == LogRecordType::BEGIN) {
                 active_transaction_table_[record.txn_id_] = record.lsn_;
             } else if (record.log_record_type_ == LogRecordType::COMMIT) {
+                // CRITICAL: Mark as committed and remove from ATT
+                // This prevents double-rollback of committed transactions
                 committed_transactions_.insert(record.txn_id_);
                 active_transaction_table_.erase(record.txn_id_);
             } else if (record.log_record_type_ == LogRecordType::ABORT) {
@@ -312,16 +464,6 @@ namespace francodb {
             if (record.IsDataModification()) {
                 if (min_lsn == LogRecord::INVALID_LSN || record.lsn_ < min_lsn) {
                     min_lsn = record.lsn_;
-                }
-            }
-
-            // If we found a checkpoint, extract its ATT and DPT
-            if (record.log_record_type_ == LogRecordType::CHECKPOINT_END) {
-                for (const auto& att_entry : record.active_transactions_) {
-                    active_transaction_table_[att_entry.txn_id] = att_entry.last_lsn;
-                }
-                for (const auto& dpt_entry : record.dirty_pages_) {
-                    dirty_page_table_[dpt_entry.page_id] = dpt_entry.recovery_lsn;
                 }
             }
 
@@ -366,23 +508,126 @@ namespace francodb {
     void RecoveryManager::UndoPhase(const std::set<LogRecord::txn_id_t>& losers) {
         if (losers.empty()) return;
 
-        // Collect log records and undo in reverse order
         std::string db_name = log_manager_->GetCurrentDatabase();
-        std::vector<LogRecord> records = CollectLogRecords(db_name);
-
-        // Filter to loser transactions and reverse
-        std::vector<LogRecord> loser_records;
-        for (const auto& record : records) {
-            if (losers.find(record.txn_id_) != losers.end() && record.IsDataModification()) {
-                loser_records.push_back(record);
+        
+        // Use streaming undo to avoid memory exhaustion on large logs (Bug #5 fix)
+        StreamingUndoPhase(losers, db_name);
+    }
+    
+    std::map<LogRecord::lsn_t, std::streampos> RecoveryManager::BuildLSNIndex(
+        const std::string& db_name,
+        const std::set<LogRecord::txn_id_t>& target_txns) {
+        
+        std::map<LogRecord::lsn_t, std::streampos> lsn_index;
+        std::string log_path = log_manager_->GetLogFilePath(db_name);
+        std::ifstream log_file(log_path, std::ios::binary | std::ios::in);
+        
+        if (!log_file.is_open()) {
+            return lsn_index;
+        }
+        
+        LogRecord record(0, 0, LogRecordType::INVALID);
+        
+        while (true) {
+            std::streampos offset = log_file.tellg();
+            if (!ReadLogRecord(log_file, record)) {
+                break;
+            }
+            
+            // Only index records for target transactions (memory optimization)
+            if (target_txns.find(record.txn_id_) != target_txns.end() && 
+                record.IsDataModification()) {
+                lsn_index[record.lsn_] = offset;
             }
         }
-
-        // Undo in reverse order
-        for (auto it = loser_records.rbegin(); it != loser_records.rend(); ++it) {
-            UndoLogRecord(*it);
-            last_recovery_stats_.records_undone++;
+        
+        log_file.close();
+        return lsn_index;
+    }
+    
+    void RecoveryManager::StreamingUndoPhase(const std::set<LogRecord::txn_id_t>& losers,
+                                              const std::string& db_name) {
+        if (losers.empty()) return;
+        
+        std::cout << "[UNDO] Starting streaming undo for " << losers.size() 
+                  << " loser transactions" << std::endl;
+        
+        // Step 1: Build LSN index only for loser transactions (bounded memory)
+        std::map<LogRecord::lsn_t, std::streampos> lsn_index = BuildLSNIndex(db_name, losers);
+        
+        if (lsn_index.empty()) {
+            std::cout << "[UNDO] No records to undo" << std::endl;
+            return;
         }
+        
+        std::cout << "[UNDO] Indexed " << lsn_index.size() << " records for undo" << std::endl;
+        
+        // Step 2: Collect starting LSNs (last LSN for each loser transaction)
+        // These come from the Active Transaction Table
+        std::set<LogRecord::lsn_t> undo_queue;  // LSNs to process (sorted descending by iteration)
+        for (const auto& txn_id : losers) {
+            auto it = active_transaction_table_.find(txn_id);
+            if (it != active_transaction_table_.end() && it->second != LogRecord::INVALID_LSN) {
+                undo_queue.insert(it->second);
+            }
+        }
+        
+        // Also add all indexed LSNs as starting points (defensive)
+        for (const auto& [lsn, offset] : lsn_index) {
+            undo_queue.insert(lsn);
+        }
+        
+        // Step 3: Process in reverse LSN order (highest first)
+        std::string log_path = log_manager_->GetLogFilePath(db_name);
+        std::ifstream log_file(log_path, std::ios::binary | std::ios::in);
+        
+        if (!log_file.is_open()) {
+            std::cerr << "[UNDO] Cannot open log file: " << log_path << std::endl;
+            return;
+        }
+        
+        std::set<LogRecord::lsn_t> processed_lsns;  // Track what we've undone
+        
+        // Process in reverse order (rbegin iterates from highest to lowest)
+        for (auto it = undo_queue.rbegin(); it != undo_queue.rend(); ++it) {
+            LogRecord::lsn_t current_lsn = *it;
+            
+            // Skip if already processed
+            if (processed_lsns.find(current_lsn) != processed_lsns.end()) {
+                continue;
+            }
+            
+            // Find offset in index
+            auto offset_it = lsn_index.find(current_lsn);
+            if (offset_it == lsn_index.end()) {
+                continue;
+            }
+            
+            // Seek to the record
+            log_file.clear();
+            log_file.seekg(offset_it->second);
+            
+            LogRecord record(0, 0, LogRecordType::INVALID);
+            if (!ReadLogRecord(log_file, record)) {
+                continue;
+            }
+            
+            // Verify this is a loser transaction record
+            if (losers.find(record.txn_id_) == losers.end()) {
+                continue;
+            }
+            
+            // Undo the record
+            if (record.IsDataModification()) {
+                UndoLogRecord(record);
+                last_recovery_stats_.records_undone++;
+                processed_lsns.insert(current_lsn);
+            }
+        }
+        
+        log_file.close();
+        std::cout << "[UNDO] Completed streaming undo: " << processed_lsns.size() 
+                  << " records undone" << std::endl;
     }
 
     // ========================================================================
@@ -435,33 +680,36 @@ namespace francodb {
     // ========================================================================
 
     void RecoveryManager::RedoLogRecord(const LogRecord& record) {
+        // ARIES PageLSN Idempotency Check:
+        // Skip redo if the page has already been updated past this record's LSN.
+        // This prevents double-applying changes during recovery.
+        
         auto table_info = catalog_->GetTable(record.table_name_);
         
-        // Helper lambda to parse pipe-separated tuple string into Values
-        auto parseTupleString = [&](const std::string& tuple_str) -> std::vector<Value> {
-            std::vector<Value> vals;
-            if (!table_info) return vals;
-            
-            std::stringstream ss(tuple_str);
-            std::string item;
-            uint32_t col_idx = 0;
-            
-            while (std::getline(ss, item, '|') && col_idx < table_info->schema_.GetColumnCount()) {
-                const Column& col = table_info->schema_.GetColumn(col_idx);
-                TypeId type = col.GetType();
-                
-                if (type == TypeId::INTEGER) {
-                    try { vals.push_back(Value(type, std::stoi(item))); } 
-                    catch (...) { vals.push_back(Value(type, 0)); }
-                } else if (type == TypeId::DECIMAL) {
-                    try { vals.push_back(Value(type, std::stod(item))); } 
-                    catch (...) { vals.push_back(Value(type, 0.0)); }
-                } else {
-                    vals.push_back(Value(type, item));
+        // For data modification operations, check if we should skip based on page LSN
+        if (table_info && record.IsDataModification() && record.lsn_ != LogRecord::INVALID_LSN) {
+            // Get the first page of the table to check its LSN
+            // Note: In a more sophisticated system, we'd track page_id per log record
+            page_id_t first_page_id = table_info->table_heap_->GetFirstPageId();
+            if (first_page_id != INVALID_PAGE_ID && bpm_ != nullptr) {
+                Page* page = bpm_->FetchPage(first_page_id);
+                if (page != nullptr) {
+                    lsn_t page_lsn = page->GetPageLSN();
+                    bpm_->UnpinPage(first_page_id, false);
+                    
+                    // ARIES idempotency: Skip if page already has this or later update
+                    if (page_lsn != INVALID_LSN && page_lsn >= record.lsn_) {
+                        // Page already reflects this or later changes - skip redo
+                        return;
+                    }
                 }
-                col_idx++;
             }
-            return vals;
+        }
+        
+        // Helper lambda to parse tuple strings with binary-safe deserialization (Bug #4 fix)
+        // Uses ParseTupleStringSafe which handles both binary and legacy pipe formats
+        auto parseTupleString = [&](const std::string& tuple_str) -> std::vector<Value> {
+            return ParseTupleStringSafe(tuple_str, table_info);
         };
 
         // Helper lambda to compare a tuple with parsed values
@@ -477,6 +725,17 @@ namespace francodb {
             return true;
         };
 
+        // Helper lambda to update page LSN after successful redo (ARIES compliance)
+        auto updatePageLSN = [&](page_id_t page_id) {
+            if (page_id != INVALID_PAGE_ID && bpm_ != nullptr && record.lsn_ != LogRecord::INVALID_LSN) {
+                Page* page = bpm_->FetchPage(page_id);
+                if (page != nullptr) {
+                    page->SetPageLSN(record.lsn_);
+                    bpm_->UnpinPage(page_id, true);  // Mark dirty since we updated LSN
+                }
+            }
+        };
+
         switch (record.log_record_type_) {
             case LogRecordType::INSERT: {
                 if (table_info) {
@@ -484,7 +743,10 @@ namespace francodb {
                     if (values.size() == table_info->schema_.GetColumnCount()) {
                         Tuple tuple(values, table_info->schema_);
                         RID rid;
-                        table_info->table_heap_->InsertTuple(tuple, &rid, nullptr);
+                        if (table_info->table_heap_->InsertTuple(tuple, &rid, nullptr)) {
+                            // Update page LSN for ARIES compliance
+                            updatePageLSN(rid.GetPageId());
+                        }
                     }
                 }
                 break;
@@ -500,12 +762,19 @@ namespace francodb {
                         if (tuplesMatch(*iter, old_vals)) { 
                             // Delete old and insert new
                             RID old_rid = iter.GetRID();
+                            page_id_t affected_page = old_rid.GetPageId();
                             table_info->table_heap_->MarkDelete(old_rid, nullptr);
                             
                             if (new_vals.size() == table_info->schema_.GetColumnCount()) {
                                 Tuple new_tuple(new_vals, table_info->schema_);
                                 RID new_rid;
-                                table_info->table_heap_->InsertTuple(new_tuple, &new_rid, nullptr);
+                                if (table_info->table_heap_->InsertTuple(new_tuple, &new_rid, nullptr)) {
+                                    // Update page LSN for ARIES compliance
+                                    updatePageLSN(new_rid.GetPageId());
+                                    if (new_rid.GetPageId() != affected_page) {
+                                        updatePageLSN(affected_page);
+                                    }
+                                }
                             }
                             break;
                         }
@@ -523,7 +792,11 @@ namespace francodb {
                     auto iter = table_info->table_heap_->Begin(nullptr);
                     while (iter != table_info->table_heap_->End()) {
                         if (tuplesMatch(*iter, old_vals)) {
-                            table_info->table_heap_->MarkDelete(iter.GetRID(), nullptr);
+                            RID delete_rid = iter.GetRID();
+                            if (table_info->table_heap_->MarkDelete(delete_rid, nullptr)) {
+                                // Update page LSN for ARIES compliance
+                                updatePageLSN(delete_rid.GetPageId());
+                            }
                             break;
                         }
                         ++iter;
@@ -539,7 +812,10 @@ namespace francodb {
                     if (vals.size() == table_info->schema_.GetColumnCount()) {
                         Tuple t(vals, table_info->schema_);
                         RID rid;
-                        table_info->table_heap_->InsertTuple(t, &rid, nullptr);
+                        if (table_info->table_heap_->InsertTuple(t, &rid, nullptr)) {
+                            // Update page LSN for ARIES compliance
+                            updatePageLSN(rid.GetPageId());
+                        }
                     }
                 }
                 break;
@@ -571,29 +847,9 @@ namespace francodb {
             return record.prev_lsn_;
         }
 
-        // Helper lambda to parse pipe-separated tuple string into Values
+        // Helper lambda to parse tuple strings with binary-safe deserialization (Bug #4 fix)
         auto parseTupleString = [&](const std::string& tuple_str) -> std::vector<Value> {
-            std::vector<Value> vals;
-            std::stringstream ss(tuple_str);
-            std::string item;
-            uint32_t col_idx = 0;
-            
-            while (std::getline(ss, item, '|') && col_idx < table_info->schema_.GetColumnCount()) {
-                const Column& col = table_info->schema_.GetColumn(col_idx);
-                TypeId type = col.GetType();
-                
-                if (type == TypeId::INTEGER) {
-                    try { vals.push_back(Value(type, std::stoi(item))); } 
-                    catch (...) { vals.push_back(Value(type, 0)); }
-                } else if (type == TypeId::DECIMAL) {
-                    try { vals.push_back(Value(type, std::stod(item))); } 
-                    catch (...) { vals.push_back(Value(type, 0.0)); }
-                } else {
-                    vals.push_back(Value(type, item));
-                }
-                col_idx++;
-            }
-            return vals;
+            return ParseTupleStringSafe(tuple_str, table_info);
         };
 
         // Helper lambda to compare a tuple with parsed values
