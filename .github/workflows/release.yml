@@ -53,7 +53,21 @@ jobs:
 
       - name: Build Windows installer
         run: |
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installers/windows/installer.iss
+          Write-Host "Checking for required files..."
+          Get-ChildItem cmake-build-release\Release -ErrorAction SilentlyContinue
+          Write-Host "`nBuilding installer..."
+          $isccPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $isccPath)) {
+            Write-Host "ERROR: Inno Setup not found at $isccPath"
+            exit 1
+          }
+          & $isccPath installers/windows/installer.iss
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "ERROR: Inno Setup compilation failed with exit code $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }
+          Write-Host "`nInstaller built successfully!"
+          Get-ChildItem installers/windows/Output -ErrorAction SilentlyContinue
         shell: pwsh
 
       - name: Upload installer artifact
@@ -61,6 +75,7 @@ jobs:
         with:
           name: windows-installer
           path: installers/windows/Output/*.exe
+          if-no-files-found: error
 
   docker:
     runs-on: ubuntu-latest
