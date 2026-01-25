@@ -195,6 +195,22 @@ namespace francodb {
                            const std::string& db_name = "");
 
         /**
+         * Replay log records into a heap starting from a specific file offset.
+         * This is the checkpoint-optimized version that skips to the nearest checkpoint.
+         * 
+         * @param target_heap The heap to populate
+         * @param target_table_name Table name to filter records
+         * @param start_offset File offset to start reading from (0 = beginning)
+         * @param target_time Stop replaying at this timestamp
+         * @param db_name Database to read logs from
+         */
+        void ReplayIntoHeapFromOffset(TableHeap* target_heap,
+                                      const std::string& target_table_name,
+                                      std::streampos start_offset,
+                                      uint64_t target_time,
+                                      const std::string& db_name);
+
+        /**
          * Replay log records from a specific LSN into a heap (delta replay).
          * This is the checkpoint-optimized version for RECOVER TO.
          * 

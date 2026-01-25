@@ -96,9 +96,17 @@ namespace francodb {
             for (auto* table : all_tables) {
                 if (table) {
                     table->SetCheckpointLSN(checkpoint_lsn);
+                    std::cout << "[CHECKPOINT]   - Table '" << table->name_ 
+                              << "' checkpoint LSN set to " << checkpoint_lsn << std::endl;
                 }
             }
             std::cout << "[CHECKPOINT]   - Updated " << all_tables.size() << " tables" << std::endl;
+            
+            // CRITICAL: Save catalog to persist checkpoint LSNs
+            catalog_->SaveCatalog();
+            std::cout << "[CHECKPOINT] Phase 9: Saved catalog with checkpoint LSNs" << std::endl;
+        } else {
+            std::cout << "[CHECKPOINT] WARNING: No catalog set - table checkpoint LSNs NOT updated!" << std::endl;
         }
 
         // 11. Update statistics

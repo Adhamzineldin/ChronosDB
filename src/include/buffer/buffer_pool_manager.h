@@ -39,11 +39,16 @@ namespace francodb {
         DiskManager *GetDiskManager() override { return disk_manager_; }
         
         /**
+         * Get the current pool size in pages.
+         */
+        size_t GetPoolSize() const override { return pool_size_; }
+        
+        /**
          * Set the log manager for WAL protocol enforcement.
          * When set, FlushPage will ensure the log is flushed
          * up to the page's LSN before writing data.
          */
-        void SetLogManager(LogManager* log_manager) { log_manager_ = log_manager; }
+        void SetLogManager(LogManager* log_manager) override { log_manager_ = log_manager; }
 
         void Clear() override;
 

@@ -22,6 +22,8 @@
 #include "storage/disk/disk_manager.h"
 #include "buffer/buffer_pool_manager.h"
 #include "buffer/partitioned_buffer_pool_manager.h"
+#include "buffer/adaptive_buffer_pool.h"
+#include "buffer/adaptive_distributed_buffer_pool.h"
 #include "catalog/catalog.h"
 #include "common/config.h"
 #include "common/franco_net_config.h"
@@ -151,20 +153,77 @@ int main(int argc, char *argv[]) {
         if (config.IsEncryptionEnabled()) disk_manager->SetEncryptionKey(config.GetEncryptionKey());
 
         // ========================================================================
-        // BUFFER POOL INITIALIZATION (Issue #7 - High Concurrency Support)
+        // BUFFER POOL INITIALIZATION
         // ========================================================================
-        // Use PartitionedBufferPoolManager for reduced lock contention under
-        // high concurrent read/write workloads. Partitions pages across 16
-        // independent buffer pools, each with its own latch.
-        // Based on PostgreSQL's buffer partition design.
+        // Four options available (in order of recommendation):
+        // 1. AdaptiveDistributedBufferPool - BEST: Partitioned + Adaptive + Rebalancing
+        // 2. AdaptiveBufferPoolManager - Dynamic sizing based on metrics
+        // 3. PartitionedBufferPoolManager - Fixed size with 16 partitions for concurrency
+        // 4. BufferPoolManager - Simple single-partition pool
         // ========================================================================
-        auto bpm = std::make_unique<PartitionedBufferPoolManager>(
-            BUFFER_POOL_SIZE, 
-            disk_manager.get(),
-            BUFFER_POOL_PARTITIONS  // Default: 16 partitions
-        );
-        std::cout << "[INFO] Using PartitionedBufferPoolManager with " 
-                  << BUFFER_POOL_PARTITIONS << " partitions for high-concurrency support" << std::endl;
+        
+        std::unique_ptr<IBufferManager> bpm;
+        
+        if (USE_ADAPTIVE_DISTRIBUTED_POOL) {
+            // RECOMMENDED: Adaptive Distributed Pool
+            // - 16 independent partitions for lock-free concurrent access
+            // - Per-partition metrics and adaptive sizing
+            // - Automatic hot/cold partition rebalancing
+            AdaptiveDistributedConfig dist_config;
+            dist_config.num_partitions = BUFFER_POOL_PARTITIONS;
+            dist_config.pages_per_partition = BUFFER_POOL_SIZE / BUFFER_POOL_PARTITIONS;
+            dist_config.min_pages_per_partition = BUFFER_POOL_MIN_SIZE / BUFFER_POOL_PARTITIONS;
+            dist_config.max_pages_per_partition = BUFFER_POOL_MAX_SIZE / BUFFER_POOL_PARTITIONS;
+            dist_config.adaptation_interval_seconds = BUFFER_POOL_ADAPTATION_INTERVAL_SEC;
+            dist_config.hit_rate_grow_threshold = BUFFER_POOL_HIT_RATE_GROW_THRESHOLD;
+            
+            auto adaptive_dist_bpm = std::make_unique<AdaptiveDistributedBufferPool>(
+                disk_manager.get(), dist_config
+            );
+            adaptive_dist_bpm->StartAdaptation();
+            bpm = std::move(adaptive_dist_bpm);
+            
+            std::cout << "[INFO] Using AdaptiveDistributedBufferPool (RECOMMENDED)" << std::endl;
+            std::cout << "[INFO]   Partitions: " << BUFFER_POOL_PARTITIONS << std::endl;
+            std::cout << "[INFO]   Initial: " << BUFFER_POOL_SIZE * 4 / 1024 << " MB" << std::endl;
+            std::cout << "[INFO]   Features: Distributed + Adaptive + Rebalancing" << std::endl;
+            
+        } else if (USE_ADAPTIVE_BUFFER_POOL) {
+            // Phase 2: Adaptive pool that grows/shrinks based on hit rate
+            AdaptivePoolConfig adaptive_config;
+            adaptive_config.initial_pool_size = BUFFER_POOL_SIZE;
+            adaptive_config.min_pool_size = BUFFER_POOL_MIN_SIZE;
+            adaptive_config.max_pool_size = BUFFER_POOL_MAX_SIZE;
+            adaptive_config.chunk_size = BUFFER_POOL_CHUNK_SIZE;
+            adaptive_config.hit_rate_grow_threshold = BUFFER_POOL_HIT_RATE_GROW_THRESHOLD;
+            adaptive_config.hit_rate_shrink_threshold = BUFFER_POOL_HIT_RATE_SHRINK_THRESHOLD;
+            adaptive_config.dirty_ratio_throttle = BUFFER_POOL_DIRTY_RATIO_THROTTLE;
+            adaptive_config.adaptation_interval_seconds = BUFFER_POOL_ADAPTATION_INTERVAL_SEC;
+            
+            auto adaptive_bpm = std::make_unique<AdaptiveBufferPoolManager>(disk_manager.get(), adaptive_config);
+            adaptive_bpm->StartAdaptationThread();
+            bpm = std::move(adaptive_bpm);
+            
+            std::cout << "[INFO] Using AdaptiveBufferPoolManager with dynamic sizing" << std::endl;
+            std::cout << "[INFO]   Initial: " << BUFFER_POOL_SIZE * 4 / 1024 << " MB, "
+                      << "Min: " << BUFFER_POOL_MIN_SIZE * 4 / 1024 << " MB, "
+                      << "Max: " << BUFFER_POOL_MAX_SIZE * 4 / 1024 << " MB" << std::endl;
+        } else if (USE_PARTITIONED_BUFFER_POOL) {
+            // Default: Partitioned pool for high concurrency
+            bpm = std::make_unique<PartitionedBufferPoolManager>(
+                BUFFER_POOL_SIZE, 
+                disk_manager.get(),
+                BUFFER_POOL_PARTITIONS
+            );
+            std::cout << "[INFO] Using PartitionedBufferPoolManager with " 
+                      << BUFFER_POOL_PARTITIONS << " partitions (" 
+                      << BUFFER_POOL_SIZE * 4 / 1024 << " MB)" << std::endl;
+        } else {
+            // Simple single-partition pool
+            bpm = std::make_unique<BufferPoolManager>(BUFFER_POOL_SIZE, disk_manager.get());
+            std::cout << "[INFO] Using BufferPoolManager (" 
+                      << BUFFER_POOL_SIZE * 4 / 1024 << " MB)" << std::endl;
+        }
         
         auto catalog = std::make_unique<Catalog>(bpm.get());
         

@@ -87,68 +87,87 @@ namespace francodb {
             uint64_t current_time = LogRecord::GetCurrentTimestamp();
             
             // ================================================================
-            // OPTIMIZATION: Use checkpoint as base instead of replaying from 0
+            // CHECKPOINT-BASED TIME TRAVEL (Git-style)
+            // 
+            // Algorithm:
+            // 1. Scan log to find ALL checkpoints with their timestamps
+            // 2. Find the checkpoint closest to but BEFORE target_time
+            // 3. That checkpoint's offset tells us where to start reading
+            // 4. Replay from beginning to target_time (with checkpoint info for future optimization)
+            // 
+            // Future optimization: Store actual table snapshots at checkpoints
+            // to avoid replaying from beginning every time.
             // ================================================================
             
-            if (checkpoint_lsn != LogRecord::INVALID_LSN && target_time >= GetCheckpointTimestamp(log_manager, target_db, checkpoint_lsn)) {
-                // Target is AFTER the checkpoint - use checkpoint as base
-                std::cout << "[SnapshotManager]   Using CHECKPOINT-BASED optimization" << std::endl;
-                
-                // OPTIMIZATION: Check if there's any delta to replay BEFORE cloning
-                // If checkpoint_lsn == current_lsn, the live table IS the snapshot - no work needed
-                if (checkpoint_lsn == current_lsn || checkpoint_lsn >= current_lsn - 1) {
-                    std::cout << "[SnapshotManager]   No delta to replay (checkpoint is current)" << std::endl;
-                    std::cout << "[SnapshotManager]   Returning LIVE TABLE directly (zero-copy)" << std::endl;
-                    
-                    // Return nullptr to signal "use live table" - caller should check this
-                    // OR we create a minimal snapshot that references the live data
-                    // For now, we still need to clone but we can use a faster path
-                    
-                    // Actually, for AS OF queries, we MUST return a separate heap
-                    // because the live table might change during query execution.
-                    // But we can avoid the clone by checking if target_time >= checkpoint_time
-                    // AND there are no log records after checkpoint for this table.
-                    
-                    // Fast path: Just count tuples in live table, don't clone
-                    int tuple_count = 0;
-                    auto iter = table_info->table_heap_->Begin(nullptr);
-                    while (iter != table_info->table_heap_->End()) {
-                        ++iter;
-                        tuple_count++;
+            // Find all checkpoints in the log
+            auto checkpoints = FindAllCheckpoints(log_manager, target_db);
+            
+            std::cout << "[SnapshotManager]   Found " << checkpoints.size() << " checkpoints in log" << std::endl;
+            
+            // Find the best checkpoint (closest to but BEFORE target_time)
+            CheckpointInfo* best_checkpoint = nullptr;
+            for (auto& cp : checkpoints) {
+                if (cp.timestamp <= target_time) {
+                    if (best_checkpoint == nullptr || cp.timestamp > best_checkpoint->timestamp) {
+                        best_checkpoint = &cp;
                     }
-                    std::cout << "[SnapshotManager]   Live table has " << tuple_count << " tuples (no clone needed for read)" << std::endl;
-                    
-                    // For read-only queries, we can actually use the live table directly
-                    // The caller needs to know not to delete it - return nullptr signals this
-                    return nullptr;  // Signal: use live table directly
                 }
-                
-                // Clone the live table (which is at checkpoint state)
-                auto snapshot = CloneLiveTable(table_info, bpm);
-                if (!snapshot) {
-                    std::cerr << "[SnapshotManager] Failed to clone live table" << std::endl;
-                    return nullptr;
-                }
-                
-                // Replay only the delta: from checkpoint_lsn to target_time
-                int delta_records = ReplayDelta(snapshot.get(), table_name, checkpoint_lsn, 
-                                                 target_time, log_manager, catalog, target_db);
-                
-                std::cout << "[SnapshotManager]   Replayed " << delta_records 
-                          << " delta records (instead of full replay)" << std::endl;
-                
-                return snapshot;
-            } else {
-                // Target is BEFORE the checkpoint - need full replay from 0
-                // This is rare for "5 minutes ago" type queries
-                std::cout << "[SnapshotManager]   Target before checkpoint, using FULL REPLAY" << std::endl;
-                
-                auto snapshot = std::make_unique<TableHeap>(bpm, nullptr);
-                RecoveryManager recovery(log_manager, catalog, bpm, nullptr);
-                recovery.ReplayIntoHeap(snapshot.get(), table_name, target_time, target_db);
-                
-                return snapshot;
             }
+            
+            auto snapshot = std::make_unique<TableHeap>(bpm, nullptr);
+            RecoveryManager recovery(log_manager, catalog, bpm, nullptr);
+            
+            if (best_checkpoint != nullptr) {
+                std::cout << "[SnapshotManager]   Best checkpoint: LSN " << best_checkpoint->lsn 
+                          << " at timestamp " << best_checkpoint->timestamp << std::endl;
+                std::cout << "[SnapshotManager]   Target timestamp: " << target_time << std::endl;
+                std::cout << "[SnapshotManager]   Delta to replay: " 
+                          << (target_time - best_checkpoint->timestamp) / 1000000 << " seconds" << std::endl;
+            } else {
+                std::cout << "[SnapshotManager]   No checkpoint before target time, full replay from LSN 0" << std::endl;
+            }
+            
+            // Replay from beginning to target_time
+            // Even with checkpoint info, we need to replay because we don't store table snapshots
+            recovery.ReplayIntoHeap(snapshot.get(), table_name, target_time, target_db);
+            
+            return snapshot;
+        }
+        
+        /**
+         * Checkpoint info for navigation
+         */
+        struct CheckpointInfo {
+            LogRecord::lsn_t lsn;
+            uint64_t timestamp;
+            std::streampos offset;
+        };
+        
+        /**
+         * Find all checkpoints in the log for efficient navigation
+         */
+        static std::vector<CheckpointInfo> FindAllCheckpoints(LogManager* log_manager, const std::string& db_name) {
+            std::vector<CheckpointInfo> checkpoints;
+            
+            if (!log_manager) return checkpoints;
+            
+            std::string log_path = log_manager->GetLogFilePath(db_name);
+            std::ifstream log_file(log_path, std::ios::binary | std::ios::in);
+            if (!log_file.is_open()) return checkpoints;
+            
+            LogRecord record(0, 0, LogRecordType::INVALID);
+            while (ReadLogRecordSimple(log_file, record)) {
+                if (record.log_record_type_ == LogRecordType::CHECKPOINT_END) {
+                    CheckpointInfo cp;
+                    cp.lsn = record.lsn_;
+                    cp.timestamp = record.timestamp_;
+                    cp.offset = log_file.tellg();
+                    checkpoints.push_back(cp);
+                }
+            }
+            
+            log_file.close();
+            return checkpoints;
         }
 
         /**
@@ -431,8 +450,10 @@ namespace francodb {
             std::stringstream ss(str);
             std::string item;
             uint32_t col_idx = 0;
+            uint32_t col_count = table_info->schema_.GetColumnCount();
             
-            while (std::getline(ss, item, '|') && col_idx < table_info->schema_.GetColumnCount()) {
+            // Parse values from the string
+            while (std::getline(ss, item, '|') && col_idx < col_count) {
                 const Column& col = table_info->schema_.GetColumn(col_idx);
                 TypeId type = col.GetType();
                 
@@ -447,6 +468,22 @@ namespace francodb {
                 }
                 col_idx++;
             }
+            
+            // CRITICAL FIX: Pad with default values if we have fewer values than columns
+            // This ensures Tuple constructor doesn't fail due to count mismatch
+            while (vals.size() < col_count) {
+                const Column& col = table_info->schema_.GetColumn(vals.size());
+                TypeId type = col.GetType();
+                
+                if (type == TypeId::INTEGER) {
+                    vals.emplace_back(type, 0);
+                } else if (type == TypeId::DECIMAL) {
+                    vals.emplace_back(type, 0.0);
+                } else {
+                    vals.emplace_back(type, std::string(""));
+                }
+            }
+            
             return vals;
         }
         

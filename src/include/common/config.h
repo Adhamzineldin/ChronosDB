@@ -38,7 +38,14 @@ namespace francodb {
     // ========================================================================
     
     // Default number of pages the BufferPoolManager can hold in memory.
-    static constexpr uint32_t BUFFER_POOL_SIZE = 2097152;
+    // This is the INITIAL size - can be configured via command line or config file.
+    // 256MB = 65536 pages * 4KB
+    static constexpr uint32_t BUFFER_POOL_SIZE = 65536;
+    
+    // Adaptive Buffer Pool Bounds (in pages)
+    static constexpr size_t BUFFER_POOL_MIN_SIZE = 16384;     // 64MB minimum
+    static constexpr size_t BUFFER_POOL_MAX_SIZE = 524288;    // 2GB maximum
+    static constexpr size_t BUFFER_POOL_CHUNK_SIZE = 32768;   // 128MB growth chunks
     
     // Number of buffer pool partitions for reduced contention
     static constexpr size_t BUFFER_POOL_PARTITIONS = 16;
@@ -46,10 +53,25 @@ namespace francodb {
     // Enable partitioned buffer pool for high-concurrency workloads
     // When true, uses PartitionedBufferPoolManager with 16 independent partitions
     // This reduces lock contention under heavy concurrent access
-    static constexpr bool USE_PARTITIONED_BUFFER_POOL = true;
+    static constexpr bool USE_PARTITIONED_BUFFER_POOL = false;
+    
+    // Enable adaptive buffer pool sizing
+    // When true, pool will grow/shrink based on metrics (hit rate, eviction rate)
+    static constexpr bool USE_ADAPTIVE_BUFFER_POOL = false;  // Phase 2 feature
+    
+    // Enable adaptive DISTRIBUTED buffer pool (RECOMMENDED for production)
+    // Combines: 16 partitions + per-partition adaptive sizing + hot/cold rebalancing
+    // Best option for high-concurrency + variable workloads
+    static constexpr bool USE_ADAPTIVE_DISTRIBUTED_POOL = true;  // Set to true for production
     
     // Eviction batch size (for background eviction)
     static constexpr size_t EVICTION_BATCH_SIZE = 8;
+    
+    // Adaptation thresholds for adaptive pool
+    static constexpr double BUFFER_POOL_HIT_RATE_GROW_THRESHOLD = 90.0;
+    static constexpr double BUFFER_POOL_HIT_RATE_SHRINK_THRESHOLD = 98.0;
+    static constexpr double BUFFER_POOL_DIRTY_RATIO_THROTTLE = 70.0;
+    static constexpr uint32_t BUFFER_POOL_ADAPTATION_INTERVAL_SEC = 30;
 
     // ========================================================================
     // TABLE PAGE LAYOUT

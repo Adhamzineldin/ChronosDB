@@ -180,6 +180,17 @@ public:
      * Used during recovery operations.
      */
     virtual void Clear() = 0;
+    
+    /**
+     * Get the current pool size in pages.
+     */
+    virtual size_t GetPoolSize() const = 0;
+    
+    /**
+     * Set the log manager for WAL protocol.
+     * Default implementation does nothing (for pools that don't need it).
+     */
+    virtual void SetLogManager(class LogManager* /*log_manager*/) {}
 };
 
 /**

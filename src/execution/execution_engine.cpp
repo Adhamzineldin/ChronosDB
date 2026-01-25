@@ -406,6 +406,11 @@ namespace francodb {
             // Flush after recovery to persist changes
             bpm_->FlushAllPages();
             log_manager_->Flush(true);
+            
+            // CRITICAL: Save catalog to persist table metadata changes
+            if (catalog_) {
+                catalog_->SaveCatalog();
+            }
         } catch (const std::exception &e) {
             return ExecutionResult::Error(std::string("Recovery Failed: ") + e.what());
         }

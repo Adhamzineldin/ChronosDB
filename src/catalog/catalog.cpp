@@ -174,21 +174,30 @@ void Catalog::LoadCatalog() {
             LogRecord::lsn_t checkpoint_lsn = LogRecord::INVALID_LSN;
             int col_count;
             
+            // Read base fields that are always present
             in >> name >> first_page >> oid;
             
-            // Try to read checkpoint LSN (may not exist in old databases)
-            // Peek ahead to see if next token is a number (checkpoint_lsn) or column count
+            // Read the next value - could be checkpoint_lsn or col_count
+            // We need to peek to determine format
             int64_t next_val;
             in >> next_val;
             
-            // If this value is negative (like -1 for INVALID_LSN) or very large (an LSN),
-            // it's the checkpoint_lsn. Otherwise it might be the column count.
-            // We can distinguish because col_count is typically small (< 100)
-            if (next_val < 0 || next_val > 1000) {
+            // In the NEW format: name first_page oid checkpoint_lsn col_count
+            // checkpoint_lsn can be -1 (INVALID) or any positive LSN value
+            // col_count is typically 1-100
+            
+            // Read another value to check if this is new format
+            int64_t maybe_col_count;
+            std::streampos pos_before = in.tellg();
+            if (in >> maybe_col_count) {
+                // Successfully read 5 values - this is new format
                 checkpoint_lsn = static_cast<LogRecord::lsn_t>(next_val);
-                in >> col_count;
+                col_count = static_cast<int>(maybe_col_count);
             } else {
-                // Old format without checkpoint_lsn - next_val is col_count
+                // Only 4 values available - old format without checkpoint_lsn
+                in.clear();  // Clear error state
+                in.seekg(pos_before);  // Rewind
+                checkpoint_lsn = LogRecord::INVALID_LSN;
                 col_count = static_cast<int>(next_val);
             }
             

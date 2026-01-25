@@ -168,6 +168,21 @@ namespace francodb {
             }
         }
         
+        // CRITICAL FIX: Pad with default values if we have fewer columns than schema
+        // This ensures Tuple constructor doesn't fail due to count mismatch
+        while (vals.size() < col_count) {
+            const Column& col = table_info->schema_.GetColumn(vals.size());
+            TypeId type = col.GetType();
+            
+            if (type == TypeId::INTEGER) {
+                vals.push_back(Value(type, 0));
+            } else if (type == TypeId::DECIMAL) {
+                vals.push_back(Value(type, 0.0));
+            } else {
+                vals.push_back(Value(type, std::string("")));
+            }
+        }
+        
         return vals;
     }
 
@@ -1044,33 +1059,17 @@ namespace francodb {
             
             std::unique_ptr<TableHeap> snapshot_heap;
             
-            if (checkpoint_lsn != LogRecord::INVALID_LSN && target_time >= checkpoint_time) {
-                // TARGET IS AFTER CHECKPOINT: Use checkpoint + delta (fast path)
-                std::cout << "[RECOVER_TO]   Using CHECKPOINT at LSN " << checkpoint_lsn << std::endl;
-                
-                // Clone the live table (which is at checkpoint state)
-                snapshot_heap = std::make_unique<TableHeap>(bpm_, nullptr);
-                auto iter = table_info->table_heap_->Begin(nullptr);
-                int clone_count = 0;
-                while (iter != table_info->table_heap_->End()) {
-                    Tuple tuple = *iter;
-                    RID rid;
-                    snapshot_heap->InsertTuple(tuple, &rid, nullptr);
-                    ++iter;
-                    clone_count++;
-                }
-                std::cout << "[RECOVER_TO]   Cloned " << clone_count << " tuples from checkpoint" << std::endl;
-                
-                // Replay only delta from checkpoint to target_time
-                int delta_count = ReplayDeltaIntoHeap(snapshot_heap.get(), table_name, 
-                                                       checkpoint_lsn, target_time, db_name);
-                std::cout << "[RECOVER_TO]   Replayed " << delta_count << " delta records" << std::endl;
-            } else {
-                // TARGET IS BEFORE CHECKPOINT: Must replay from LSN 0 (slow path)
-                std::cout << "[RECOVER_TO]   Target before checkpoint, replaying from LSN 0" << std::endl;
-                snapshot_heap = std::make_unique<TableHeap>(bpm_, nullptr);
-                ReplayIntoHeap(snapshot_heap.get(), table_name, target_time, db_name);
-            }
+            // ================================================================
+            // ALWAYS use full replay for correctness
+            // The checkpoint optimization was incorrectly cloning the LIVE table
+            // which contains operations AFTER the checkpoint, causing corruption.
+            // 
+            // TODO: Implement proper checkpoint snapshots for optimization
+            // ================================================================
+            
+            std::cout << "[RECOVER_TO]   Replaying from LSN 0 to target time" << std::endl;
+            snapshot_heap = std::make_unique<TableHeap>(bpm_, nullptr);
+            ReplayIntoHeap(snapshot_heap.get(), table_name, target_time, db_name);
             
             // Count tuples in snapshot
             int snapshot_count = 0;
@@ -1085,6 +1084,25 @@ namespace francodb {
                 snap_page_id = next;
             }
             std::cout << "[RECOVER_TO] Snapshot contains " << snapshot_count << " tuples" << std::endl;
+            
+            // ================================================================
+            // CRITICAL FIX: Read ALL snapshot tuples into memory FIRST
+            // This avoids buffer pool conflicts between snapshot and live table
+            // ================================================================
+            std::vector<Tuple> snapshot_tuples;
+            snapshot_tuples.reserve(snapshot_count);
+            
+            {
+                auto iter = snapshot_heap->Begin(nullptr);
+                while (iter != snapshot_heap->End()) {
+                    snapshot_tuples.push_back(*iter);
+                    ++iter;
+                }
+            }
+            std::cout << "[RECOVER_TO] Loaded " << snapshot_tuples.size() << " tuples into memory" << std::endl;
+            
+            // Now we can safely release snapshot heap - we have all data in memory
+            snapshot_heap.reset();
             
             // Step 2: Clear the current table by marking all tuples as deleted
             TableHeap* current_heap = table_info->table_heap_.get();
@@ -1111,32 +1129,18 @@ namespace francodb {
             }
             std::cout << "[RECOVER_TO] Deleted " << deleted_count << " existing tuples" << std::endl;
             
-            // Step 3: Copy tuples from snapshot to current table
-            snap_page_id = snapshot_heap->GetFirstPageId();
+            // Step 3: Insert tuples from memory into current table
             int restored_count = 0;
-            
-            while (snap_page_id != INVALID_PAGE_ID) {
-                Page* raw_page = bpm_->FetchPage(snap_page_id);
-                if (!raw_page) break;
-                
-                auto* table_page = reinterpret_cast<TablePage*>(raw_page->GetData());
-                uint32_t tuple_count = table_page->GetTupleCount();
-                
-                for (uint32_t slot = 0; slot < tuple_count; slot++) {
-                    RID snapshot_rid(snap_page_id, slot);
-                    Tuple tuple;
-                    if (snapshot_heap->GetTuple(snapshot_rid, &tuple, nullptr)) {
-                        RID new_rid;
-                        if (current_heap->InsertTuple(tuple, &new_rid, nullptr)) {
-                            restored_count++;
-                        }
-                    }
+            for (const auto& tuple : snapshot_tuples) {
+                RID new_rid;
+                if (current_heap->InsertTuple(tuple, &new_rid, nullptr)) {
+                    restored_count++;
                 }
-                
-                page_id_t next_page = table_page->GetNextPageId();
-                bpm_->UnpinPage(snap_page_id, false);
-                snap_page_id = next_page;
             }
+            
+            // Clear the in-memory vector
+            snapshot_tuples.clear();
+            snapshot_tuples.shrink_to_fit();
             
             // Update the table's checkpoint LSN to reflect current state
             // (The table is now at target_time, but we need a new checkpoint)
@@ -1304,8 +1308,9 @@ namespace francodb {
                     std::stringstream ss(tuple_str);
                     std::string item;
                     uint32_t col_idx = 0;
+                    uint32_t col_count = table_info->schema_.GetColumnCount();
                     
-                    while (std::getline(ss, item, '|') && col_idx < table_info->schema_.GetColumnCount()) {
+                    while (std::getline(ss, item, '|') && col_idx < col_count) {
                         const Column& col = table_info->schema_.GetColumn(col_idx);
                         TypeId type = col.GetType();
                         
@@ -1327,19 +1332,22 @@ namespace francodb {
                         col_idx++;
                     }
                     
-                    // If we didn't get all columns, something is wrong
-                    if (vals.size() != table_info->schema_.GetColumnCount()) {
-                        std::cerr << "[SNAPSHOT] Warning: Column count mismatch for INSERT. "
-                                  << "Expected " << table_info->schema_.GetColumnCount() 
-                                  << " but got " << vals.size() << std::endl;
-                        // Fallback: use the raw value for single-column tables
-                        if (table_info->schema_.GetColumnCount() == 1) {
-                            vals.clear();
-                            vals.push_back(record.new_value_);
+                    // CRITICAL FIX: Pad with default values if we have fewer columns
+                    // This ensures Tuple constructor doesn't fail due to count mismatch
+                    while (vals.size() < col_count) {
+                        const Column& col = table_info->schema_.GetColumn(vals.size());
+                        TypeId type = col.GetType();
+                        
+                        if (type == TypeId::INTEGER) {
+                            vals.push_back(Value(type, 0));
+                        } else if (type == TypeId::DECIMAL) {
+                            vals.push_back(Value(type, 0.0));
+                        } else {
+                            vals.push_back(Value(type, std::string("")));
                         }
                     }
                     
-                    if (!vals.empty()) {
+                    if (!vals.empty() && vals.size() == col_count) {
                         Tuple t(vals, table_info->schema_);
                         RID rid;
                         target_heap->InsertTuple(t, &rid, nullptr);
@@ -1473,6 +1481,135 @@ namespace francodb {
                   << ", matching '" << target_table_name << "': " << matching_records 
                   << ", inserted: " << record_count 
                   << ", updated: " << update_count
+                  << " (elapsed: " << duration.count() << "ms)" << std::endl;
+    }
+
+    // ========================================================================
+    // CHECKPOINT-OPTIMIZED REPLAY (Skips to offset for efficiency)
+    // ========================================================================
+    
+    void RecoveryManager::ReplayIntoHeapFromOffset(TableHeap* target_heap,
+                                                    const std::string& target_table_name,
+                                                    std::streampos start_offset,
+                                                    uint64_t target_time,
+                                                    const std::string& db_name) {
+        if (!target_heap || !log_manager_) return;
+        
+        std::string actual_db = db_name;
+        if (actual_db.empty() && log_manager_) {
+            actual_db = log_manager_->GetCurrentDatabase();
+        }
+        
+        std::string log_path = log_manager_->GetLogFilePath(actual_db);
+        std::ifstream log_file(log_path, std::ios::binary | std::ios::in);
+        
+        if (!log_file.is_open()) {
+            std::cerr << "[SNAPSHOT] Cannot open log file: " << log_path << std::endl;
+            return;
+        }
+        
+        // Seek to the start offset (checkpoint position)
+        if (start_offset > 0) {
+            log_file.seekg(start_offset);
+            std::cout << "[SNAPSHOT] Skipped to offset " << start_offset << " (checkpoint optimization)" << std::endl;
+        }
+        
+        auto table_info = catalog_->GetTable(target_table_name);
+        if (!table_info) {
+            std::cerr << "[SNAPSHOT] Table not found: " << target_table_name << std::endl;
+            return;
+        }
+        
+        auto start_time = std::chrono::high_resolution_clock::now();
+        
+        int record_count = 0;
+        int total_records = 0;
+        LogRecord record(0, 0, LogRecordType::INVALID);
+        
+        while (ReadLogRecord(log_file, record)) {
+            total_records++;
+            
+            // Stop if we've passed the target time
+            if (target_time > 0 && record.timestamp_ > target_time) {
+                std::cout << "[SNAPSHOT] Reached target time at record " << total_records << std::endl;
+                break;
+            }
+            
+            // Only process records for this table
+            if (record.table_name_ != target_table_name) {
+                continue;
+            }
+            
+            // Apply the operation (simplified - same logic as ReplayIntoHeap)
+            switch (record.log_record_type_) {
+                case LogRecordType::INSERT: {
+                    std::vector<Value> vals = ParseTupleStringSafe(record.new_value_.ToString(), table_info);
+                    if (vals.size() == table_info->schema_.GetColumnCount()) {
+                        Tuple t(vals, table_info->schema_);
+                        RID rid;
+                        target_heap->InsertTuple(t, &rid, nullptr);
+                        record_count++;
+                    }
+                    break;
+                }
+                case LogRecordType::APPLY_DELETE:
+                case LogRecordType::MARK_DELETE: {
+                    std::vector<Value> old_vals = ParseTupleStringSafe(record.old_value_.ToString(), table_info);
+                    auto iter = target_heap->Begin(nullptr);
+                    while (iter != target_heap->End()) {
+                        bool match = true;
+                        for (uint32_t i = 0; i < old_vals.size() && match; i++) {
+                            if ((*iter).GetValue(table_info->schema_, i).ToString() != 
+                                old_vals[i].ToString()) {
+                                match = false;
+                            }
+                        }
+                        if (match) {
+                            target_heap->MarkDelete(iter.GetRID(), nullptr);
+                            break;
+                        }
+                        ++iter;
+                    }
+                    break;
+                }
+                case LogRecordType::UPDATE: {
+                    std::vector<Value> old_vals = ParseTupleStringSafe(record.old_value_.ToString(), table_info);
+                    std::vector<Value> new_vals = ParseTupleStringSafe(record.new_value_.ToString(), table_info);
+                    
+                    auto iter = target_heap->Begin(nullptr);
+                    while (iter != target_heap->End()) {
+                        bool match = true;
+                        for (uint32_t i = 0; i < old_vals.size() && match; i++) {
+                            if ((*iter).GetValue(table_info->schema_, i).ToString() != 
+                                old_vals[i].ToString()) {
+                                match = false;
+                            }
+                        }
+                        if (match) {
+                            target_heap->MarkDelete(iter.GetRID(), nullptr);
+                            if (new_vals.size() == table_info->schema_.GetColumnCount()) {
+                                Tuple new_tuple(new_vals, table_info->schema_);
+                                RID new_rid;
+                                target_heap->InsertTuple(new_tuple, &new_rid, nullptr);
+                            }
+                            break;
+                        }
+                        ++iter;
+                    }
+                    break;
+                }
+                default:
+                    break;
+            }
+        }
+        
+        log_file.close();
+        
+        auto end_time = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+        
+        std::cout << "[SNAPSHOT] Complete (from offset). Records processed: " << total_records
+                  << ", applied: " << record_count 
                   << " (elapsed: " << duration.count() << "ms)" << std::endl;
     }
 

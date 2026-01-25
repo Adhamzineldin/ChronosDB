@@ -105,14 +105,25 @@ Value Value::DeserializeFrom(const char *src, TypeId type, uint32_t length) {
 }
 
 std::ostream &operator<<(std::ostream &os, const Value &val) {
-    if (val.type_id_ == TypeId::VARCHAR) {
-        os << val.string_val_;
-    } else if (val.type_id_ == TypeId::DECIMAL) {
-        os << val.decimal_;
-    } else if (val.type_id_ == TypeId::INTEGER || val.type_id_ == TypeId::BOOLEAN) {
-        os << val.integer_;
-    } else {
-        os << "<VAL>";
+    switch (val.type_id_) {
+        case TypeId::VARCHAR:
+            os << val.string_val_;
+            break;
+        case TypeId::DECIMAL:
+            os << val.decimal_;
+            break;
+        case TypeId::INTEGER:
+        case TypeId::BOOLEAN:
+        case TypeId::BIGINT:
+        case TypeId::TIMESTAMP:
+            os << val.integer_;
+            break;
+        case TypeId::INVALID:
+            os << "<NULL>";
+            break;
+        default:
+            os << "<UNKNOWN>";
+            break;
     }
     return os;
 }

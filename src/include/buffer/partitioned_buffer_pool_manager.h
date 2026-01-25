@@ -302,11 +302,16 @@ public:
     // CONFIGURATION
     // ========================================================================
     
-    void SetLogManager(LogManager* log_manager) {
+    void SetLogManager(LogManager* log_manager) override {
         log_manager_ = log_manager;
     }
     
     DiskManager* GetDiskManager() override { return disk_manager_; }
+    
+    /**
+     * Get the total pool size in pages.
+     */
+    size_t GetPoolSize() const override { return total_pool_size_; }
     
     /**
      * Clear the buffer pool (flush all and reset).

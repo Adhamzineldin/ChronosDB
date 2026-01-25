@@ -1107,31 +1107,49 @@ namespace francodb {
     
     
     uint64_t Parser::ParseHumanDateToMicros(const std::string& date_str) {
-        std::tm tm = {};
-        std::istringstream ss(date_str);
+        int day = 0, month = 0, year = 0, hour = 0, minute = 0, second = 0;
         
-        // Try format with seconds first: DD/MM/YYYY HH:MM:SS
-        ss >> std::get_time(&tm, "%d/%m/%Y %H:%M:%S");
+        // Try parsing with sscanf which is more flexible with single-digit values
+        // Format: DD/MM/YYYY HH:MM:SS
+        int parsed = sscanf(date_str.c_str(), "%d/%d/%d %d:%d:%d", 
+                           &day, &month, &year, &hour, &minute, &second);
         
-        if (ss.fail()) {
-            // Reset and try without seconds: DD/MM/YYYY HH:MM
-            ss.clear();
-            ss.str(date_str);
-            tm = {};
-            ss >> std::get_time(&tm, "%d/%m/%Y %H:%M");
-            
-            if (ss.fail()) {
-                throw Exception(ExceptionType::PARSER, "Invalid date. Use: 'DD/MM/YYYY HH:MM' or 'DD/MM/YYYY HH:MM:SS'");
+        if (parsed < 5) {
+            // Try format without seconds: DD/MM/YYYY HH:MM
+            second = 0;
+            parsed = sscanf(date_str.c_str(), "%d/%d/%d %d:%d", 
+                           &day, &month, &year, &hour, &minute);
+            if (parsed < 5) {
+                throw Exception(ExceptionType::PARSER, 
+                    "Invalid date format. Use: 'DD/MM/YYYY HH:MM' or 'DD/MM/YYYY HH:MM:SS'");
             }
-            tm.tm_sec = 0;  // No seconds provided
         }
-
-        tm.tm_isdst = -1; // Let system determine DST
+        
+        // Validate ranges
+        if (month < 1 || month > 12 || day < 1 || day > 31 || 
+            hour < 0 || hour > 23 || minute < 0 || minute > 59 || second < 0 || second > 59) {
+            throw Exception(ExceptionType::PARSER, 
+                "Invalid date values. Check day(1-31), month(1-12), hour(0-23), minute(0-59), second(0-59)");
+        }
+        
+        std::tm tm = {};
+        tm.tm_mday = day;
+        tm.tm_mon = month - 1;  // tm_mon is 0-based
+        tm.tm_year = year - 1900;  // tm_year is years since 1900
+        tm.tm_hour = hour;
+        tm.tm_min = minute;
+        tm.tm_sec = second;
+        tm.tm_isdst = -1;  // Let system determine DST
         
         std::time_t t = std::mktime(&tm);
         if (t == -1) {
             throw Exception(ExceptionType::PARSER, "Date conversion failed.");
         }
+        
+        // Debug output to confirm parsing
+        std::cout << "[PARSER] Parsed timestamp: " << day << "/" << month << "/" << year 
+                  << " " << hour << ":" << minute << ":" << second 
+                  << " -> " << t << " seconds since epoch" << std::endl;
 
         return static_cast<uint64_t>(t) * 1000000ULL;
     }

@@ -295,31 +295,57 @@ namespace francodb {
                     continue;
                 }
                 
-                // Flush and save ALL loaded databases
+                // Flush pages first
                 if (bpm_) bpm_->FlushAllPages();
-                if (catalog_) catalog_->SaveCatalog();
                 if (system_bpm_) system_bpm_->FlushAllPages();
-                if (system_catalog_) system_catalog_->SaveCatalog();
                 
-                // Checkpoint with current catalog AND update ALL loaded database catalogs
+                // Take checkpoint - this updates table checkpoint LSNs for MAIN catalog
                 CheckpointManager cp_manager(bpm_, log_manager_);
                 cp_manager.SetCatalog(catalog_);
                 cp_manager.BeginCheckpoint();
                 
-                // Also flush and update checkpoint LSN for all other loaded databases
+                // Get the checkpoint LSN that was just created
+                LogRecord::lsn_t checkpoint_lsn = cp_manager.GetLastCheckpointLSN();
+                
+                // CRITICAL: Update ALL tables in MAIN catalog with this checkpoint LSN
+                // (BeginCheckpoint should do this, but we ensure it here)
+                if (catalog_) {
+                    auto all_tables = catalog_->GetAllTables();
+                    for (auto* table : all_tables) {
+                        if (table) {
+                            table->SetCheckpointLSN(checkpoint_lsn);
+                        }
+                    }
+                    // Save catalog AFTER checkpoint so checkpoint LSN is persisted
+                    catalog_->SaveCatalog();
+                }
+                if (system_catalog_) system_catalog_->SaveCatalog();
+                
+                // Also flush and update checkpoint LSN for all OTHER loaded databases
+                // CRITICAL FIX: Each database in the registry needs its tables updated
                 if (registry_) {
                     registry_->ForEachDatabase([&](const std::string& db_name, DbEntry* entry) {
                         if (entry && entry->catalog) {
-                            // Update checkpoint LSN for all tables in this database
-                            auto all_tables = entry->catalog->GetAllTables();
-                            LogRecord::lsn_t current_lsn = log_manager_ ? log_manager_->GetNextLSN() : 0;
-                            for (auto* table : all_tables) {
-                                if (table) {
-                                    table->SetCheckpointLSN(current_lsn);
-                                }
+                            // Get the catalog for this database
+                            Catalog* db_catalog = entry->catalog.get();
+                            if (!db_catalog) {
+                                // Check external catalog
+                                db_catalog = registry_->ExternalCatalog(db_name);
                             }
-                            // Save the catalog with updated checkpoint LSNs
-                            entry->catalog->SaveCatalog();
+                            
+                            if (db_catalog) {
+                                // Update checkpoint LSN for ALL tables in this database
+                                auto all_tables = db_catalog->GetAllTables();
+                                for (auto* table : all_tables) {
+                                    if (table) {
+                                        // Use the same checkpoint LSN - all databases share this checkpoint
+                                        table->SetCheckpointLSN(checkpoint_lsn);
+                                    }
+                                }
+                                // Save the catalog with updated checkpoint LSNs
+                                db_catalog->SaveCatalog();
+                            }
+                            
                             if (entry->bpm) {
                                 entry->bpm->FlushAllPages();
                             }
