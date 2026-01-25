@@ -1,10 +1,16 @@
-name: CI
+name: CI (Disabled)
+
+# CI is disabled - releases are triggered by commits starting with 'v' or 'V'
+# To re-enable, uncomment the 'on' section below
+
+# on:
+#   push:
+#     branches: [ main, master ]
+#   pull_request:
+#     branches: [ main, master ]
 
 on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
+  workflow_dispatch:  # Only manual trigger
 
 permissions:
   contents: read
