@@ -16,6 +16,11 @@ include_directories(${CMAKE_CURRENT_LIST_DIR}/framework)
 # Collect all CPP files relative to the test directory
 file(GLOB_RECURSE ALL_CPP_FILES RELATIVE ${CMAKE_CURRENT_LIST_DIR} "*.cpp")
 
+# Exclude Windows-only time travel client test on non-Windows
+if(NOT WIN32)
+    list(FILTER ALL_CPP_FILES EXCLUDE REGEX "recovery/test_time_travel\\.cpp$")
+endif()
+
 # Filter out ONLY the runner - all other tests will be framework-integrated
 set(TEST_MODULES ${ALL_CPP_FILES})
 list(FILTER TEST_MODULES EXCLUDE REGEX "run_all_tests\\.cpp$")
@@ -55,6 +60,10 @@ endif()
 # 3. INDIVIDUAL MODULE TESTS (Unique Names)
 # =========================================================
 
+# Optional: build per-module executables (off by default to avoid missing main in modules)
+option(BUILD_INDIVIDUAL_TESTS "Build each test cpp as its own executable" OFF)
+
+if(BUILD_INDIVIDUAL_TESTS)
 foreach(test_source ${TEST_MODULES})
 
     # Generate a UNIQUE target name by using the path
@@ -78,6 +87,7 @@ foreach(test_source ${TEST_MODULES})
     add_test(NAME ${target_name} COMMAND ${target_name})
 
 endforeach()
+endif()
 
 # =========================================================
 # 4. CUSTOM TARGETS
