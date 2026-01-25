@@ -83,52 +83,69 @@ namespace francodb {
             std::cout << "[SnapshotManager]   Checkpoint LSN: " << checkpoint_lsn 
                       << ", Current LSN: " << current_lsn << std::endl;
             
-            // Determine the best strategy based on target_time
-            uint64_t current_time = LogRecord::GetCurrentTimestamp();
-            
             // ================================================================
             // CHECKPOINT-BASED TIME TRAVEL (Git-style)
             // 
-            // Algorithm:
-            // 1. Scan log to find ALL checkpoints with their timestamps
-            // 2. Find the checkpoint closest to but BEFORE target_time
-            // 3. That checkpoint's offset tells us where to start reading
-            // 4. Replay from beginning to target_time (with checkpoint info for future optimization)
+            // We already have the checkpoint LSN from table metadata!
             // 
-            // Future optimization: Store actual table snapshots at checkpoints
-            // to avoid replaying from beginning every time.
+            // CRITICAL UNDERSTANDING:
+            // - The LIVE TABLE represents the CURRENT state (all operations applied)
+            // - The checkpoint LSN tells us when the last checkpoint was taken
+            // - We DON'T store actual table snapshots at checkpoints
+            // 
+            // Therefore:
+            // 1. If target_time >= current_time: Use live table (O(1))
+            // 2. Otherwise: MUST replay from LSN 0 to target_time
+            //    (because we don't have stored checkpoint snapshots)
+            //
+            // The checkpoint helps RECOVER TO (which modifies live table)
+            // but not AS OF (which needs historical state without snapshots)
             // ================================================================
-            
-            // Find all checkpoints in the log
-            auto checkpoints = FindAllCheckpoints(log_manager, target_db);
-            
-            std::cout << "[SnapshotManager]   Found " << checkpoints.size() << " checkpoints in log" << std::endl;
-            
-            // Find the best checkpoint (closest to but BEFORE target_time)
-            CheckpointInfo* best_checkpoint = nullptr;
-            for (auto& cp : checkpoints) {
-                if (cp.timestamp <= target_time) {
-                    if (best_checkpoint == nullptr || cp.timestamp > best_checkpoint->timestamp) {
-                        best_checkpoint = &cp;
-                    }
-                }
-            }
             
             auto snapshot = std::make_unique<TableHeap>(bpm, nullptr);
             RecoveryManager recovery(log_manager, catalog, bpm, nullptr);
             
-            if (best_checkpoint != nullptr) {
-                std::cout << "[SnapshotManager]   Best checkpoint: LSN " << best_checkpoint->lsn 
-                          << " at timestamp " << best_checkpoint->timestamp << std::endl;
-                std::cout << "[SnapshotManager]   Target timestamp: " << target_time << std::endl;
-                std::cout << "[SnapshotManager]   Delta to replay: " 
-                          << (target_time - best_checkpoint->timestamp) / 1000000 << " seconds" << std::endl;
+            uint64_t current_time = LogRecord::GetCurrentTimestamp();
+            
+            // Special case: querying current or future state
+            if (target_time >= current_time) {
+                std::cout << "[SnapshotManager]   Target is current/future - using live table" << std::endl;
+                
+                // Clone the live table
+                auto live_heap = table_info->table_heap_.get();
+                if (live_heap) {
+                    auto iter = live_heap->Begin(nullptr);
+                    int clone_count = 0;
+                    while (iter != live_heap->End()) {
+                        Tuple tuple = *iter;
+                        RID rid;
+                        snapshot->InsertTuple(tuple, &rid, nullptr);
+                        ++iter;
+                        clone_count++;
+                    }
+                    std::cout << "[SnapshotManager]   Cloned " << clone_count << " tuples from live table" << std::endl;
+                }
+                return snapshot;
+            }
+            
+            // Historical query - must replay log
+            // Use checkpoint info for progress estimation
+            uint64_t checkpoint_time = 0;
+            if (checkpoint_lsn != LogRecord::INVALID_LSN) {
+                checkpoint_time = GetCheckpointTimestamp(log_manager, target_db, checkpoint_lsn);
+            }
+            
+            if (checkpoint_time > 0 && target_time >= checkpoint_time) {
+                // Target is AFTER last checkpoint but BEFORE current time
+                // We need to replay, but we can show the delta info
+                uint64_t delta_seconds = (current_time - target_time) / 1000000;
+                std::cout << "[SnapshotManager]   Historical query (" << delta_seconds << " seconds ago)" << std::endl;
+                std::cout << "[SnapshotManager]   Checkpoint at: " << checkpoint_time << std::endl;
             } else {
-                std::cout << "[SnapshotManager]   No checkpoint before target time, full replay from LSN 0" << std::endl;
+                std::cout << "[SnapshotManager]   Target before checkpoint - full replay needed" << std::endl;
             }
             
             // Replay from beginning to target_time
-            // Even with checkpoint info, we need to replay because we don't store table snapshots
             recovery.ReplayIntoHeap(snapshot.get(), table_name, target_time, target_db);
             
             return snapshot;
@@ -153,10 +170,15 @@ namespace francodb {
             
             std::string log_path = log_manager->GetLogFilePath(db_name);
             std::ifstream log_file(log_path, std::ios::binary | std::ios::in);
-            if (!log_file.is_open()) return checkpoints;
+            if (!log_file.is_open()) {
+                std::cerr << "[SnapshotManager] Cannot open log for checkpoint scan: " << log_path << std::endl;
+                return checkpoints;
+            }
             
             LogRecord record(0, 0, LogRecordType::INVALID);
+            int records_scanned = 0;
             while (ReadLogRecordSimple(log_file, record)) {
+                records_scanned++;
                 if (record.log_record_type_ == LogRecordType::CHECKPOINT_END) {
                     CheckpointInfo cp;
                     cp.lsn = record.lsn_;
@@ -167,6 +189,12 @@ namespace francodb {
             }
             
             log_file.close();
+            
+            if (checkpoints.empty() && records_scanned > 0) {
+                std::cout << "[SnapshotManager]   Scanned " << records_scanned 
+                          << " records but found no CHECKPOINT_END records" << std::endl;
+            }
+            
             return checkpoints;
         }
 
@@ -342,8 +370,12 @@ namespace francodb {
         
         /**
          * Simple log record reader for delta replay.
+         * Uses size field to properly skip unknown record types.
          */
         static bool ReadLogRecordSimple(std::ifstream& log_file, LogRecord& record) {
+            // Remember start position
+            std::streampos start_pos = log_file.tellg();
+            
             int32_t size = 0;
             log_file.read(reinterpret_cast<char*>(&size), sizeof(int32_t));
             if (log_file.gcount() != sizeof(int32_t) || size <= 0 || size > 10000000) return false;
@@ -384,9 +416,38 @@ namespace francodb {
                     record.table_name_ = ReadString(log_file);
                     record.old_value_ = ReadValue(log_file);
                     break;
-                default:
-                    // Skip to end of record for other types
+                case LogRecordType::CREATE_TABLE:
+                case LogRecordType::DROP_TABLE:
+                case LogRecordType::CLR:
+                    record.table_name_ = ReadString(log_file);
                     break;
+                case LogRecordType::CHECKPOINT_BEGIN:
+                case LogRecordType::CHECKPOINT_END: {
+                    // Read ATT
+                    int32_t att_size = 0;
+                    log_file.read(reinterpret_cast<char*>(&att_size), sizeof(int32_t));
+                    for (int32_t i = 0; i < att_size && i < 10000; i++) {
+                        int32_t dummy;
+                        log_file.read(reinterpret_cast<char*>(&dummy), sizeof(int32_t)); // txn_id
+                        log_file.read(reinterpret_cast<char*>(&dummy), sizeof(int32_t)); // last_lsn
+                        log_file.read(reinterpret_cast<char*>(&dummy), sizeof(int32_t)); // first_lsn
+                    }
+                    // Read DPT
+                    int32_t dpt_size = 0;
+                    log_file.read(reinterpret_cast<char*>(&dpt_size), sizeof(int32_t));
+                    for (int32_t i = 0; i < dpt_size && i < 10000; i++) {
+                        int32_t dummy;
+                        log_file.read(reinterpret_cast<char*>(&dummy), sizeof(int32_t)); // page_id
+                        log_file.read(reinterpret_cast<char*>(&dummy), sizeof(int32_t)); // recovery_lsn
+                    }
+                    break;
+                }
+                default:
+                    // For unknown types, seek to end of record using size
+                    // size includes CRC (4 bytes), so record ends at start_pos + size + 4
+                    log_file.seekg(start_pos);
+                    log_file.seekg(size + sizeof(uint32_t), std::ios::cur); // size + CRC
+                    return true;
             }
             
             // Skip CRC at end

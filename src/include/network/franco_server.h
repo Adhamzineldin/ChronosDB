@@ -20,6 +20,7 @@
 #include "network/protocol.h"
 #include "parser/parser.h" // Ensure you have this for StatementType
 #include "recovery/log_manager.h"
+#include "recovery/checkpoint_manager.h"
 
 namespace francodb {
 
@@ -36,6 +37,7 @@ namespace francodb {
         IBufferManager* GetSystemBpm() { return system_bpm_.get(); }
         Catalog* GetSystemCatalog() { return system_catalog_.get(); }
         AuthManager* GetAuthManager() { return auth_manager_.get(); }
+        CheckpointManager* GetCheckpointManager() { return checkpoint_mgr_.get(); }
         
         void Stop();
 
@@ -58,6 +60,9 @@ namespace francodb {
         std::unique_ptr<Catalog> system_catalog_;
         std::unique_ptr<AuthManager> auth_manager_;
         std::unique_ptr<DatabaseRegistry> registry_;
+        
+        // Checkpoint Manager - persistent for operation-based checkpointing
+        std::unique_ptr<CheckpointManager> checkpoint_mgr_;
 
         // [FIX] Thread Pool replaces the raw thread map
         std::unique_ptr<ThreadPool> thread_pool_;

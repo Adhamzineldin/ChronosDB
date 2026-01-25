@@ -53,6 +53,25 @@ namespace francodb {
             // Initialize Auth & System Resources
             InitializeSystemResources();
 
+            // ================================================================
+            // CHECKPOINT MANAGER - Operation-based checkpointing (Bug #6 fix)
+            // ================================================================
+            // Create a persistent checkpoint manager that tracks operations
+            // and triggers checkpoints every N operations (default: 1000)
+            checkpoint_mgr_ = std::make_unique<CheckpointManager>(bpm_, log_manager_);
+            checkpoint_mgr_->SetCatalog(catalog_);
+            checkpoint_mgr_->SetOperationThreshold(1000);  // Checkpoint every 1k operations
+            
+            // Connect LogManager to CheckpointManager for operation counting
+            if (log_manager_) {
+                log_manager_->SetCheckpointManager(checkpoint_mgr_.get());
+            }
+            
+            // Start background checkpointing (30 second interval as backup)
+            checkpoint_mgr_->StartBackgroundCheckpointing(30);
+            std::cout << "[CheckpointManager] Initialized with master record: data/system/master_record" << std::endl;
+            std::cout << "[CheckpointManager] Operation-based checkpoints every 1000 operations" << std::endl;
+
             // Thread Pool
             unsigned int cores = std::thread::hardware_concurrency();
             int pool_size = (cores > 0) ? cores : 4;
@@ -70,7 +89,12 @@ namespace francodb {
         running_.store(false);
         is_running_.store(false);
         
-        // 2. Wait for auto-save thread with timeout
+        // 2. Stop checkpoint manager background thread
+        if (checkpoint_mgr_) {
+            checkpoint_mgr_->StopBackgroundCheckpointing();
+        }
+        
+        // 3. Wait for auto-save thread with timeout
         if (auto_save_thread_.joinable()) {
             std::cout << "[SHUTDOWN] Waiting for auto-save thread..." << std::endl;
             
@@ -90,7 +114,7 @@ namespace francodb {
             }
         }
         
-        // 3. Now do the shutdown flush
+        // 4. Now do the shutdown flush
         Shutdown();
         
 #ifdef _WIN32
@@ -299,13 +323,20 @@ namespace francodb {
                 if (bpm_) bpm_->FlushAllPages();
                 if (system_bpm_) system_bpm_->FlushAllPages();
                 
-                // Take checkpoint - this updates table checkpoint LSNs for MAIN catalog
-                CheckpointManager cp_manager(bpm_, log_manager_);
-                cp_manager.SetCatalog(catalog_);
-                cp_manager.BeginCheckpoint();
+                // Use the persistent checkpoint manager (not creating a new one)
+                // This ensures operation counts and state are properly tracked
+                if (!checkpoint_mgr_) {
+                    checkpoint_mgr_ = std::make_unique<CheckpointManager>(bpm_, log_manager_);
+                    checkpoint_mgr_->SetCatalog(catalog_);
+                    checkpoint_mgr_->SetOperationThreshold(1000);
+                }
+                
+                // Update catalog reference in case it changed
+                checkpoint_mgr_->SetCatalog(catalog_);
+                checkpoint_mgr_->BeginCheckpoint();
                 
                 // Get the checkpoint LSN that was just created
-                LogRecord::lsn_t checkpoint_lsn = cp_manager.GetLastCheckpointLSN();
+                LogRecord::lsn_t checkpoint_lsn = checkpoint_mgr_->GetLastCheckpointLSN();
                 
                 // CRITICAL: Update ALL tables in MAIN catalog with this checkpoint LSN
                 // (BeginCheckpoint should do this, but we ensure it here)
