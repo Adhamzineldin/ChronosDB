@@ -41,30 +41,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Inno Setup
-        run: choco install innosetup -y
+      - name: Install MinGW and Inno Setup
+        run: |
+          choco install mingw ninja innosetup -y
         shell: pwsh
 
-      - name: Build project (Release)
+      - name: Build project (Release with MinGW)
         run: |
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
-          cmake --build build --config Release
+          $env:PATH = "C:\ProgramData\mingw64\mingw64\bin;$env:PATH"
+          cmake -S . -B cmake-build-release -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
+          cmake --build cmake-build-release --config Release
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
         shell: pwsh
 
-      - name: Copy binaries to expected installer location
+      - name: List built files
         run: |
-          New-Item -ItemType Directory -Force -Path cmake-build-release
-          Copy-Item -Path build\Release\* -Destination cmake-build-release\ -Recurse -Force
-          Write-Host "Files copied:"
-          Get-ChildItem cmake-build-release
+          Write-Host "Built files:"
+          Get-ChildItem cmake-build-release -Recurse -Include "*.exe","*.dll" | ForEach-Object { Write-Host $_.FullName }
         shell: pwsh
 
       - name: Build Windows installer
         run: |
-          Write-Host "Checking for required files..."
-          Get-ChildItem cmake-build-release
-          Write-Host "`nBuilding installer..."
+          Write-Host "Building installer..."
           $isccPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $isccPath)) {
             Write-Host "ERROR: Inno Setup not found at $isccPath"

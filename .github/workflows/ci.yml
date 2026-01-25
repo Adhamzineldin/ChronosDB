@@ -37,12 +37,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install MinGW and Ninja
+        run: choco install mingw ninja -y
+        shell: pwsh
+
       - name: Configure
-        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
+        run: |
+          $env:PATH = "C:\ProgramData\mingw64\mingw64\bin;$env:PATH"
+          cmake -S . -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
         shell: pwsh
 
       - name: Build
-        run: cmake --build build --config Release
+        run: |
+          $env:PATH = "C:\ProgramData\mingw64\mingw64\bin;$env:PATH"
+          cmake --build build --config Release
         shell: pwsh
 
       - name: Upload artifacts
@@ -50,6 +58,6 @@ jobs:
         with:
           name: windows-build
           path: |
-            build/Release/francodb_server.exe
-            build/Release/francodb_shell.exe
+            build/francodb_server.exe
+            build/francodb_shell.exe
           if-no-files-found: warn
