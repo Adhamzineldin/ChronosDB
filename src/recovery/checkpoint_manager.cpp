@@ -122,57 +122,7 @@ namespace chronosdb {
             }
         }
 
-        // 12. CREATE TABLE SNAPSHOTS (Git-style checkpoints)
-        if (snapshot_manager_ && catalog_ != nullptr) {
-            std::cout << "[CHECKPOINT] Phase 10: Creating table snapshots..." << std::endl;
-
-            std::string db_name = log_manager_ ? log_manager_->GetCurrentDatabase() : "system";
-            auto all_tables = catalog_->GetAllTables();
-            int snapshots_created = 0;
-
-            for (auto* table : all_tables) {
-                if (!table || !table->table_heap_) {
-                    continue;
-                }
-
-                // Skip system tables (they're small and rebuilt quickly)
-                if (table->name_ == "chronos_users" || table->name_.find("sys_") == 0) {
-                    std::cout << "[CHECKPOINT]   Skipping system table: " << table->name_ << std::endl;
-                    continue;
-                }
-
-                std::cout << "[CHECKPOINT]   Snapshotting table: " << table->name_ << std::endl;
-
-                bool success = snapshot_manager_->CreateTableSnapshot(
-                    db_name,
-                    table->name_,
-                    table->table_heap_.get(),
-                    table->schema_,
-                    checkpoint_lsn,
-                    checkpoint_timestamp
-                );
-
-                if (success) {
-                    snapshots_created++;
-                } else {
-                    std::cerr << "[CHECKPOINT]   WARNING: Failed to snapshot table " << table->name_ << std::endl;
-                }
-            }
-
-            std::cout << "[CHECKPOINT]   Created " << snapshots_created << " snapshots" << std::endl;
-
-            // Cleanup old snapshots (keep last 10)
-            if ((checkpoint_count_.load() + 1) % 10 == 0) {
-                std::cout << "[CHECKPOINT] Cleaning up old snapshots..." << std::endl;
-                for (auto* table : all_tables) {
-                    if (table && table->name_ != "chronos_users" && table->name_.find("sys_") != 0) {
-                        snapshot_manager_->CleanupOldSnapshots(db_name, table->name_, 10);
-                    }
-                }
-            }
-        }
-
-        // 13. Update statistics
+        // 12. Update statistics
         checkpoint_count_++;
 
         auto end_time = std::chrono::high_resolution_clock::now();
@@ -426,16 +376,6 @@ namespace chronosdb {
         if (checkpoint_index_ && !checkpoint_index_path_.empty()) {
             checkpoint_index_->SaveToFile(checkpoint_index_path_);
         }
-    }
-
-    void CheckpointManager::InitializeSnapshotManager(const std::string& base_path) {
-        snapshot_manager_ = std::make_unique<CheckpointSnapshotManager>(
-            base_path,
-            checkpoint_index_.get()
-        );
-
-        std::cout << "[CheckpointManager] Initialized snapshot manager with base path: "
-                  << base_path << std::endl;
     }
 
 } // namespace chronosdb

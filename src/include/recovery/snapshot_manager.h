@@ -4,7 +4,6 @@
 #include "recovery/log_manager.h"
 #include "recovery/checkpoint_manager.h"
 #include "recovery/checkpoint_index.h"
-#include "recovery/checkpoint_snapshot_manager.h"
 #include "storage/table/table_heap.h"
 #include "catalog/catalog.h"
 #include "catalog/table_metadata.h"
@@ -48,21 +47,17 @@ namespace chronosdb {
     class SnapshotManager {
     public:
         /**
-         * Build a snapshot using Git-style checkpoint snapshots.
+         * Build a snapshot using checkpoint-based optimization.
          *
-         * NEW Algorithm (with snapshots):
-         * 1. Find nearest checkpoint BEFORE target_time (O(log K))
-         * 2. Load checkpoint snapshot from disk (O(S) where S = table size at checkpoint)
-         * 3. Replay log delta from checkpoint to target (O(D) where D = delta records)
+         * Algorithm:
+         * 1. Find nearest checkpoint BEFORE target_time using CheckpointIndex
+         * 2. If found, use ReplayIntoHeapFromOffset to skip to checkpoint
+         * 3. Replay only log records from checkpoint_offset to target_time
          * 4. Return the snapshot
          *
-         * Total: O(log K + S + D) - much faster than O(N) for recent queries
+         * This is O(D) where D = records between checkpoint and target,
+         * instead of O(N) where N = total log size.
          *
-         * Fallback (no snapshots):
-         * - Full replay from LSN 0 to target_time
-         *
-         * @param snapshot_manager Optional snapshot manager for loading checkpoints.
-         *                         If null, falls back to full replay.
          * @param checkpoint_index Optional checkpoint index for O(log K) lookup.
          *                         If null, falls back to full replay.
          */
@@ -73,7 +68,6 @@ namespace chronosdb {
             LogManager* log_manager,
             Catalog* catalog,
             const std::string& db_name = "",
-            CheckpointSnapshotManager* snapshot_manager = nullptr,
             CheckpointIndex* checkpoint_index = nullptr) 
         {
             std::string target_db = db_name;
@@ -163,64 +157,36 @@ namespace chronosdb {
             }
 
             // ================================================================
-            // GIT-STYLE CHECKPOINT SNAPSHOT OPTIMIZATION (CORRECT)
+            // CHECKPOINT INDEX OPTIMIZATION - FUNDAMENTALLY FLAWED
             // ================================================================
-            // Algorithm:
-            // 1. Find nearest checkpoint BEFORE target_time
-            // 2. Load checkpoint snapshot (full table state at that point)
-            // 3. Replay delta log records from checkpoint to target
+            // This optimization was disabled because it's architecturally broken:
             //
-            // This is O(log K + S + D) instead of O(N):
-            // - K = checkpoints (binary search)
-            // - S = snapshot size (load from disk)
-            // - D = delta records (checkpoint to target)
-            // - N = total log records (old full replay)
+            // THE BUG:
+            //   1. Create EMPTY snapshot heap
+            //   2. Skip to checkpoint offset in log
+            //   3. Replay from checkpoint to target time
+            //   Result: MISSING all data before checkpoint!
+            //
+            // EXAMPLE FAILURE:
+            //   LSN 1-999:   INSERT 999 rows
+            //   LSN 1000:    CHECKPOINT (saved offset=5000)
+            //   LSN 1001:    INSERT 1 row
+            //   Query: SELECT * AS OF 'now'
+            //   Bug: Skip to offset 5000 → replay LSN 1001 → Get 1 row (missing 999!)
+            //
+            // WHY IT'S BROKEN:
+            //   Checkpoints don't store database state - they only mark flush points.
+            //   Skipping log sections requires having the state AT that point.
+            //
+            // CORRECT SOLUTION (requires major changes):
+            //   1. Store full table snapshots at each checkpoint (like Git commits)
+            //   2. Load checkpoint snapshot as base
+            //   3. Replay delta from checkpoint to target
+            //
+            // FOR NOW: Always replay from LSN 0 (correct but O(N))
             // ================================================================
 
-            if (snapshot_manager != nullptr && checkpoint_index != nullptr) {
-                // Try to use checkpoint snapshot optimization
-                const CheckpointEntry* nearest = checkpoint_index->FindNearestBefore(target_time);
-
-                if (nearest != nullptr && nearest->timestamp > 0) {
-                    std::cout << "[SnapshotManager]   Found checkpoint at timestamp " << nearest->timestamp
-                              << " (LSN " << nearest->lsn << ")" << std::endl;
-
-                    // Load checkpoint snapshot
-                    auto checkpoint_snapshot = snapshot_manager->LoadNearestSnapshot(
-                        target_db, table_name, target_time);
-
-                    if (checkpoint_snapshot) {
-                        std::cout << "[SnapshotManager]   Loaded checkpoint snapshot ("
-                                  << checkpoint_snapshot->GetRowCount() << " rows)" << std::endl;
-
-                        // Convert snapshot to TableHeap
-                        auto snapshot_heap = checkpoint_snapshot->ToTableHeap(bpm);
-
-                        if (snapshot_heap) {
-                            std::cout << "[SnapshotManager]   Replaying delta from checkpoint to target..." << std::endl;
-
-                            // Replay delta: checkpoint → target_time
-                            recovery.ReplayIntoHeapFromOffset(
-                                snapshot_heap.get(),
-                                table_name,
-                                nearest->log_offset,  // Start from checkpoint position
-                                target_time,          // Stop at target
-                                target_db
-                            );
-
-                            std::cout << "[SnapshotManager]   Snapshot-based optimization complete!" << std::endl;
-                            return snapshot_heap;
-                        } else {
-                            std::cerr << "[SnapshotManager]   WARNING: Failed to convert snapshot to heap" << std::endl;
-                        }
-                    } else {
-                        std::cout << "[SnapshotManager]   No snapshot found, falling back to full replay" << std::endl;
-                    }
-                }
-            }
-
-            // Fallback: Full replay from LSN 0 (no snapshots available)
-            std::cout << "[SnapshotManager]   Using full replay from LSN 0" << std::endl;
+            // CORRECT approach: Full replay from beginning
             recovery.ReplayIntoHeap(snapshot.get(), table_name, target_time, target_db);
 
             return snapshot;

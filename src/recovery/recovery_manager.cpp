@@ -1063,61 +1063,17 @@ namespace chronosdb {
             std::unique_ptr<TableHeap> snapshot_heap;
 
             // ================================================================
-            // GIT-STYLE CHECKPOINT SNAPSHOT OPTIMIZATION (CORRECT)
+            // CHECKPOINT INDEX OPTIMIZATION - REMOVED (see detailed explanation in snapshot_manager.h)
             // ================================================================
-            // Try to load checkpoint snapshot and replay delta instead of full log
+            // Same fundamental flaw applies to RECOVER TO: Starting with empty heap
+            // and skipping to checkpoint offset loses all prior data.
+            //
+            // Correct approach: Always replay from LSN 0
             // ================================================================
 
-            bool used_snapshot = false;
-
-            if (checkpoint_mgr_ != nullptr) {
-                auto* snapshot_manager = checkpoint_mgr_->GetSnapshotManager();
-                auto* checkpoint_index = checkpoint_mgr_->GetCheckpointIndex();
-
-                if (snapshot_manager != nullptr && checkpoint_index != nullptr) {
-                    const CheckpointEntry* nearest = checkpoint_index->FindNearestBefore(target_time);
-
-                    if (nearest != nullptr && nearest->timestamp > 0) {
-                        std::cout << "[RECOVER_TO]   Found checkpoint at timestamp " << nearest->timestamp
-                                  << " (LSN " << nearest->lsn << ")" << std::endl;
-
-                        // Load checkpoint snapshot
-                        auto checkpoint_snapshot = snapshot_manager->LoadNearestSnapshot(
-                            db_name, table_name, target_time);
-
-                        if (checkpoint_snapshot) {
-                            std::cout << "[RECOVER_TO]   Loaded checkpoint snapshot ("
-                                      << checkpoint_snapshot->GetRowCount() << " rows)" << std::endl;
-
-                            // Convert to TableHeap
-                            snapshot_heap = checkpoint_snapshot->ToTableHeap(bpm_);
-
-                            if (snapshot_heap) {
-                                std::cout << "[RECOVER_TO]   Replaying delta from checkpoint to target..." << std::endl;
-
-                                // Replay delta
-                                ReplayIntoHeapFromOffset(
-                                    snapshot_heap.get(),
-                                    table_name,
-                                    nearest->log_offset,
-                                    target_time,
-                                    db_name
-                                );
-
-                                used_snapshot = true;
-                                std::cout << "[RECOVER_TO]   Snapshot-based recovery complete!" << std::endl;
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (!used_snapshot) {
-                // Fallback: Full replay from LSN 0
-                std::cout << "[RECOVER_TO]   Using full replay from LSN 0" << std::endl;
-                snapshot_heap = std::make_unique<TableHeap>(bpm_, nullptr);
-                ReplayIntoHeap(snapshot_heap.get(), table_name, target_time, db_name);
-            }
+            snapshot_heap = std::make_unique<TableHeap>(bpm_, nullptr);
+            std::cout << "[RECOVER_TO]   Replaying from LSN 0 to target time (full log)" << std::endl;
+            ReplayIntoHeap(snapshot_heap.get(), table_name, target_time, db_name);
             
             // Count tuples in snapshot
             int snapshot_count = 0;
