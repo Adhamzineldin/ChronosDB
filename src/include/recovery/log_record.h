@@ -9,7 +9,7 @@
 
 #include "common/value.h"
 
-namespace francodb {
+namespace chronosdb {
 
     /**
      * ARIES-Compliant Log Record Types
@@ -312,7 +312,7 @@ namespace francodb {
         std::vector<DirtyPageEntry> dirty_pages_;
     };
 
-} // namespace francodb
+} // namespace chronosdb
 
 
 

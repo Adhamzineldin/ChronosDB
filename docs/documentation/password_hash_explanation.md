@@ -1,8 +1,8 @@
-# Password Hash Storage & Retrieval in FrancoDB
+# Password Hash Storage & Retrieval in ChronosDB
 
 ## Overview
 
-FrancoDB stores password hashes (never plaintext passwords) in the `system.francodb` database. This document explains:
+ChronosDB stores password hashes (never plaintext passwords) in the `system.chronosdb` database. This document explains:
 1. How passwords are hashed
 2. How hashes are stored
 3. How hashes are retrieved
@@ -39,7 +39,7 @@ std::string AuthManager::HashPassword(const std::string& password) {
 
 ### How It Works:
 
-1. **Pepper Addition**: Combines password with secret pepper from `franco_net_config.h`
+1. **Pepper Addition**: Combines password with secret pepper from `chronos_net_config.h`
    ```cpp
    std::string data = password + net::PASSWORD_PEPPER;
    ```
@@ -74,14 +74,14 @@ Step 3: Convert to hex
 
 ### Storage Location
 
-**File:** `system.francodb` (system database)  
-**Table:** `franco_users`  
+**File:** `system.chronosdb` (system database)  
+**Table:** `chronos_users`  
 **Column:** `password_hash` (VARCHAR, 128 bytes)
 
 ### Table Schema
 
 ```cpp
-franco_users table:
+chronos_users table:
   - username (VARCHAR, 64, PRIMARY KEY)
   - password_hash (VARCHAR, 128)  ← Hash stored here
   - db_name (VARCHAR, 64)
@@ -95,14 +95,14 @@ franco_users table:
 ```cpp
 void AuthManager::SaveUsers() {
     // 1. Clear existing users
-    std::string delete_sql = "2EMSA7 MEN franco_users;";
+    std::string delete_sql = "2EMSA7 MEN chronos_users;";
     // ... execute DELETE
     
     // 2. Insert all cached users
     for (const auto& [username, user] : users_cache_) {
         for (const auto& [db, role] : user.db_roles) {
             // Build INSERT query
-            std::string insert_sql = "EMLA GOWA franco_users ELKEYAM ('" + 
+            std::string insert_sql = "EMLA GOWA chronos_users ELKEYAM ('" + 
                                 username + "', '" + 
                                 user.password_hash + "', '" +  // ← Hash inserted here
                                 db + "', '" + 
@@ -129,11 +129,11 @@ void AuthManager::SaveUsers() {
 
 3. **Written to Disk**: `SaveUsers()` executes SQL INSERT:
    ```sql
-   INSERT INTO franco_users VALUES ('adham', 'a1b2c3d4...', 'default', 'ADMIN');
+   INSERT INTO chronos_users VALUES ('adham', 'a1b2c3d4...', 'default', 'ADMIN');
    ```
 
 4. **Physical Storage**: 
-   - ExecutionEngine writes row to `system.francodb`
+   - ExecutionEngine writes row to `system.chronosdb`
    - Data goes through Buffer Pool Manager
    - Eventually written to disk pages (4KB pages)
    - Same storage mechanism as any other table data
@@ -147,7 +147,7 @@ CREATE USER adham WITH PASSWORD 'a251m2006' ROLE ADMIN;
 
 **What gets stored:**
 ```
-system.francodb → franco_users table:
+system.chronosdb → chronos_users table:
 ┌─────────┬──────────────────────────────┬──────────┬────────┐
 │ username│ password_hash                 │ db_name  │ role   │
 ├─────────┼──────────────────────────────┼──────────┼────────┤
@@ -169,8 +169,8 @@ The hash `a1b2c3d4e5f6789abcdef...` is stored as a **VARCHAR string** in the tab
 void AuthManager::LoadUsers() {
     users_cache_.clear();
     
-    // 1. Query all users from franco_users table
-    std::string select_sql = "2E5TAR * MEN franco_users;";
+    // 1. Query all users from chronos_users table
+    std::string select_sql = "2E5TAR * MEN chronos_users;";
     Lexer lexer(select_sql);
     Parser parser(std::move(lexer));
     auto stmt = parser.ParseQuery();
@@ -199,12 +199,12 @@ void AuthManager::LoadUsers() {
 
 ### What Happens:
 
-1. **SQL Query**: Executes `SELECT * FROM franco_users`
+1. **SQL Query**: Executes `SELECT * FROM chronos_users`
    ```sql
-   2E5TAR * MEN franco_users;  -- (Arabic-style: SELECT * FROM)
+   2E5TAR * MEN chronos_users;  -- (Arabic-style: SELECT * FROM)
    ```
 
-2. **ExecutionEngine**: Reads rows from `system.francodb`
+2. **ExecutionEngine**: Reads rows from `system.chronosdb`
    - Reads pages from disk via Buffer Pool Manager
    - Parses table rows
    - Returns result set
@@ -219,7 +219,7 @@ void AuthManager::LoadUsers() {
 ### Physical Retrieval Flow:
 
 ```
-system.francodb (disk)
+system.chronosdb (disk)
     ↓
 Buffer Pool Manager (memory cache)
     ↓
@@ -244,7 +244,7 @@ Store in users_cache_ map (in-memory)
 bool AuthManager::Authenticate(const std::string& username, 
                                const std::string& password, 
                                UserRole& out_role) {
-    // Special case: root user (maayn)
+    // Special case: root user (chronos)
     if (IsRoot(username)) {
         auto& config = ConfigManager::GetInstance();
         std::string input_hash = HashPassword(password);      // Hash input password
@@ -257,7 +257,7 @@ bool AuthManager::Authenticate(const std::string& username,
     }
     
     // Regular users: load from cache
-    LoadUsers();  // Loads hashes from system.francodb into cache
+    LoadUsers();  // Loads hashes from system.chronosdb into cache
     auto it = users_cache_.find(username);
     if (it == users_cache_.end()) return false;
     
@@ -279,7 +279,7 @@ User Login:
   username: "adham"
   password: "a251m2006"
     ↓
-1. LoadUsers() → Reads system.francodb → Caches hashes
+1. LoadUsers() → Reads system.chronosdb → Caches hashes
     ↓
 2. Find user in cache: users_cache_["adham"]
     ↓
@@ -304,7 +304,7 @@ User Login:
    if (HashPassword(password) == stored_hash) ...
    ```
 
-2. **Root User Special Case**: `maayn` user doesn't need to be in `franco_users` table
+2. **Root User Special Case**: `chronos` user doesn't need to be in `chronos_users` table
    - Hash is computed on-the-fly from config
    - No database lookup needed
 
@@ -338,12 +338,12 @@ CREATE USER john WITH PASSWORD 'secret123' ROLE USER;
 
 3. **Save to Disk**:
    ```sql
-   INSERT INTO franco_users VALUES 
+   INSERT INTO chronos_users VALUES 
    ('john', 'f3a8b2c1d4e5f6a7b8c9d0e1f2a3b4c5...', 'default', 'USER');
    ```
 
 4. **Physical Storage**:
-   - Row written to `system.francodb`
+   - Row written to `system.chronosdb`
    - Stored in a 4KB page
    - Persisted to disk
 
@@ -357,9 +357,9 @@ Authenticate("john", "secret123", role);
 
 1. **Load from Disk** (if not cached):
    ```sql
-   SELECT * FROM franco_users WHERE username = 'john';
+   SELECT * FROM chronos_users WHERE username = 'john';
    ```
-   - Reads `system.francodb`
+   - Reads `system.chronosdb`
    - Returns row: `('john', 'f3a8b2c1d4e5f6...', 'default', 'USER')`
 
 2. **Hash Input Password**:
@@ -380,7 +380,7 @@ Authenticate("john", "secret123", role);
 
 ## 6. Security Features
 
-### ✅ What FrancoDB Does Right:
+### ✅ What ChronosDB Does Right:
 
 1. **Never Stores Plaintext**: Only hashes are stored
 2. **Pepper**: Secret pepper adds extra security layer
@@ -389,7 +389,7 @@ Authenticate("john", "secret123", role);
 
 ### ⚠️ Security Considerations:
 
-1. **Pepper Storage**: Pepper is in source code (`franco_net_config.h`)
+1. **Pepper Storage**: Pepper is in source code (`chronos_net_config.h`)
    - In production, should be in config file or environment variable
 
 2. **Hash Algorithm**: Uses `std::hash` (not cryptographically secure)
@@ -406,9 +406,9 @@ Authenticate("john", "secret123", role);
 
 ```
 data/
-└── system.francodb          ← Contains franco_users table
+└── system.chronosdb          ← Contains chronos_users table
     └── Pages 3+ contain rows:
-        Row 1: ('maayn', 'hash1...', 'default', 'SUPERADMIN')
+        Row 1: ('chronos', 'hash1...', 'default', 'SUPERADMIN')
         Row 2: ('adham', 'hash2...', 'default', 'ADMIN')
         Row 3: ('john', 'hash3...', 'default', 'USER')
 ```
@@ -417,8 +417,8 @@ data/
 
 ```
 data/
-└── system.francodb.meta     ← Contains schema:
-    TABLE franco_users 3 1 4 username 4 1 password_hash 4 0 ...
+└── system.chronosdb.meta     ← Contains schema:
+    TABLE chronos_users 3 1 4 username 4 1 password_hash 4 0 ...
 ```
 
 ---
@@ -428,17 +428,17 @@ data/
 | Step | Action | Location | Data Flow |
 |------|--------|----------|-----------|
 | **1. Hash** | `HashPassword()` | `auth_manager.cpp:18` | `password` → `hash` (hex string) |
-| **2. Store** | `SaveUsers()` | `auth_manager.cpp:128` | `hash` → `users_cache_` → `system.francodb` |
-| **3. Retrieve** | `LoadUsers()` | `auth_manager.cpp:87` | `system.francodb` → `users_cache_` |
+| **2. Store** | `SaveUsers()` | `auth_manager.cpp:128` | `hash` → `users_cache_` → `system.chronosdb` |
+| **3. Retrieve** | `LoadUsers()` | `auth_manager.cpp:87` | `system.chronosdb` → `users_cache_` |
 | **4. Authenticate** | `Authenticate()` | `auth_manager.cpp:173` | `HashPassword(input)` == `stored_hash` |
 
 ### Key Takeaways:
 
-- ✅ Hashes are stored as **VARCHAR strings** in `franco_users` table
+- ✅ Hashes are stored as **VARCHAR strings** in `chronos_users` table
 - ✅ Storage uses **normal table operations** (INSERT/SELECT via ExecutionEngine)
 - ✅ Hashes are **cached in memory** for fast lookups
 - ✅ Authentication **compares hashes**, never plaintext passwords
-- ✅ Physical storage is in **`system.francodb`** (same as any other table data)
+- ✅ Physical storage is in **`system.chronosdb`** (same as any other table data)
 
 ---
 
@@ -448,4 +448,4 @@ data/
 - **Storage**: `src/common/auth_manager.cpp:128-164`
 - **Retrieval**: `src/common/auth_manager.cpp:87-126`
 - **Authentication**: `src/common/auth_manager.cpp:173-192`
-- **Pepper**: `src/include/common/franco_net_config.h`
+- **Pepper**: `src/include/common/chronos_net_config.h`

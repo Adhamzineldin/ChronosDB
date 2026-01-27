@@ -9,7 +9,7 @@
 #include "storage/table/schema.h"
 #include "parser/statement.h"  // For WhereCondition
 
-namespace francodb {
+namespace chronosdb {
 
 /**
  * PredicateEvaluator - Shared utility for evaluating WHERE clauses.
@@ -273,5 +273,5 @@ private:
     }
 };
 
-} // namespace francodb
+} // namespace chronosdb
 

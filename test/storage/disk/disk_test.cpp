@@ -5,10 +5,10 @@
 #include <filesystem>
 #include <cassert>
 
-using namespace francodb;
+using namespace chronosdb;
 
 void TestPersistence() {
-    std::string filename = "test_persistence.francodb";
+    std::string filename = "test_persistence.chronosdb";
     
     // 1. Clean up previous runs
     if (std::filesystem::exists(filename)) {
@@ -25,7 +25,7 @@ void TestPersistence() {
         // 3. Prepare data
         char data[PAGE_SIZE];
         std::memset(data, 0, PAGE_SIZE);
-        std::string message = "FrancoDB is persistent!";
+        std::string message = "ChronosDB is persistent!";
         std::memcpy(data, message.c_str(), message.length());
 
         // 4. Write to Page 1 (Page 0 is reserved for Magic/Metadata)
@@ -50,7 +50,7 @@ void TestPersistence() {
         std::string result(read_buffer);
         std::cout << "[RESULT] Read back: " << result << std::endl;
         
-        assert(result == "FrancoDB is persistent!");
+        assert(result == "ChronosDB is persistent!");
         std::cout << "[SUCCESS] Data matched!" << std::endl;
     }
 

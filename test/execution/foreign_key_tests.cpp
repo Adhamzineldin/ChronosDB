@@ -1,6 +1,6 @@
 #include "../framework/test_runner.h"
 
-namespace francodb_test {
+namespace chronosdb_test {
 
 void RunForeignKeyTests(TestRunner& runner) {
     runner.RunTest("ForeignKey", "FK_Creation", []() {
@@ -44,5 +44,5 @@ void RunForeignKeyTests(TestRunner& runner) {
     });
 }
 
-} // namespace francodb_test
+} // namespace chronosdb_test
 

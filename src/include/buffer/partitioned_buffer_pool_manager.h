@@ -13,7 +13,7 @@
 #include "storage/disk/disk_manager.h"
 #include "storage/storage_interface.h"  // For IBufferManager
 
-namespace francodb {
+namespace chronosdb {
 
 // Forward declaration
 class LogManager;
@@ -443,5 +443,5 @@ private:
     std::atomic<page_id_t> next_page_id_;
 };
 
-} // namespace francodb
+} // namespace chronosdb
 

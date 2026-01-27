@@ -13,7 +13,7 @@
 #include <cmath>
 #include <unordered_set>
 
-namespace francodb {
+namespace chronosdb {
 
 void UpdateExecutor::Init() {
     table_info_ = exec_ctx_->GetCatalog()->GetTable(plan_->table_name_);
@@ -405,5 +405,5 @@ bool UpdateExecutor::EvaluatePredicate(const Tuple &tuple) {
     return PredicateEvaluator::Evaluate(tuple, table_info_->schema_, plan_->where_clause_);
 }
 
-} // namespace francodb
+} // namespace chronosdb
 

@@ -13,7 +13,7 @@
 #include <thread>
 #include "recovery/log_record.h"
 
-namespace francodb {
+namespace chronosdb {
 
     /**
      * Log Stream: Represents a single WAL file for a database
@@ -334,5 +334,5 @@ namespace francodb {
         class CheckpointManager* checkpoint_mgr_{nullptr};
     };
 
-} // namespace francodb
+} // namespace chronosdb
 

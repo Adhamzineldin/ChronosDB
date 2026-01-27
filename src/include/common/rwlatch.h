@@ -3,7 +3,7 @@
 #include <shared_mutex>
 #include <mutex>
 
-namespace francodb {
+namespace chronosdb {
 
     /**
      * Reader-Writer Latch.
@@ -27,4 +27,4 @@ namespace francodb {
         std::shared_mutex mutex_;
     };
 
-} // namespace francodb
+} // namespace chronosdb

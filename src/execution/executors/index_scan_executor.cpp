@@ -4,7 +4,7 @@
 #include "storage/index/index_key.h"
 #include <iostream>
 
-namespace francodb {
+namespace chronosdb {
 
 void IndexScanExecutor::Init() {
     // 1. Get Table Metadata (so we can fetch the actual data later)
@@ -80,5 +80,5 @@ const Schema *IndexScanExecutor::GetOutputSchema() {
     return &table_info_->schema_;
 }
 
-} // namespace francodb
+} // namespace chronosdb
 

@@ -13,7 +13,7 @@ typedef int socket_t;
 #define INVALID_SOCK -1
 #endif
 
-#include "network/franco_server.h"
+#include "network/chronos_server.h"
 #include "network/protocol.h"
 #include "parser/lexer.h"
 #include "parser/parser.h"
@@ -21,7 +21,7 @@ typedef int socket_t;
 #include "buffer/buffer_pool_manager.h"
 #include "catalog/catalog.h"
 #include "common/config.h"
-#include "common/franco_net_config.h"
+#include "common/chronos_net_config.h"
 #include "network/database_registry.h"
 #include "recovery/log_manager.h" // [FIX] Include LogManager
 #include "recovery/checkpoint_manager.h"
@@ -37,11 +37,11 @@ typedef int socket_t;
 #include <thread>
 #include <future>
 
-namespace francodb {
+namespace chronosdb {
     
     // Accept IBufferManager for polymorphic buffer pool usage
     // Works with both BufferPoolManager and PartitionedBufferPoolManager
-    FrancoServer::FrancoServer(IBufferManager *bpm, Catalog *catalog, LogManager *log_manager)
+    ChronosServer::ChronosServer(IBufferManager *bpm, Catalog *catalog, LogManager *log_manager)
         : bpm_(bpm), catalog_(catalog), log_manager_(log_manager) {
         try {
             // Initialize Registry FIRST
@@ -82,7 +82,7 @@ namespace francodb {
         }
     }
 
-    FrancoServer::~FrancoServer() {
+    ChronosServer::~ChronosServer() {
         std::cout << "[SHUTDOWN] Server destructor called..." << std::endl;
         
         // 1. Signal stop first
@@ -123,7 +123,7 @@ namespace francodb {
         std::cout << "[SHUTDOWN] Server destructor complete" << std::endl;
     }
 
-    void FrancoServer::Start(int port) {
+    void ChronosServer::Start(int port) {
         is_running_ = true;
 
         socket_t s = socket(AF_INET, SOCK_STREAM, 0);
@@ -154,9 +154,9 @@ namespace francodb {
         listen_sock_.store((uintptr_t) s);
         running_.store(true);
 
-        auto_save_thread_ = std::thread(&FrancoServer::AutoSaveLoop, this);
+        auto_save_thread_ = std::thread(&ChronosServer::AutoSaveLoop, this);
 
-        std::cout << "[READY] FrancoDB Server listening on port " << port << " (Pool Active)..." << std::endl;
+        std::cout << "[READY] ChronosDB Server listening on port " << port << " (Pool Active)..." << std::endl;
 
         while (running_.load() && is_running_.load()) {
             // Check if socket was closed by Stop() BEFORE using it
@@ -255,7 +255,7 @@ namespace francodb {
     }
 
 
-    void FrancoServer::Shutdown() {
+    void ChronosServer::Shutdown() {
         std::cout << "[SHUTDOWN] Flushing buffers..." << std::endl;
         if (auth_manager_) auth_manager_->SaveUsers();
         if (system_catalog_) system_catalog_->SaveCatalog();
@@ -281,7 +281,7 @@ namespace francodb {
     }
 
 
-    void FrancoServer::AutoSaveLoop() {
+    void ChronosServer::AutoSaveLoop() {
         while (running_.load()) {
             // Sleep in small increments to respond to shutdown quickly
             for (int i = 0; i < 300 && running_.load(); ++i) {
@@ -392,12 +392,12 @@ namespace francodb {
         std::cout << "[AUTO-SAVE] Thread exiting cleanly" << std::endl;
     }
 
-    void FrancoServer::InitializeSystemResources() {
+    void ChronosServer::InitializeSystemResources() {
         auto &config = ConfigManager::GetInstance();
         std::string data_dir = config.GetDataDirectory();
         
         std::filesystem::path system_dir = std::filesystem::path(data_dir) / "system";
-        std::filesystem::path system_db_path = system_dir / "system.francodb";
+        std::filesystem::path system_db_path = system_dir / "system.chronosdb";
 
         std::filesystem::create_directories(system_dir);
 
@@ -425,7 +425,7 @@ namespace francodb {
     }
 
 
-    std::string FrancoServer::DispatchCommand(const std::string &sql, ClientConnectionHandler *handler) {
+    std::string ChronosServer::DispatchCommand(const std::string &sql, ClientConnectionHandler *handler) {
         std::string upper_sql = sql;
         std::transform(upper_sql.begin(), upper_sql.end(), upper_sql.begin(), ::toupper);
 
@@ -467,7 +467,7 @@ namespace francodb {
             std::stringstream ss;
             ss << "--- AVAILABLE DATABASES ---\n";
 
-            if (auth_manager_->HasDatabaseAccess(user, "francodb")) {
+            if (auth_manager_->HasDatabaseAccess(user, "chronosdb")) {
                 ss << "default\n";
             }
 
@@ -492,7 +492,7 @@ namespace francodb {
         return handler->ProcessRequest(sql);
     }
 
-    void FrancoServer::Stop() {
+    void ChronosServer::Stop() {
         std::cout << "[STOP] Initiating graceful shutdown..." << std::endl;
         
         // 1. Signal all loops to stop FIRST (non-blocking)
@@ -516,7 +516,7 @@ namespace francodb {
     }
 
 
-    void FrancoServer::HandleClient(uintptr_t client_socket) {
+    void ChronosServer::HandleClient(uintptr_t client_socket) {
         socket_t sock = (socket_t) client_socket;
         
         // [FIX] Pass log_manager_ to ExecutionEngine

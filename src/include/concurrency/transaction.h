@@ -8,7 +8,7 @@
 #include "storage/table/tuple.h"
 #include "recovery/log_record.h" // [ACID] Needed for LogRecord::lsn_t
 
-namespace francodb {
+namespace chronosdb {
 
     /**
      * Transaction: Tracks all modifications for rollback support

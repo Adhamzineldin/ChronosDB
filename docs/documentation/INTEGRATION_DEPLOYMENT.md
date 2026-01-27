@@ -1,8 +1,8 @@
-# 🚀 FrancoDB S+ Grade Upgrade - Integration & Deployment Guide
+# 🚀 ChronosDB S+ Grade Upgrade - Integration & Deployment Guide
 
 ## 📝 Overview
 
-This guide explains how to integrate all new S+ grade features into your FrancoDB project and deploy it as an enterprise-ready database engine.
+This guide explains how to integrate all new S+ grade features into your ChronosDB project and deploy it as an enterprise-ready database engine.
 
 ---
 
@@ -47,7 +47,7 @@ set(EXECUTION_SOURCES
 )
 
 # Ensure include directories are set
-target_include_directories(francodb_lib PUBLIC
+target_include_directories(chronosdb_lib PUBLIC
     ${CMAKE_SOURCE_DIR}/src/include
 )
 ```
@@ -299,7 +299,7 @@ find src/include -name "*.h" -exec grep -L "pragma once" {} \;
 grep -r "class.*private.*Catalog\|class.*private.*ExecutionEngine" src/
 
 # Memory safety check (if using valgrind)
-valgrind --leak-check=full ./francodb_server
+valgrind --leak-check=full ./chronosdb_server
 ```
 
 ---
@@ -353,12 +353,12 @@ make -j4
 make test
 
 # Deploy
-cp build/francodb_server /usr/local/bin/
-cp build/francodb_shell /usr/local/bin/
+cp build/chronosdb_server /usr/local/bin/
+cp build/chronosdb_shell /usr/local/bin/
 
 # Verify
-francodb_server --version
-francodb_shell --help
+chronosdb_server --version
+chronosdb_shell --help
 ```
 
 ---
@@ -366,7 +366,7 @@ francodb_shell --help
 ## 📚 Documentation Structure
 
 ```
-FrancoDB/
+ChronosDB/
 ├── S_PLUS_UPGRADE_SUMMARY.md      ← Start here for overview
 ├── ENTERPRISE_FEATURES.md          ← Feature documentation
 ├── IMPLEMENTATION_GUIDE.md         ← Design patterns & SOLID
@@ -438,7 +438,7 @@ Before submission:
 
 ## 🌟 Congratulations!
 
-Your FrancoDB is now an **S+ Grade Enterprise Database Engine**
+Your ChronosDB is now an **S+ Grade Enterprise Database Engine**
 
 Features:
 - ✅ Advanced SQL (JOINs, GROUP BY, ORDER BY, LIMIT, DISTINCT)

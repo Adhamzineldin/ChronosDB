@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <string>
 
-namespace francodb_test {
+namespace chronosdb_test {
 
 struct MockEmployee {
     std::string name;
@@ -104,5 +104,5 @@ void RunOrderByTests(TestRunner& runner) {
     });
 }
 
-} // namespace francodb_test
+} // namespace chronosdb_test
 

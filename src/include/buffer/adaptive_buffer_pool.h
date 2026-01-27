@@ -11,7 +11,7 @@
 #include <chrono>
 #include <iostream>
 
-namespace francodb {
+namespace chronosdb {
 
 /**
  * Buffer Pool Metrics for adaptive sizing decisions
@@ -396,5 +396,5 @@ private:
     std::thread adaptation_thread_;
 };
 
-} // namespace francodb
+} // namespace chronosdb
 

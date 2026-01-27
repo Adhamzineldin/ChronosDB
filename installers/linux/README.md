@@ -1,6 +1,6 @@
-# FrancoDB Linux Installer
+# ChronosDB Linux Installer
 
-This folder contains the Debian package (.deb) builder for FrancoDB.
+This folder contains the Debian package (.deb) builder for ChronosDB.
 
 ## 📦 Contents
 
@@ -26,7 +26,7 @@ sudo apt-get install -y build-essential cmake git dpkg-dev fakeroot
 ### Step 1: Make Script Executable
 
 ```bash
-cd /path/to/FrancoDB/installers/linux
+cd /path/to/ChronosDB/installers/linux
 chmod +x build_deb.sh
 ```
 
@@ -37,7 +37,7 @@ chmod +x build_deb.sh
 ```
 
 The script will:
-1. ✅ Build FrancoDB from source
+1. ✅ Build ChronosDB from source
 2. ✅ Create Debian package structure
 3. ✅ Generate control files
 4. ✅ Package into .deb
@@ -47,15 +47,15 @@ The script will:
 
 Output location:
 ```
-FrancoDB/Output/francodb_1.0.0_amd64.deb
-FrancoDB/Output/francodb_1.0.0_amd64.deb.md5
+ChronosDB/Output/chronosdb_1.0.0_amd64.deb
+ChronosDB/Output/chronosdb_1.0.0_amd64.deb.md5
 ```
 
 ## 📋 Package Features
 
 ✅ **System Integration**
-  - Installs to `/opt/francodb/`
-  - Creates `francodb` system user
+  - Installs to `/opt/chronosdb/`
+  - Creates `chronosdb` system user
   - Configures systemd service
   - Adds to PATH via symlinks
 
@@ -75,7 +75,7 @@ FrancoDB/Output/francodb_1.0.0_amd64.deb.md5
 ### Install Package
 
 ```bash
-sudo dpkg -i francodb_1.0.0_amd64.deb
+sudo dpkg -i chronosdb_1.0.0_amd64.deb
 ```
 
 ### Fix Dependencies (if needed)
@@ -87,27 +87,27 @@ sudo apt-get install -f
 ### Start Service
 
 ```bash
-sudo systemctl start francodb
-sudo systemctl enable francodb  # Enable on boot
+sudo systemctl start chronosdb
+sudo systemctl enable chronosdb  # Enable on boot
 ```
 
 ### Verify Installation
 
 ```bash
-sudo systemctl status francodb
-francodb --version
+sudo systemctl status chronosdb
+chronosdb --version
 ```
 
 ## 📂 Installed Files
 
 | Item | Location |
 |------|----------|
-| Binaries | `/opt/francodb/bin/` |
-| Configuration | `/opt/francodb/etc/francodb.conf` |
-| Data | `/opt/francodb/data/` |
-| Logs | `/opt/francodb/log/` |
-| Systemd Service | `/etc/systemd/system/francodb.service` |
-| Symlinks | `/usr/local/bin/{francodb,francodb_server}` |
+| Binaries | `/opt/chronosdb/bin/` |
+| Configuration | `/opt/chronosdb/etc/chronosdb.conf` |
+| Data | `/opt/chronosdb/data/` |
+| Logs | `/opt/chronosdb/log/` |
+| Systemd Service | `/etc/systemd/system/chronosdb.service` |
+| Symlinks | `/usr/local/bin/{chronosdb,chronosdb_server}` |
 
 ## ⚙️ Customization
 
@@ -124,7 +124,7 @@ The script auto-generates `DEBIAN/control`. To customize, edit this section in `
 
 ```bash
 cat > "$DEB_DIR/DEBIAN/control" << EOF
-Package: francodb
+Package: chronosdb
 Version: $VERSION
 ...
 EOF
@@ -153,20 +153,20 @@ sudo apt-get install dpkg-dev
 **Issue**: Service fails to start after install
 ```bash
 # Check logs
-sudo journalctl -u francodb -n 50
+sudo journalctl -u chronosdb -n 50
 
 # Verify config
-sudo cat /opt/francodb/etc/francodb.conf
+sudo cat /opt/chronosdb/etc/chronosdb.conf
 
 # Check permissions
-ls -la /opt/francodb/
+ls -la /opt/chronosdb/
 ```
 
 **Issue**: Permission denied errors
 ```bash
 # Fix permissions
-sudo chown -R francodb:francodb /opt/francodb
-sudo chmod 700 /opt/francodb/{data,log}
+sudo chown -R chronosdb:chronosdb /opt/chronosdb
+sudo chmod 700 /opt/chronosdb/{data,log}
 ```
 
 ## 📝 Testing
@@ -175,33 +175,33 @@ sudo chmod 700 /opt/francodb/{data,log}
 
 ```bash
 # Install
-sudo dpkg -i francodb_1.0.0_amd64.deb
+sudo dpkg -i chronosdb_1.0.0_amd64.deb
 
 # Test service
-sudo systemctl start francodb
-sudo systemctl status francodb
+sudo systemctl start chronosdb
+sudo systemctl status chronosdb
 
 # Test CLI
-francodb --version
-francodb
+chronosdb --version
+chronosdb
 
 # Uninstall (keep data)
-sudo dpkg -r francodb
+sudo dpkg -r chronosdb
 
 # Purge (remove everything including data)
-sudo dpkg -P francodb
+sudo dpkg -P chronosdb
 ```
 
 ### Verify Package Contents
 
 ```bash
-dpkg -c francodb_1.0.0_amd64.deb
+dpkg -c chronosdb_1.0.0_amd64.deb
 ```
 
 ### Check Package Info
 
 ```bash
-dpkg -I francodb_1.0.0_amd64.deb
+dpkg -I chronosdb_1.0.0_amd64.deb
 ```
 
 ## 🔍 Package Quality Checks
@@ -210,13 +210,13 @@ dpkg -I francodb_1.0.0_amd64.deb
 
 ```bash
 sudo apt-get install lintian
-lintian francodb_1.0.0_amd64.deb
+lintian chronosdb_1.0.0_amd64.deb
 ```
 
 ### Verify Checksum
 
 ```bash
-md5sum -c francodb_1.0.0_amd64.deb.md5
+md5sum -c chronosdb_1.0.0_amd64.deb.md5
 ```
 
 ## 📚 Additional Package Formats
@@ -225,14 +225,14 @@ md5sum -c francodb_1.0.0_amd64.deb.md5
 
 ```bash
 sudo apt-get install alien
-sudo alien --to-rpm francodb_1.0.0_amd64.deb
+sudo alien --to-rpm chronosdb_1.0.0_amd64.deb
 ```
 
 ### Convert to tar.gz
 
 ```bash
 sudo apt-get install alien
-sudo alien --to-tgz francodb_1.0.0_amd64.deb
+sudo alien --to-tgz chronosdb_1.0.0_amd64.deb
 ```
 
 ## 🚀 Distribution
@@ -241,7 +241,7 @@ sudo alien --to-tgz francodb_1.0.0_amd64.deb
 
 ```bash
 # Upload to GitHub Releases
-gh release create v1.0.0 francodb_1.0.0_amd64.deb
+gh release create v1.0.0 chronosdb_1.0.0_amd64.deb
 
 # Upload to PPA (Personal Package Archive)
 # Follow: https://help.launchpad.net/Packaging/PPA
@@ -255,7 +255,7 @@ sudo apt-get install dpkg-dev
 
 # Create repository structure
 mkdir -p repo/pool/main
-cp francodb_1.0.0_amd64.deb repo/pool/main/
+cp chronosdb_1.0.0_amd64.deb repo/pool/main/
 
 # Generate Packages file
 cd repo
@@ -274,10 +274,10 @@ For production, sign the package:
 gpg --gen-key
 
 # Sign package
-dpkg-sig --sign builder francodb_1.0.0_amd64.deb
+dpkg-sig --sign builder chronosdb_1.0.0_amd64.deb
 
 # Verify signature
-dpkg-sig --verify francodb_1.0.0_amd64.deb
+dpkg-sig --verify chronosdb_1.0.0_amd64.deb
 ```
 
 ## 📖 Documentation

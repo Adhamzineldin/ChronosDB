@@ -2,9 +2,9 @@
 #include <vector>
 #include <algorithm>
 
-using namespace francodb_test;
+using namespace chronosdb_test;
 
-namespace francodb_test {
+namespace chronosdb_test {
 
 void RunLimitTests(TestRunner& runner) {
     runner.RunTest("Limit", "LIMIT_Only", []() {
@@ -112,5 +112,5 @@ void RunDistinctTests(TestRunner& runner) {
     });
 }
 
-} // namespace francodb_test
+} // namespace chronosdb_test
 

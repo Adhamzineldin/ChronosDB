@@ -1,8 +1,8 @@
 #include "../framework/test_runner.h"
 
-using namespace francodb_test;
+using namespace chronosdb_test;
 
-namespace francodb_test {
+namespace chronosdb_test {
 
 /**
  * Module test stubs - placeholder tests for existing modules
@@ -139,4 +139,4 @@ void RunModuleStubs(TestRunner& runner) {
     });
 }
 
-} // namespace francodb_test
+} // namespace chronosdb_test

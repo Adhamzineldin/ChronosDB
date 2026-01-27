@@ -14,7 +14,7 @@
 #include "common/config.h"
 #include "common/rid.h"
 
-namespace francodb {
+namespace chronosdb {
 
 /**
  * LockMode - Types of locks that can be acquired
@@ -486,5 +486,5 @@ private:
     std::thread deadlock_detection_thread_;
 };
 
-} // namespace francodb
+} // namespace chronosdb
 

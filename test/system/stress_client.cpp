@@ -15,7 +15,7 @@
 // --- CONFIG ---
 const std::string SERVER_IP = "127.0.0.1";
 const int SERVER_PORT = 2501;      
-const std::string USER = "maayn";  
+const std::string USER = "chronos";  
 const std::string PASS = "root";   
 
 const int NUM_THREADS = 8;        // 8 Threads
@@ -32,10 +32,10 @@ void Log(const std::string& msg) {
     std::cout << msg << std::endl;
 }
 
-class FrancoClient {
+class ChronosClient {
     SOCKET sock;
 public:
-    FrancoClient() : sock(INVALID_SOCKET) {}
+    ChronosClient() : sock(INVALID_SOCKET) {}
 
     bool Connect() {
         sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -104,7 +104,7 @@ public:
 };
 
 static void Worker(int id) {
-    FrancoClient client;
+    ChronosClient client;
     if (!client.Connect()) {
         Log("[Thread " + std::to_string(id) + "] Failed to connect");
         return;
@@ -161,13 +161,13 @@ void TestStressClient() {
     WSADATA wsaData;
     WSAStartup(MAKEWORD(2, 2), &wsaData);
 
-    Log("=== FRANCODB NETWORK STRESS TEST (PROTOCOL V1) ===");
+    Log("=== CHRONOSDB NETWORK STRESS TEST (PROTOCOL V1) ===");
     Log("Target: " + SERVER_IP + ":" + std::to_string(SERVER_PORT));
     
     // 1. Setup Phase
     {
         Log("-> Setting up Database 'stress_db'...");
-        FrancoClient admin;
+        ChronosClient admin;
         if (!admin.Connect()) {
             Log("[ERROR] Could not connect to server.");
             WSACleanup();

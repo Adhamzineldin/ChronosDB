@@ -22,13 +22,13 @@
 #include "recovery/log_manager.h"
 #include "recovery/checkpoint_manager.h"
 
-namespace francodb {
+namespace chronosdb {
 
-    class FrancoServer {
+    class ChronosServer {
     public:
         // Accept IBufferManager for polymorphic buffer pool usage
-        FrancoServer(IBufferManager *bpm, Catalog *catalog, LogManager *log_manager);
-        ~FrancoServer();
+        ChronosServer(IBufferManager *bpm, Catalog *catalog, LogManager *log_manager);
+        ~ChronosServer();
 
         void Start(int port);
         void Shutdown();

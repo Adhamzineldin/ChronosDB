@@ -1,4 +1,4 @@
-# FrancoDB Enterprise Features - S+ Grade Upgrade
+# ChronosDB Enterprise Features - S+ Grade Upgrade
 
 ## ⚠️ CRITICAL IMPLEMENTATION STATUS WARNING ⚠️
 
@@ -28,7 +28,7 @@
 
 ## 🎯 Overview
 
-This document outlines the comprehensive enterprise-grade enhancements added to FrancoDB, making it production-ready with advanced SQL features, SOLID principles, and clean code practices.
+This document outlines the comprehensive enterprise-grade enhancements added to ChronosDB, making it production-ready with advanced SQL features, SOLID principles, and clean code practices.
 
 ---
 
@@ -429,7 +429,7 @@ create.foreign_keys_.push_back(
 ### Using NULLABLE
 ```cpp
 Column email("email", TypeId::VARCHAR, 256, false, false, true);
-email.SetDefaultValue(Value(TypeId::VARCHAR, "noreply@francodb.io"));
+email.SetDefaultValue(Value(TypeId::VARCHAR, "noreply@chronosdb.io"));
 email.ValidateValue(Value(TypeId::VARCHAR, "test@example.com"));  // true
 email.ValidateValue(Value(TypeId::VARCHAR, ""));  // false (NOT NULL)
 ```

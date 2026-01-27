@@ -6,7 +6,7 @@
 #include "common/rid.h"
 #include "concurrency/transaction.h"
 
-namespace francodb {
+namespace chronosdb {
     static constexpr uint8_t TUPLE_DELETED = 0x01;
 
     /**
@@ -81,4 +81,4 @@ namespace francodb {
 
         void SetFreeSpacePointer(uint32_t ptr);
     };
-} // namespace francodb
+} // namespace chronosdb

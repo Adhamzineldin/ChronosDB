@@ -7,10 +7,10 @@
 #include <cstring>
 #include <filesystem>
 
-using namespace francodb;
+using namespace chronosdb;
 
 void TestBufferPoolBinary() {
-    const std::string filename = "test_buffer_pool.francodb";
+    const std::string filename = "test_buffer_pool.chronosdb";
     
     // 1. Cleanup from previous runs
     if (std::filesystem::exists(filename)) {
@@ -103,10 +103,10 @@ void TestBufferPoolBinary() {
     std::cout << "[SUCCESS] All Buffer Pool tests passed!" << std::endl;
 }
 
-namespace francodb_test {
+namespace chronosdb_test {
 void RunBufferPoolTests(TestRunner& runner) {
     runner.RunTest("Buffer", "Buffer Pool Binary Test", []() {
         TestBufferPoolBinary();
     });
 }
-} // namespace francodb_test
+} // namespace chronosdb_test

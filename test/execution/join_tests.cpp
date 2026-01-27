@@ -1,6 +1,6 @@
 #include "../framework/test_runner.h"
 
-namespace francodb_test {
+namespace chronosdb_test {
 
 void RunJoinTests(TestRunner& runner) {
     runner.RunTest("Join", "INNER_JOIN_Basic_Match", []() {
@@ -44,5 +44,5 @@ void RunJoinTests(TestRunner& runner) {
     });
 }
 
-} // namespace francodb_test
+} // namespace chronosdb_test
 

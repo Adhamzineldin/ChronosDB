@@ -3,7 +3,7 @@
 #include <cctype>
 #include <algorithm>
 
-namespace francodb {
+namespace chronosdb {
     // Keywords map - accessible via GetKeywords() static method
     // BOTH Franco (Arabic transliteration) AND English keywords are supported
     static const std::map<std::string, TokenType> kKeywords = {
@@ -635,4 +635,4 @@ namespace francodb {
             default: return "UNKNOWN";
         }
     }
-} // namespace francodb
+} // namespace chronosdb

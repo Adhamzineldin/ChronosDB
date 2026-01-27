@@ -1,4 +1,4 @@
-import francodb
+import chronosdb
 import sys
 import json
 import binascii
@@ -77,11 +77,11 @@ class UI:
             print(f"Binary display error: {e}")
 
 def main_app():
-    print(f"{UI.HEADER}{UI.BOLD}=== FrancoDB Admin Console ==={UI.ENDC}")
+    print(f"{UI.HEADER}{UI.BOLD}=== ChronosDB Admin Console ==={UI.ENDC}")
 
     try:
-        # Ensure your francodb.py is in the same folder or installed
-        conn = francodb.connect(host="127.0.0.1", port=2501, user="maayn", password="root", database="mydb")
+        # Ensure your chronosdb.py is in the same folder or installed
+        conn = chronosdb.connect(host="127.0.0.1", port=2501, user="chronos", password="root", database="mydb")
         UI.print_success("Connected!")
     except Exception as e:
         UI.print_error(f"Connection failed: {e}")
@@ -162,7 +162,7 @@ def main_app():
 
                 # --- OPTION 5: CUSTOM ---
                 elif choice == '5':
-                    q = input("FQL Query: ")
+                    q = input("CQL Query: ")
                     try:
                         print(cur.execute(q))
                     except Exception as e:

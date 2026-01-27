@@ -1,7 +1,7 @@
 #pragma once
 #include <cstdint>
 
-namespace francodb {
+namespace chronosdb {
 
     // 1 Byte Message Type
     enum class MsgType : uint8_t {

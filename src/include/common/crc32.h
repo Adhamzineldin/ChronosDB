@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <cstddef>
 
-namespace francodb {
+namespace chronosdb {
 
 /**
  * CRC32 - Cyclic Redundancy Check for data integrity
@@ -145,5 +145,5 @@ private:
 // Define the static table
 constexpr uint32_t CRC32::crc_table_[256];
 
-} // namespace francodb
+} // namespace chronosdb
 

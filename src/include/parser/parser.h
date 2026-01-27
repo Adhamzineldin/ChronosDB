@@ -8,7 +8,7 @@
 #include "parser/lexer.h"
 #include "parser/statement.h"
 
-namespace francodb {
+namespace chronosdb {
 
     class Parser {
     public:
@@ -79,4 +79,4 @@ namespace francodb {
         Token current_token_;
     };
 
-} // namespace francodb
+} // namespace chronosdb

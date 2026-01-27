@@ -5,7 +5,7 @@
 #include "catalog/catalog.h"
 #include <memory>
 
-namespace francodb {
+namespace chronosdb {
 
 // Forward declarations
 class ShowDatabasesStatement;
@@ -27,7 +27,7 @@ class DatabaseRegistry;
  * - SHOW USERS
  * - WHOAMI
  * 
- * @author FrancoDB Team
+ * @author ChronosDB Team
  */
 class SystemExecutor {
 public:
@@ -69,5 +69,5 @@ private:
     DatabaseRegistry* db_registry_;
 };
 
-} // namespace francodb
+} // namespace chronosdb
 

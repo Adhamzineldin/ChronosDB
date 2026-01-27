@@ -1,8 +1,8 @@
-# FrancoDB Recovery & Time Travel Architecture
+# ChronosDB Recovery & Time Travel Architecture
 
 ## Overview
 
-FrancoDB implements a production-grade, ARIES-compliant recovery system with **Multi-File Write-Ahead Logging (WAL)**, **Checkpointing**, and **Point-in-Time Recovery (PITR)** capabilities. The system is designed using the "Git for Data" mental model.
+ChronosDB implements a production-grade, ARIES-compliant recovery system with **Multi-File Write-Ahead Logging (WAL)**, **Checkpointing**, and **Point-in-Time Recovery (PITR)** capabilities. The system is designed using the "Git for Data" mental model.
 
 ---
 
@@ -10,7 +10,7 @@ FrancoDB implements a production-grade, ARIES-compliant recovery system with **M
 
 ### 1. Multi-File Log Architecture
 
-Instead of a single global log, FrancoDB maintains isolated logs per database:
+Instead of a single global log, ChronosDB maintains isolated logs per database:
 
 ```
 data/
@@ -192,7 +192,7 @@ delete snapshot;
 
 ## The "Git for Data" Mental Model
 
-| Git Operation | FrancoDB Equivalent | Implementation |
+| Git Operation | ChronosDB Equivalent | Implementation |
 |---------------|---------------------|----------------|
 | `git commit` | `COMMIT` log record | Each transaction commit creates a timestamped LSN |
 | `git log` | WAL file | History of all changes with timestamps |
@@ -382,5 +382,5 @@ Recovery Time = O(log_size_since_last_checkpoint)
 ---
 
 **Last Updated:** January 22, 2026  
-**Author:** FrancoDB Development Team
+**Author:** ChronosDB Development Team
 

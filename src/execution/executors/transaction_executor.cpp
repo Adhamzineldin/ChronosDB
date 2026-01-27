@@ -4,7 +4,7 @@
  * Implementation of Transaction Control Operations
  * Extracted from ExecutionEngine to satisfy Single Responsibility Principle.
  * 
- * @author FrancoDB Team
+ * @author ChronosDB Team
  */
 
 #include "execution/transaction_executor.h"
@@ -12,7 +12,7 @@
 #include "catalog/table_metadata.h"
 #include <algorithm>
 
-namespace francodb {
+namespace chronosdb {
 
 // ============================================================================
 // GET TRANSACTION FOR WRITE
@@ -134,5 +134,5 @@ ExecutionResult TransactionExecutor::Rollback() {
     return ExecutionResult::Message("ROLLBACK SUCCESS");
 }
 
-} // namespace francodb
+} // namespace chronosdb
 

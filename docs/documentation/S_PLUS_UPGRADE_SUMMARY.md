@@ -1,4 +1,4 @@
-# 🌟 FrancoDB S+ Grade Upgrade - Complete Summary
+# 🌟 ChronosDB S+ Grade Upgrade - Complete Summary
 
 ## ✨ What's New - Enterprise Features Added
 
@@ -425,7 +425,7 @@ src/storage/table/column.cpp                     (+40 lines)
 
 ## 🎯 Result
 
-**FrancoDB is now an S+ Grade Database Engine** 🌟
+**ChronosDB is now an S+ Grade Database Engine** 🌟
 
 Complete with:
 - Enterprise features

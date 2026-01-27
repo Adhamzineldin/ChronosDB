@@ -7,7 +7,7 @@
 #include <set>
 #include <memory>
 
-namespace francodb {
+namespace chronosdb {
 
 /**
  * GroupByExecutor: Groups rows and applies aggregate functions
@@ -147,5 +147,5 @@ private:
     std::string TupleToString(const Tuple &tuple) const;
 };
 
-} // namespace francodb
+} // namespace chronosdb
 

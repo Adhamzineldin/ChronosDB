@@ -1,4 +1,4 @@
-# FrancoDB Architecture: Solving God Class & Switch Statement
+# ChronosDB Architecture: Solving God Class & Switch Statement
 
 ## The Problem (BEFORE)
 

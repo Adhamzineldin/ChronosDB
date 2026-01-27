@@ -4,7 +4,7 @@
 #include <iomanip>
 #include <algorithm>
 
-namespace francodb {
+namespace chronosdb {
 
     std::string ResultFormatter::Format(std::shared_ptr<ResultSet> rs) {
         if (!rs || rs->column_names.empty()) return "(No Data)\n";
@@ -53,4 +53,4 @@ namespace francodb {
         return out.str();
     }
 
-} // namespace francodb
+} // namespace chronosdb

@@ -7,7 +7,7 @@
 #include "concurrency/transaction.h"
 #include "recovery/log_manager.h"
 
-namespace francodb {
+namespace chronosdb {
 
 /**
  * TransactionManager - Centralized transaction lifecycle management
@@ -222,5 +222,5 @@ private:
     std::unordered_map<txn_id_t, std::unique_ptr<Transaction>> active_transactions_;
 };
 
-} // namespace francodb
+} // namespace chronosdb
 

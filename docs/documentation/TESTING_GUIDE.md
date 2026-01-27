@@ -1,4 +1,4 @@
-# FrancoDB Bug Fixes - Testing Guide
+# ChronosDB Bug Fixes - Testing Guide
 
 ## Overview
 This document provides comprehensive test cases to verify that all 4 bugs have been fixed.
@@ -15,14 +15,14 @@ USE nonexistent_database;
 
 **Expected Behavior:**
 - Shell displays an ERROR message
-- Prompt remains: `maayn@default>`
+- Prompt remains: `chronos@default>`
 - Database NOT changed to "nonexistent_database"
 
 **Expected Output:**
 ```
-maayn@default> USE nonexistent_database;
+chronos@default> USE nonexistent_database;
 [ERROR] Database not found or access denied: nonexistent_database
-maayn@default>
+chronos@default>
 ```
 
 ---
@@ -35,14 +35,14 @@ USE default;
 
 **Expected Behavior:**
 - Shell displays success message (or no error)
-- Prompt updates to: `maayn@default>`
+- Prompt updates to: `chronos@default>`
 - Database successfully changed
 
 **Expected Output:**
 ```
-maayn@default> USE default;
+chronos@default> USE default;
 [SUCCESS] Database selected: default
-maayn@default>
+chronos@default>
 ```
 
 ---
@@ -60,9 +60,9 @@ maayn@default>
 
 **Expected Output:**
 ```
-maayn@default> 2ESTA5DEM testdb;
+chronos@default> 2ESTA5DEM testdb;
 [SUCCESS] Database selected: testdb
-maayn@testdb>
+chronos@testdb>
 ```
 
 ---

@@ -1,12 +1,12 @@
 // // examples/json_client.cpp
-// #include "network/franco_client.h"
+// #include "network/chronos_client.h"
 // #include <iostream>
 // #include <nlohmann/json.hpp> // Using JSON library
 //
 // int main() {
-//     francodb::FrancoClient client(francodb::ProtocolType::JSON);
+//     chronosdb::ChronosClient client(chronosdb::ProtocolType::JSON);
 //     
-//     if (!client.Connect("localhost", francodb::net::DEFAULT_PORT)) {
+//     if (!client.Connect("localhost", chronosdb::net::DEFAULT_PORT)) {
 //         std::cerr << "Failed to connect" << std::endl;
 //         return 1;
 //     }

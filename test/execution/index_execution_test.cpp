@@ -12,7 +12,7 @@
 #include "common/auth_manager.h"
 #include "recovery/log_manager.h"
 
-using namespace francodb;
+using namespace chronosdb;
 
 // Helper to create keys for verification
 static GenericKey<8> MakeKey(int n) {
@@ -31,7 +31,7 @@ void RunQuery(ExecutionEngine &engine, const std::string &sql) {
 }
 
 void TestIndexExecution() {
-    std::string db_file = "test_index_exec.francodb";
+    std::string db_file = "test_index_exec.chronosdb";
     // Clean up any previous test files
     if (std::filesystem::exists(db_file)) {
         std::filesystem::remove(db_file);

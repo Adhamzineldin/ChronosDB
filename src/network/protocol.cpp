@@ -5,7 +5,7 @@
 #include <cstring>
 #include <cstdint>
 
-namespace francodb {
+namespace chronosdb {
 
     // ==========================================
     // HELPERS FOR BINARY PACKING (Big Endian)
@@ -140,4 +140,4 @@ namespace francodb {
         }
     }
 
-} // namespace francodb
+} // namespace chronosdb

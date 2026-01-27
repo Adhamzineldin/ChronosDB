@@ -2,7 +2,7 @@
 
 #include "common/config.h"
 
-namespace francodb {
+namespace chronosdb {
 
     /**
      * Abstract Base Class for replacement policies (LRU, Clock, FIFO).
@@ -17,4 +17,4 @@ namespace francodb {
         virtual size_t Size() = 0;
     };
 
-} // namespace francodb
+} // namespace chronosdb

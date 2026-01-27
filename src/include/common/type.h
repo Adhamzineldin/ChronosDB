@@ -3,10 +3,10 @@
 #include <string>
 #include <cstdint>
 
-namespace francodb {
+namespace chronosdb {
 
     /**
-     * The Data Types supported by FrancoDB internally.
+     * The Data Types supported by ChronosDB internally.
      * The Parser will map "RAKAM" -> INTEGER, "GOMLA" -> VARCHAR.
      */
     enum class TypeId {
@@ -29,4 +29,4 @@ namespace francodb {
         static std::string TypeToString(TypeId type_id);
     };
 
-} // namespace francodb
+} // namespace chronosdb

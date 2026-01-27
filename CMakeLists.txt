@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(FrancoDB)
+project(ChronosDB)
 
 set(CMAKE_CXX_STANDARD 20)
 
@@ -9,32 +9,32 @@ set(TEST_DIR "${CMAKE_SOURCE_DIR}/test")
 # =========================================================
 # 1. CORE LIBRARY (The Engine)
 # =========================================================
-file(GLOB_RECURSE FRANCODB_SOURCES CONFIGURE_DEPENDS "${SRC_DIR}/*.cpp")
-file(GLOB_RECURSE FRANCODB_HEADERS CONFIGURE_DEPENDS "${SRC_DIR}/include/*.h")
+file(GLOB_RECURSE CHRONOSDB_SOURCES CONFIGURE_DEPENDS "${SRC_DIR}/*.cpp")
+file(GLOB_RECURSE CHRONOSDB_HEADERS CONFIGURE_DEPENDS "${SRC_DIR}/include/*.h")
 # Exclude main() files from the library to avoid "multiple definition of main" errors
-list(FILTER FRANCODB_SOURCES EXCLUDE REGEX ".*/src/cmd/.*")
+list(FILTER CHRONOSDB_SOURCES EXCLUDE REGEX ".*/src/cmd/.*")
 
-add_library(francodb_lib ${FRANCODB_SOURCES} ${FRANCODB_HEADERS})
+add_library(chronosdb_lib ${CHRONOSDB_SOURCES} ${CHRONOSDB_HEADERS})
 # Add compiler-appropriate warning flags per target
 if(MSVC)
-    target_compile_options(francodb_lib PRIVATE /W4)
+    target_compile_options(chronosdb_lib PRIVATE /W4)
 else()
-    target_compile_options(francodb_lib PRIVATE -Wall -Wextra -Wno-unused-parameter)
+    target_compile_options(chronosdb_lib PRIVATE -Wall -Wextra -Wno-unused-parameter)
 endif()
 
-target_include_directories(francodb_lib PUBLIC "${SRC_DIR}/include")
+target_include_directories(chronosdb_lib PUBLIC "${SRC_DIR}/include")
 
 # =========================================================
 # 2. SERVER EXECUTABLE
 # =========================================================
 set(SERVER_SRC "${SRC_DIR}/cmd/server/main.cpp")
 if(EXISTS "${SERVER_SRC}")
-    add_executable(francodb_server "${SERVER_SRC}")
-    target_link_libraries(francodb_server francodb_lib)
+    add_executable(chronosdb_server "${SERVER_SRC}")
+    target_link_libraries(chronosdb_server chronosdb_lib)
     if(WIN32)
-        target_link_libraries(francodb_server ws2_32)
+        target_link_libraries(chronosdb_server ws2_32)
     else()
-        target_link_libraries(francodb_server pthread)
+        target_link_libraries(chronosdb_server pthread)
     endif()
 endif()
 
@@ -43,12 +43,12 @@ endif()
 # =========================================================
 set(SHELL_SRC "${SRC_DIR}/cmd/shell/shell.cpp")
 if(EXISTS "${SHELL_SRC}")
-    add_executable(francodb_shell "${SHELL_SRC}")
-    target_link_libraries(francodb_shell francodb_lib)
+    add_executable(chronosdb_shell "${SHELL_SRC}")
+    target_link_libraries(chronosdb_shell chronosdb_lib)
     if(WIN32)
-        target_link_libraries(francodb_shell ws2_32)
+        target_link_libraries(chronosdb_shell ws2_32)
     else()
-        target_link_libraries(francodb_shell pthread)
+        target_link_libraries(chronosdb_shell pthread)
     endif()
 endif()
 
@@ -57,19 +57,19 @@ endif()
 # =========================================================
 set(SETUP_SRC "${SRC_DIR}/cmd/setup/setup.cpp")
 if(EXISTS "${SETUP_SRC}")
-    add_executable(francodb_setup "${SETUP_SRC}")
+    add_executable(chronosdb_setup "${SETUP_SRC}")
     if(WIN32)
-        target_link_libraries(francodb_setup ws2_32)
+        target_link_libraries(chronosdb_setup ws2_32)
     else()
-        target_link_libraries(francodb_setup pthread)
+        target_link_libraries(chronosdb_setup pthread)
     endif()
 endif()
 
 set(SERVICE_SRC "${SRC_DIR}/cmd/service/service_wrapper.cpp")
 if(WIN32 AND EXISTS "${SERVICE_SRC}")
-    add_executable(francodb_service "${SERVICE_SRC}")
-    set_target_properties(francodb_service PROPERTIES WIN32_EXECUTABLE FALSE)
-    target_link_libraries(francodb_service advapi32)
+    add_executable(chronosdb_service "${SERVICE_SRC}")
+    set_target_properties(chronosdb_service PROPERTIES WIN32_EXECUTABLE FALSE)
+    target_link_libraries(chronosdb_service advapi32)
 endif()
 
 # =========================================================
@@ -91,10 +91,10 @@ if(WIN32)
             "${COMPILER_BIN_DIR}/libgcc_s_*.dll"
             "${COMPILER_BIN_DIR}/libwinpthread-*.dll"
     )
-    add_custom_command(TARGET francodb_server POST_BUILD
+    add_custom_command(TARGET chronosdb_server POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
             ${RUNTIME_DLLS}
-            $<TARGET_FILE_DIR:francodb_server>
+            $<TARGET_FILE_DIR:chronosdb_server>
             COMMENT "Auto-copying MinGW Runtime DLLs..."
     )
 endif()
@@ -107,16 +107,16 @@ endif()
 # This makes "cmake --install" actually work!
 
 # Install the Server
-if(TARGET francodb_server)
-    install(TARGETS francodb_server RUNTIME DESTINATION bin)
+if(TARGET chronosdb_server)
+    install(TARGETS chronosdb_server RUNTIME DESTINATION bin)
 endif()
 
 # Install the Shell (Client)
-if(TARGET francodb_shell)
-    install(TARGETS francodb_shell RUNTIME DESTINATION bin)
+if(TARGET chronosdb_shell)
+    install(TARGETS chronosdb_shell RUNTIME DESTINATION bin)
 endif()
 
 # Install Setup Tool (if it exists)
-if(TARGET francodb_setup)
-    install(TARGETS francodb_setup RUNTIME DESTINATION bin)
+if(TARGET chronosdb_setup)
+    install(TARGETS chronosdb_setup RUNTIME DESTINATION bin)
 endif()

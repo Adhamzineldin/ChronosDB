@@ -1,4 +1,4 @@
-# FrancoDB Bug Fixes - Verification Checklist
+# ChronosDB Bug Fixes - Verification Checklist
 
 ## ✅ All 4 Bugs - FIXED
 

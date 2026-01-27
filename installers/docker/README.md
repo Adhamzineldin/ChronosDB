@@ -1,6 +1,6 @@
-# FrancoDB Docker Deployment
+# ChronosDB Docker Deployment
 
-This folder contains Docker configuration for FrancoDB containerized deployment.
+This folder contains Docker configuration for ChronosDB containerized deployment.
 
 ## 📦 Contents
 
@@ -20,13 +20,13 @@ This folder contains Docker configuration for FrancoDB containerized deployment.
 ### Option 1: Docker Compose (Recommended)
 
 ```bash
-cd /path/to/FrancoDB/installers/docker
+cd /path/to/ChronosDB/installers/docker
 
 # Start in detached mode
 docker-compose up -d
 
 # View logs
-docker-compose logs -f francodb
+docker-compose logs -f chronosdb
 
 # Stop container
 docker-compose down
@@ -38,15 +38,15 @@ docker-compose down
 
 ```bash
 # Build image
-docker build -t francodb:latest .
+docker build -t chronosdb:latest .
 
 # Run container
 docker run -d \
-  --name francodb-server \
+  --name chronosdb-server \
   -p 2501:2501 \
-  -v francodb_data:/opt/francodb/data \
-  -v francodb_logs:/opt/francodb/log \
-  francodb:latest
+  -v chronosdb_data:/opt/chronosdb/data \
+  -v chronosdb_logs:/opt/chronosdb/log \
+  chronosdb:latest
 ```
 
 ## 🏗️ Building the Image
@@ -54,10 +54,10 @@ docker run -d \
 ### Standard Build
 
 ```bash
-cd /path/to/FrancoDB/installers/docker
+cd /path/to/ChronosDB/installers/docker
 
 # Build with correct context (project root)
-docker build -f Dockerfile -t francodb:latest ../..
+docker build -f Dockerfile -t chronosdb:latest ../..
 ```
 
 Or use docker-compose:
@@ -68,8 +68,8 @@ docker-compose build
 ### Build with Custom Tag
 
 ```bash
-docker build -t francodb:1.0.0 .
-docker build -t francodb:stable .
+docker build -t chronosdb:1.0.0 .
+docker build -t chronosdb:stable .
 ```
 
 ### Build with Build Args
@@ -78,7 +78,7 @@ docker build -t francodb:stable .
 docker build \
   --build-arg BUILD_TYPE=Release \
   --build-arg CMAKE_FLAGS="-DENABLE_TESTS=OFF" \
-  -t francodb:latest .
+  -t chronosdb:latest .
 ```
 
 ## 📋 Image Features
@@ -89,7 +89,7 @@ docker build \
   - Final size: ~200 MB
 
 ✅ **Security**
-  - Runs as non-root user (`francodb`)
+  - Runs as non-root user (`chronosdb`)
   - No unnecessary packages
   - Minimal attack surface
 
@@ -107,11 +107,11 @@ Configure via `docker-compose.yml` or `-e` flags:
 
 ```yaml
 environment:
-  FRANCODB_PORT: "2501"
-  FRANCODB_BIND_ADDRESS: "0.0.0.0"
-  FRANCODB_LOG_LEVEL: "INFO"
-  FRANCODB_BUFFER_POOL_SIZE: "1024"
-  FRANCODB_AUTOSAVE_INTERVAL: "30"
+  CHRONOSDB_PORT: "2501"
+  CHRONOSDB_BIND_ADDRESS: "0.0.0.0"
+  CHRONOSDB_LOG_LEVEL: "INFO"
+  CHRONOSDB_BUFFER_POOL_SIZE: "1024"
+  CHRONOSDB_AUTOSAVE_INTERVAL: "30"
 ```
 
 ### Volume Mounts
@@ -121,11 +121,11 @@ Persistent storage for data and logs:
 ```yaml
 volumes:
   # Data directory
-  - francodb_data:/opt/francodb/data
+  - chronosdb_data:/opt/chronosdb/data
   # Logs directory  
-  - francodb_logs:/opt/francodb/log
+  - chronosdb_logs:/opt/chronosdb/log
   # Config file (optional)
-  - ./francodb.conf:/opt/francodb/etc/francodb.conf:ro
+  - ./chronosdb.conf:/opt/chronosdb/etc/chronosdb.conf:ro
 ```
 
 ### Port Mapping
@@ -163,17 +163,17 @@ docker-compose ps
 docker-compose logs -f
 
 # Check health
-docker-compose exec francodb curl http://localhost:2501/health
+docker-compose exec chronosdb curl http://localhost:2501/health
 ```
 
 ### Shell Access
 
 ```bash
 # Interactive shell
-docker-compose exec francodb /bin/bash
+docker-compose exec chronosdb /bin/bash
 
-# Run FrancoDB shell
-docker-compose exec francodb francodb
+# Run ChronosDB shell
+docker-compose exec chronosdb chronosdb
 ```
 
 ## 📊 Resource Limits
@@ -197,7 +197,7 @@ deploy:
 
 Already configured in Dockerfile:
 ```dockerfile
-USER francodb
+USER chronosdb
 ```
 
 ### Security Options
@@ -223,9 +223,9 @@ tmpfs:
 ```bash
 # Backup to tar.gz
 docker run --rm \
-  -v francodb_data:/data \
+  -v chronosdb_data:/data \
   -v $(pwd):/backup \
-  alpine tar czf /backup/francodb_backup_$(date +%Y%m%d).tar.gz -C /data .
+  alpine tar czf /backup/chronosdb_backup_$(date +%Y%m%d).tar.gz -C /data .
 ```
 
 ### Restore Data
@@ -236,9 +236,9 @@ docker-compose down
 
 # Restore from backup
 docker run --rm \
-  -v francodb_data:/data \
+  -v chronosdb_data:/data \
   -v $(pwd):/backup \
-  alpine sh -c "cd /data && tar xzf /backup/francodb_backup_20260119.tar.gz"
+  alpine sh -c "cd /data && tar xzf /backup/chronosdb_backup_20260119.tar.gz"
 
 # Start container
 docker-compose up -d
@@ -248,8 +248,8 @@ docker-compose up -d
 
 ```bash
 docker run --rm \
-  -v francodb_data:/data \
-  alpine tar c -C /data . > francodb_data.tar
+  -v chronosdb_data:/data \
+  alpine tar c -C /data . > chronosdb_data.tar
 ```
 
 ## 🔧 Troubleshooting
@@ -258,20 +258,20 @@ docker run --rm \
 
 ```bash
 # Check logs
-docker-compose logs francodb
+docker-compose logs chronosdb
 
 # Check container status
 docker-compose ps
 
 # Inspect container
-docker inspect francodb-server
+docker inspect chronosdb-server
 ```
 
 ### Permission Issues
 
 ```bash
 # Fix volume permissions
-docker-compose exec francodb chown -R francodb:francodb /opt/francodb/data
+docker-compose exec chronosdb chown -R chronosdb:chronosdb /opt/chronosdb/data
 ```
 
 ### Port Already in Use
@@ -289,10 +289,10 @@ ports:
 
 ```bash
 # Check health endpoint
-docker-compose exec francodb curl -v http://localhost:2501/health
+docker-compose exec chronosdb curl -v http://localhost:2501/health
 
 # View health status
-docker inspect francodb-server | grep -A 10 Health
+docker inspect chronosdb-server | grep -A 10 Health
 ```
 
 ## 📈 Monitoring
@@ -301,7 +301,7 @@ docker inspect francodb-server | grep -A 10 Health
 
 ```bash
 # Real-time stats
-docker stats francodb-server
+docker stats chronosdb-server
 
 # Container details
 docker-compose top
@@ -323,10 +323,10 @@ logging:
 
 ```bash
 # Export all logs
-docker-compose logs > francodb_logs.txt
+docker-compose logs > chronosdb_logs.txt
 
 # Export with timestamps
-docker-compose logs -t > francodb_logs_timestamped.txt
+docker-compose logs -t > chronosdb_logs_timestamped.txt
 ```
 
 ## 🌐 Networking
@@ -335,7 +335,7 @@ docker-compose logs -t > francodb_logs_timestamped.txt
 
 ```yaml
 services:
-  francodb:
+  chronosdb:
     networks:
       - app-network
   
@@ -343,7 +343,7 @@ services:
     networks:
       - app-network
     depends_on:
-      - francodb
+      - chronosdb
 
 networks:
   app-network:
@@ -364,7 +364,7 @@ ports:
 
 ```bash
 # Pull latest code
-cd /path/to/FrancoDB
+cd /path/to/ChronosDB
 git pull
 
 # Rebuild image
@@ -395,14 +395,14 @@ docker volume prune
 version: '3.8'
 
 services:
-  francodb:
-    image: francodb:1.0.0
+  chronosdb:
+    image: chronosdb:1.0.0
     restart: always
     environment:
-      - FRANCODB_PORT=2501
+      - CHRONOSDB_PORT=2501
     volumes:
-      - /var/lib/francodb/data:/opt/francodb/data
-      - /var/log/francodb:/opt/francodb/log
+      - /var/lib/chronosdb/data:/opt/chronosdb/data
+      - /var/log/chronosdb:/opt/chronosdb/log
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:2501/health"]
       interval: 30s
@@ -411,7 +411,7 @@ services:
     logging:
       driver: "syslog"
       options:
-        tag: "francodb"
+        tag: "chronosdb"
 ```
 
 ### Docker Swarm
@@ -421,10 +421,10 @@ services:
 docker swarm init
 
 # Deploy stack
-docker stack deploy -c docker-compose.yml francodb
+docker stack deploy -c docker-compose.yml chronosdb
 
 # Scale service
-docker service scale francodb_francodb=3
+docker service scale chronosdb_chronosdb=3
 ```
 
 ### Kubernetes (k8s)
@@ -432,7 +432,7 @@ docker service scale francodb_francodb=3
 Convert compose file to Kubernetes:
 ```bash
 kompose convert -f docker-compose.yml
-kubectl apply -f francodb-deployment.yaml
+kubectl apply -f chronosdb-deployment.yaml
 ```
 
 ## 📚 Additional Resources
@@ -459,16 +459,16 @@ docker ps -a
 docker images
 
 # Remove container
-docker rm francodb-server
+docker rm chronosdb-server
 
 # Remove image
-docker rmi francodb:latest
+docker rmi chronosdb:latest
 
 # View container logs
-docker logs -f francodb-server
+docker logs -f chronosdb-server
 
 # Execute command in container
-docker exec -it francodb-server bash
+docker exec -it chronosdb-server bash
 ```
 
 ---

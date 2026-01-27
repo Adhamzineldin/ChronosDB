@@ -17,7 +17,7 @@
 #include "network/session_context.h"
 #include "recovery/log_manager.h"
 
-namespace francodb {
+namespace chronosdb {
 
 // Forward declarations for specialized executors (SOLID - SRP)
 class DDLExecutor;
@@ -41,7 +41,7 @@ class TransactionExecutor;
  * - Specialized executors handle the actual work (SRP)
  * - Execute() is a thin coordinator (~30 lines)
  * 
- * @author FrancoDB Team
+ * @author ChronosDB Team
  */
 class ExecutionEngine {
 public:
@@ -143,4 +143,4 @@ private:
     alignas(64) std::atomic<int> next_txn_id_{1};
 };
 
-} // namespace francodb
+} // namespace chronosdb

@@ -7,7 +7,7 @@
 #include "storage/table/tuple.h"
 #include "common/config.h"
 
-namespace francodb {
+namespace chronosdb {
 
 /**
  * JoinExecutor: Executes JOIN operations between two or more tables
@@ -95,4 +95,4 @@ private:
     Transaction *txn_;
 };
 
-} // namespace francodb
+} // namespace chronosdb

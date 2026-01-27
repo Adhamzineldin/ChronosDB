@@ -8,7 +8,7 @@
 #include "common/rid.h"
 #include "common/exception.h"
 
-namespace francodb {
+namespace chronosdb {
 
     class SeqScanExecutor : public AbstractExecutor {
     public:
@@ -42,4 +42,4 @@ namespace francodb {
         TableHeap::Iterator iter_; 
     };
 
-} // namespace francodb
+} // namespace chronosdb

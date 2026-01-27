@@ -1,7 +1,7 @@
 ' ==============================================================================
-' FrancoDB Server Stop Script
+' ChronosDB Server Stop Script
 ' ==============================================================================
-' This script gracefully stops the FrancoDB service on Windows.
+' This script gracefully stops the ChronosDB service on Windows.
 ' It handles both service and direct process stopping modes.
 ' ==============================================================================
 
@@ -13,7 +13,7 @@ Dim strServiceName, intReturnCode, intWaitCount, intState
 
 ' Initialize
 Set objShell = CreateObject("WScript.Shell")
-strServiceName = "FrancoDBService"
+strServiceName = "ChronosDBService"
 
 ' ==============================================================================
 ' HELPER: Get service state (1=Stopped, 4=Running, etc.)
@@ -57,7 +57,7 @@ End Function
 ' ==============================================================================
 ' MAIN STOP LOGIC
 ' ==============================================================================
-Sub StopFrancoDB()
+Sub StopChronosDB()
     Dim blnGracefulStop
     
     blnGracefulStop = False
@@ -83,10 +83,10 @@ Sub StopFrancoDB()
     end if
     
     ' Step 2: Check if processes are still running and force kill if needed
-    if IsProcessRunning("francodb_server.exe") or IsProcessRunning("francodb_service.exe") then
+    if IsProcessRunning("chronosdb_server.exe") or IsProcessRunning("chronosdb_service.exe") then
         ' Force kill silently
-        objShell.Run "cmd /c taskkill /F /IM francodb_service.exe 2>nul", 0, True
-        objShell.Run "cmd /c taskkill /F /IM francodb_server.exe 2>nul", 0, True
+        objShell.Run "cmd /c taskkill /F /IM chronosdb_service.exe 2>nul", 0, True
+        objShell.Run "cmd /c taskkill /F /IM chronosdb_server.exe 2>nul", 0, True
         WScript.Sleep 1000
     end if
     
@@ -96,6 +96,6 @@ End Sub
 ' RUN THE SCRIPT
 ' ==============================================================================
 ' Silent operation - no popup windows
-StopFrancoDB()
+StopChronosDB()
 
 

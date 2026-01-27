@@ -7,7 +7,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace francodb {
+namespace chronosdb {
 
     enum class ExceptionType {
         INVALID = 0,        // Default / Unknown error
@@ -47,4 +47,4 @@ namespace francodb {
         std::string message_;
     };
 
-} // namespace francodb
+} // namespace chronosdb

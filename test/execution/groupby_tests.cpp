@@ -1,6 +1,6 @@
 #include "../framework/test_runner.h"
 
-namespace francodb_test {
+namespace chronosdb_test {
 
 void RunGroupByTests(TestRunner& runner) {
     runner.RunTest("GroupBy", "Single_Column_Grouping", []() {
@@ -44,5 +44,5 @@ void RunGroupByTests(TestRunner& runner) {
     });
 }
 
-} // namespace francodb_test
+} // namespace chronosdb_test
 

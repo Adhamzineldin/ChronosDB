@@ -12,7 +12,7 @@
 // --- CONFIGURATION ---
 const std::string SERVER_IP = "127.0.0.1";
 const int SERVER_PORT = 2501;      
-const std::string USER = "maayn";  
+const std::string USER = "chronos";  
 const std::string PASS = "root";   
 const char CMD_TEXT = 'Q';
 
@@ -23,10 +23,10 @@ uint64_t GetMicroseconds() {
 }
 
 // --- CLIENT CLASS ---
-class FrancoClient {
+class ChronosClient {
     SOCKET sock;
 public:
-    FrancoClient() : sock(INVALID_SOCKET) {}
+    ChronosClient() : sock(INVALID_SOCKET) {}
 
     bool Connect() {
         sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -97,10 +97,10 @@ int TestTimeTravel() {
     WSAStartup(MAKEWORD(2, 2), &wsaData);
 
     std::cout << "========================================" << std::endl;
-    std::cout << "   FRANCODB TIME TRAVEL SUITE           " << std::endl;
+    std::cout << "   CHRONOSDB TIME TRAVEL SUITE           " << std::endl;
     std::cout << "========================================" << std::endl;
 
-    FrancoClient client;
+    ChronosClient client;
     if (!client.Connect()) {
         std::cerr << "Failed to connect to server." << std::endl;
         return -1;

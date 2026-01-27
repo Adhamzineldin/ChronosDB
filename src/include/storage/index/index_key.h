@@ -2,7 +2,7 @@
 #include <cstring>
 #include "common/value.h"
 
-namespace francodb {
+namespace chronosdb {
 
     // A fixed-size key container for B+Tree
     template <size_t KeySize>
@@ -45,4 +45,4 @@ namespace francodb {
         TypeId type_;
     };
 
-} // namespace francodb
+} // namespace chronosdb

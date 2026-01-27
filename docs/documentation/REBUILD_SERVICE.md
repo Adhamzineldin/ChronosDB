@@ -7,30 +7,30 @@ Service shows as running in installer but fails with Error 1053 when started man
 
 ### Step 1: Rebuild the Service Executable
 ```powershell
-cd G:\University\Graduation\FrancoDB
-cmake --build cmake-build-debug --target francodb_service --config Debug
+cd G:\University\Graduation\ChronosDB
+cmake --build cmake-build-debug --target chronosdb_service --config Debug
 ```
 
 ### Step 2: Stop and Remove Old Service
 ```cmd
-sc stop FrancoDBService
-sc delete FrancoDBService
+sc stop ChronosDBService
+sc delete ChronosDBService
 ```
 
 ### Step 3: Copy New Service Executable
 ```cmd
-copy cmake-build-debug\francodb_service.exe "C:\Program Files\FrancoDB\bin\"
+copy cmake-build-debug\chronosdb_service.exe "C:\Program Files\ChronosDB\bin\"
 ```
 
 ### Step 4: Recreate and Start Service
 ```cmd
-sc create FrancoDBService binPath= "C:\Program Files\FrancoDB\bin\francodb_service.exe" start= auto
-sc start FrancoDBService
+sc create ChronosDBService binPath= "C:\Program Files\ChronosDB\bin\chronosdb_service.exe" start= auto
+sc start ChronosDBService
 ```
 
 ### Step 5: Verify
 ```cmd
-sc query FrancoDBService
+sc query ChronosDBService
 ```
 
 Should show: `STATE: 4 RUNNING`
@@ -44,8 +44,8 @@ Should show: `STATE: 4 RUNNING`
 
 ## Alternative: Reinstall Using Installer
 
-1. Uninstall FrancoDB from Control Panel
-2. Rebuild service: `cmake --build cmake-build-debug --target francodb_service`
+1. Uninstall ChronosDB from Control Panel
+2. Rebuild service: `cmake --build cmake-build-debug --target chronosdb_service`
 3. Recompile installer
 4. Run installer again
 
@@ -53,7 +53,7 @@ Should show: `STATE: 4 RUNNING`
 
 If service still fails, check Event Viewer:
 ```powershell
-Get-EventLog -LogName Application -Source "FrancoDBService" -Newest 10
+Get-EventLog -LogName Application -Source "ChronosDBService" -Newest 10
 ```
 
 Look for error messages about:

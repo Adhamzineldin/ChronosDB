@@ -1,4 +1,4 @@
-# FrancoDB S+ Features - Quick Start Guide
+# ChronosDB S+ Features - Quick Start Guide
 
 ## 🎯 Quick Navigation
 

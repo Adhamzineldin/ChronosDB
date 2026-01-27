@@ -5,10 +5,10 @@
 #include "buffer/buffer_pool_manager.h"
 #include "catalog/catalog.h"
 
-using namespace francodb;
+using namespace chronosdb;
 
 void TestDiskRecycling() {
-    std::string db_name = "recycle_test.francodb";
+    std::string db_name = "recycle_test.chronosdb";
     // Clean up any previous test files
     if (std::filesystem::exists(db_name)) {
         std::filesystem::remove(db_name);

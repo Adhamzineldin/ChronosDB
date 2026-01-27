@@ -11,7 +11,7 @@
 #include "common/type.h" 
 #include "common/value.h"
 
-namespace francodb {
+namespace chronosdb {
 
     // ========================================================================
     // CONSTRUCTOR
@@ -1038,7 +1038,7 @@ namespace francodb {
             std::string table_name = table_info->name_;
             
             // Skip system tables
-            if (table_name == "franco_users" || table_name.find("sys_") == 0) {
+            if (table_name == "chronos_users" || table_name.find("sys_") == 0) {
                 continue;
             }
             
@@ -1781,5 +1781,5 @@ namespace francodb {
         return -1;
     }
 
-} // namespace francodb
+} // namespace chronosdb
 

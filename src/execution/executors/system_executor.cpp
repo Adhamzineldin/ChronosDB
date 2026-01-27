@@ -4,19 +4,19 @@
  * Implementation of System Introspection Operations
  * Extracted from ExecutionEngine to satisfy Single Responsibility Principle.
  * 
- * @author FrancoDB Team
+ * @author ChronosDB Team
  */
 
 #include "execution/system_executor.h"
 #include "parser/statement.h"
 #include "network/session_context.h"
 #include "network/database_registry.h"
-#include "common/franco_net_config.h"
+#include "common/chronos_net_config.h"
 #include <filesystem>
 #include <algorithm>
 #include <set>
 
-namespace francodb {
+namespace chronosdb {
 
 // ============================================================================
 // SHOW DATABASES
@@ -28,9 +28,9 @@ ExecutionResult SystemExecutor::ShowDatabases(ShowDatabasesStatement* stmt, Sess
     // Use a set to avoid duplicates
     std::set<std::string> db_names;
 
-    // Always show francodb if user has access
-    if (auth_manager_->HasDatabaseAccess(session->current_user, "francodb")) {
-        db_names.insert("francodb");
+    // Always show chronosdb if user has access
+    if (auth_manager_->HasDatabaseAccess(session->current_user, "chronosdb")) {
+        db_names.insert("chronosdb");
     }
 
     // Scan filesystem directory for persisted databases
@@ -44,8 +44,8 @@ ExecutionResult SystemExecutor::ShowDatabases(ShowDatabasesStatement* stmt, Sess
             if (entry.is_directory()) {
                 db_name = entry.path().filename().string();
 
-                // Verify it's a valid database directory (contains .francodb file)
-                fs::path db_file = entry.path() / (db_name + ".francodb");
+                // Verify it's a valid database directory (contains .chronosdb file)
+                fs::path db_file = entry.path() / (db_name + ".chronosdb");
                 if (!fs::exists(db_file)) {
                     continue;
                 }
@@ -178,5 +178,5 @@ ExecutionResult SystemExecutor::WhoAmI(WhoAmIStatement* stmt, SessionContext* se
     return ExecutionResult::Data(rs);
 }
 
-} // namespace francodb
+} // namespace chronosdb
 

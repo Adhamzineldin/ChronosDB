@@ -6,7 +6,7 @@
 
 
 
-namespace francodb {
+namespace chronosdb {
     Parser::Parser(Lexer lexer) : lexer_(std::move(lexer)) {
         // Prepare the first token
         current_token_ = lexer_.NextToken();
@@ -1153,4 +1153,4 @@ namespace francodb {
 
         return static_cast<uint64_t>(t) * 1000000ULL;
     }
-} // namespace francodb
+} // namespace chronosdb

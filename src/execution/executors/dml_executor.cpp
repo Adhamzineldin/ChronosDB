@@ -15,7 +15,7 @@
  * - Supports both auto-commit and explicit transaction modes
  * - Proper logging for crash recovery
  * 
- * @author FrancoDB Team
+ * @author ChronosDB Team
  */
 
 #include "execution/dml_executor.h"
@@ -39,7 +39,7 @@
 #include <sstream>
 #include <set>
 
-namespace francodb {
+namespace chronosdb {
 
 // ============================================================================
 // INSERT - With Full Constraint Validation
@@ -447,5 +447,5 @@ ExecutionResult DMLExecutor::ExecuteJoin(SelectStatement* stmt, ExecutorContext*
     return ExecutionResult::Error("[DML] JOIN queries should be processed through main Select path");
 }
 
-} // namespace francodb
+} // namespace chronosdb
 

@@ -1,4 +1,4 @@
-# FrancoDB
+# ChronosDB
 
 A high-performance, multi-protocol database management system written in C++.
 
@@ -11,7 +11,7 @@ A high-performance, multi-protocol database management system written in C++.
 - 🔄 **Auto-Save** - Periodic auto-save every 30 seconds
 - 🐳 **Docker Ready** - Easy deployment with Docker
 - 📚 **Multi-Database** - Support for multiple databases
-- 🔍 **FQL (Franco Query Language)** - SQL-like syntax with Arabic-style keywords
+- 🔍 **CQL (Chronos Query Language)** - SQL-like syntax with Arabic-style keywords
 
 ## Quick Start
 
@@ -22,7 +22,7 @@ A high-performance, multi-protocol database management system written in C++.
 docker-compose up -d
 
 # View logs
-docker-compose logs -f francodb
+docker-compose logs -f chronosdb
 ```
 
 ### Manual Installation
@@ -31,13 +31,13 @@ docker-compose logs -f francodb
 ```bash
 chmod +x install.sh
 ./install.sh
-./build/francodb_server
+./build/chronosdb_server
 ```
 
 **Windows:**
 ```powershell
 .\install.ps1
-.\build\francodb_server.exe
+.\build\chronosdb_server.exe
 ```
 
 See [INSTALL.md](INSTALL.md) for detailed installation instructions.
@@ -48,7 +48,7 @@ See [INSTALL.md](INSTALL.md) for detailed installation instructions.
 
 Start the server:
 ```bash
-./francodb_server
+./chronosdb_server
 ```
 
 The server listens on port `2501` by default.
@@ -57,17 +57,17 @@ The server listens on port `2501` by default.
 
 Use the interactive shell:
 ```bash
-./francodb_shell
+./chronosdb_shell
 ```
 
 Connection string format:
 ```
-maayn://username:password@host:port/database
+chronos://username:password@host:port/database
 ```
 
 Example:
 ```
-maayn://maayn:root@localhost:2501/mydb
+chronos://chronos:root@localhost:2501/mydb
 ```
 
 ### Using in Your Code
@@ -76,43 +76,43 @@ See [SDK_README.md](docs/documentation/SDK_README.md) for client library usage.
 
 **C++ Example:**
 ```cpp
-#include "network/franco_client.h"
-using namespace francodb;
+#include "network/chronos_client.h"
+using namespace chronosdb;
 
-FrancoClient client;
-client.ConnectFromString("maayn://maayn:root@localhost:2501/mydb");
+ChronosClient client;
+client.ConnectFromString("chronos://chronos:root@localhost:2501/mydb");
 std::string result = client.Query("SELECT * FROM users;\n");
 ```
 
 **Python Example:**
 ```python
-from examples.python_example import FrancoDBClient
+from examples.python_example import ChronosDBClient
 
-client = FrancoDBClient('localhost', 2501)
-client.connect('maayn', 'root', 'mydb')
+client = ChronosDBClient('localhost', 2501)
+client.connect('chronos', 'root', 'mydb')
 result = client.query("SELECT * FROM users;\n")
 ```
 
 **JavaScript Example:**
 ```javascript
-const FrancoDBClient = require('./examples/javascript_example');
+const ChronosDBClient = require('./examples/javascript_example');
 
-const client = new FrancoDBClient('localhost', 2501);
-await client.connect('maayn', 'root', 'mydb');
+const client = new ChronosDBClient('localhost', 2501);
+await client.connect('chronos', 'root', 'mydb');
 const result = await client.query('SELECT * FROM users;\n');
 ```
 
 ## Default Credentials
 
-- **Username:** `maayn`
+- **Username:** `chronos`
 - **Password:** `root`
 - **Port:** `2501`
 
-## FQL (Franco Query Language)
+## CQL (Chronos Query Language)
 
-FrancoDB supports both standard SQL and Arabic-style keywords:
+ChronosDB supports both standard SQL and Arabic-style keywords:
 
-| SQL | FQL (Arabic) | Description |
+| SQL | CQL (Arabic) | Description |
 |-----|--------------|-------------|
 | `SELECT` | `2esta5dem` | Query data |
 | `INSERT` | `emla` | Insert data |
@@ -143,7 +143,7 @@ See `docs/test_commands_comprehensive.txt` for more query examples.
 
 - **Storage Layer** - Disk manager, buffer pool, page management
 - **Catalog** - Metadata management (tables, indexes)
-- **Parser** - SQL/FQL query parsing
+- **Parser** - SQL/CQL query parsing
 - **Execution Engine** - Query execution with executors
 - **Network Layer** - Multi-protocol server (TEXT, JSON, BINARY)
 - **Authentication** - User management and RBAC

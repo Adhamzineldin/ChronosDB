@@ -14,7 +14,7 @@
 #include "common/config.h"
 #include "common/config_manager.h"
 
-namespace francodb {
+namespace chronosdb {
 
 struct DbEntry {
     std::unique_ptr<DiskManager> dm;
@@ -65,8 +65,8 @@ public:
         std::filesystem::path db_dir = std::filesystem::path(data_dir) / name;
         std::filesystem::create_directories(db_dir);
         
-        // Database file inside its directory: data/dbname/dbname.francodb
-        std::filesystem::path db_file = db_dir / (name + ".francodb");
+        // Database file inside its directory: data/dbname/dbname.chronosdb
+        std::filesystem::path db_file = db_dir / (name + ".chronosdb");
         entry->dm = std::make_unique<DiskManager>(db_file.string());
         
         // Apply encryption if enabled
@@ -136,5 +136,5 @@ private:
     std::map<std::string, Catalog*> external_catalog_;
 };
 
-} // namespace francodb
+} // namespace chronosdb
 

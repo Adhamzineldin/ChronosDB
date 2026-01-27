@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <set>
 
-namespace francodb {
+namespace chronosdb {
 
 // ============================================================================
 // GroupByExecutor Implementation
@@ -250,5 +250,5 @@ std::string DistinctExecutor::TupleToString(const Tuple &tuple) const {
     return result;
 }
 
-} // namespace francodb
+} // namespace chronosdb
 

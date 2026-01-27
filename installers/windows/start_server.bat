@@ -1,13 +1,13 @@
 @echo off
 REM ==============================================================================
-REM FrancoDB Server Start Script (Batch Version)
+REM ChronosDB Server Start Script (Batch Version)
 REM ==============================================================================
-REM This batch script starts the FrancoDB service on Windows.
+REM This batch script starts the ChronosDB service on Windows.
 REM ==============================================================================
 
 setlocal enabledelayedexpansion
 
-echo FrancoDB Service Startup
+echo ChronosDB Service Startup
 echo ======================================
 echo.
 
@@ -25,10 +25,10 @@ if %ERRORLEVEL% NEQ 0 (
 
 REM Try to start the service
 echo [INFO] Checking service status...
-sc query FrancoDBService >nul 2>&1
+sc query ChronosDBService >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
-    echo [INFO] Service found. Starting FrancoDB...
-    sc start FrancoDBService >nul 2>&1
+    echo [INFO] Service found. Starting ChronosDB...
+    sc start ChronosDBService >nul 2>&1
     if %ERRORLEVEL% EQU 0 (
         echo [OK] Service started successfully!
         goto :end
@@ -41,13 +41,13 @@ if %ERRORLEVEL% EQU 0 (
     )
 ) else (
     echo [WARN] Service not found. Trying to start executable directly...
-    if exist "%SCRIPT_DIR%francodb_server.exe" (
-        echo [INFO] Starting FrancoDB executable...
-        start "" "%SCRIPT_DIR%francodb_server.exe"
-        echo [OK] FrancoDB started
+    if exist "%SCRIPT_DIR%chronosdb_server.exe" (
+        echo [INFO] Starting ChronosDB executable...
+        start "" "%SCRIPT_DIR%chronosdb_server.exe"
+        echo [OK] ChronosDB started
     ) else (
-        echo [ERROR] FrancoDB executable not found
-        echo Expected location: %SCRIPT_DIR%francodb_server.exe
+        echo [ERROR] ChronosDB executable not found
+        echo Expected location: %SCRIPT_DIR%chronosdb_server.exe
     )
 )
 

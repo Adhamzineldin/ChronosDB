@@ -7,7 +7,7 @@
 #include "parser/statement.h"
 #include "execution/execution_result.h"
 
-namespace francodb {
+namespace chronosdb {
 
 // Forward declarations
 class ExecutorContext;
@@ -196,5 +196,5 @@ public:
     }
 };
 
-} // namespace francodb
+} // namespace chronosdb
 

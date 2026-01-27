@@ -1,7 +1,7 @@
-# FrancoDB S+ Grade Enhancement Guide
+# ChronosDB S+ Grade Enhancement Guide
 
 ## Overview
-This document details the S+ grade enhancements to FrancoDB, including:
+This document details the S+ grade enhancements to ChronosDB, including:
 - JOIN support (INNER, LEFT, RIGHT, FULL, CROSS)
 - FOREIGN KEY constraints
 - Nullable columns with default values

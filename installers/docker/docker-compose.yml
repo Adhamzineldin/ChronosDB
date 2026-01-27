@@ -1,14 +1,14 @@
-name: francodb
+name: chronosdb
 
 services:
-  francodb:
+  chronosdb:
     # Build from project root with Dockerfile in installers/docker
     build:
       context: ../..
       dockerfile: installers/docker/Dockerfile
     
     # Container name for easy reference
-    container_name: francodb-server
+    container_name: chronosdb-server
     
     # Port mapping: host:container
     ports:
@@ -17,22 +17,22 @@ services:
     # Volume mappings for data persistence
     volumes:
       # Data directory - persistent storage
-      - francodb_data:/opt/francodb/data
+      - chronosdb_data:/opt/chronosdb/data
       # Logs directory
-      - francodb_logs:/opt/francodb/log
+      - chronosdb_logs:/opt/chronosdb/log
     
     # Environment variables
     environment:
       # Server configuration
-      FRANCODB_PORT: "2501"
-      FRANCODB_BIND_ADDRESS: "0.0.0.0"
+      CHRONOSDB_PORT: "2501"
+      CHRONOSDB_BIND_ADDRESS: "0.0.0.0"
       
       # Logging
-      FRANCODB_LOG_LEVEL: "INFO"
+      CHRONOSDB_LOG_LEVEL: "INFO"
       
       # Performance
-      FRANCODB_BUFFER_POOL_SIZE: "1024"
-      FRANCODB_AUTOSAVE_INTERVAL: "30"
+      CHRONOSDB_BUFFER_POOL_SIZE: "1024"
+      CHRONOSDB_AUTOSAVE_INTERVAL: "30"
     
     # Resource limits
     deploy:
@@ -68,18 +68,18 @@ services:
     
     # Network configuration
     networks:
-      - francodb-net
+      - chronosdb-net
 
 # Named volumes for persistence
 volumes:
-  francodb_data:
+  chronosdb_data:
     driver: local
     driver_opts:
       type: none
       o: bind
       device: ../../data
   
-  francodb_logs:
+  chronosdb_logs:
     driver: local
     driver_opts:
       type: none
@@ -88,5 +88,5 @@ volumes:
 
 # Custom network
 networks:
-  francodb-net:
+  chronosdb-net:
     driver: bridge

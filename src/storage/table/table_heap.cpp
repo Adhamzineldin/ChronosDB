@@ -2,7 +2,7 @@
 #include "buffer/page_guard.h"
 #include "common/exception.h"
 
-namespace francodb {
+namespace chronosdb {
     // Constructor 1: Open existing
     TableHeap::TableHeap(IBufferManager *bpm, page_id_t first_page_id)
         : buffer_pool_manager_(bpm), first_page_id_(first_page_id) {
@@ -285,4 +285,4 @@ namespace francodb {
     std::unique_ptr<ITableStorage::Iterator> TableHeap::CreateIterator(Transaction* txn) {
         return std::make_unique<TableHeapIteratorAdapter>(Begin(txn), End());
     }
-} // namespace francodb
+} // namespace chronosdb

@@ -1,4 +1,4 @@
-# FrancoDB Test Suite - CMake/CTest Guide
+# ChronosDB Test Suite - CMake/CTest Guide
 
 ## 🎯 Professional Test Execution (No Scripts!)
 
@@ -212,7 +212,7 @@ Tests are configured in `test/CMakeLists.txt`:
 ```cmake
 # Build comprehensive test suite
 add_executable(run_all_tests ${TEST_SUITE_SOURCES})
-target_link_libraries(run_all_tests PRIVATE francodb_lib)
+target_link_libraries(run_all_tests PRIVATE chronosdb_lib)
 
 # Register with CTest
 add_test(NAME ComprehensiveTestSuite COMMAND run_all_tests)

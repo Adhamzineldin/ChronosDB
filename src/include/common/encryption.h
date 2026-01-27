@@ -4,7 +4,7 @@
 #include <vector>
 #include <cstdint>
 
-namespace francodb {
+namespace chronosdb {
 
 class Encryption {
 public:
@@ -21,4 +21,4 @@ public:
     static std::vector<uint8_t> DeriveKey(const std::string& key_str, size_t key_size = 32);
 };
 
-} // namespace francodb
+} // namespace chronosdb

@@ -7,7 +7,7 @@
 #include "session_context.h"
 #include "common/auth_manager.h"
 
-namespace francodb {
+namespace chronosdb {
 
     
     

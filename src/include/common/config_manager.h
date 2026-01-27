@@ -6,7 +6,7 @@
 #include <map>
 #include <filesystem>
 
-namespace francodb {
+namespace chronosdb {
 
 class ConfigManager {
 public:
@@ -16,13 +16,13 @@ public:
     }
 
     // Load configuration from file
-    bool LoadConfig(const std::string& config_path = "francodb.conf");
+    bool LoadConfig(const std::string& config_path = "chronosdb.conf");
     
     // Save configuration to file
-    bool SaveConfig(const std::string& config_path = "francodb.conf");
+    bool SaveConfig(const std::string& config_path = "chronosdb.conf");
     
     // Create default config file
-    bool CreateDefaultConfig(const std::string& config_path = "francodb.conf");
+    bool CreateDefaultConfig(const std::string& config_path = "chronosdb.conf");
     
     // Getters
     int GetPort() const { return port_; }
@@ -52,7 +52,7 @@ private:
     ConfigManager& operator=(const ConfigManager&) = delete;
     
     int port_ = 2501;
-    std::string root_username_ = "maayn";
+    std::string root_username_ = "chronos";
     std::string root_password_ = "root";
     std::string data_directory_ = "data";
     bool encryption_enabled_ = false;
@@ -63,4 +63,4 @@ private:
     std::string GenerateEncryptionKey();
 };
 
-} // namespace francodb
+} // namespace chronosdb

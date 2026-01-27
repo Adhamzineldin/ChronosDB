@@ -1,7 +1,7 @@
 ' ==============================================================================
-' FrancoDB Server Startup Script
+' ChronosDB Server Startup Script
 ' ==============================================================================
-' This script starts the FrancoDB service on Windows.
+' This script starts the ChronosDB service on Windows.
 ' It handles both service and direct executable startup modes.
 ' ==============================================================================
 
@@ -14,7 +14,7 @@ Dim intReturnCode, blnServiceExists, blnRunning
 
 ' Initialize
 Set objShell = CreateObject("WScript.Shell")
-strServiceName = "FrancoDBService"
+strServiceName = "ChronosDBService"
 blnServiceExists = False
 blnRunning = False
 
@@ -23,7 +23,7 @@ strInstallPath = objShell.CurrentDirectory
 If Right(strInstallPath, 1) <> "\" Then
     strInstallPath = strInstallPath & "\"
 End If
-strServerExe = strInstallPath & "francodb_server.exe"
+strServerExe = strInstallPath & "chronosdb_server.exe"
 
 ' ==============================================================================
 ' HELPER: Check if service exists
@@ -71,13 +71,13 @@ End Function
 ' ==============================================================================
 ' MAIN STARTUP LOGIC
 ' ==============================================================================
-Sub StartFrancoDB()
+Sub StartChronosDB()
     Dim intState, intWaitCount, blnSuccess, objFSO, logFile
     
     ' Silent operation - no console output or message boxes
     ' Logs are written to a file instead
     Set objFSO = CreateObject("Scripting.FileSystemObject")
-    logFile = strInstallPath & "francodb_startup.log"
+    logFile = strInstallPath & "chronosdb_startup.log"
     
     ' Check if service exists
     if ServiceExists(strServiceName) then
@@ -138,6 +138,6 @@ End Function
 ' RUN THE SCRIPT
 ' ==============================================================================
 ' Silent startup - no output or message boxes
-StartFrancoDB()
+StartChronosDB()
 
 

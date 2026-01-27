@@ -13,7 +13,7 @@
 #include <unistd.h>
 #endif
 
-namespace francodb {
+namespace chronosdb {
 
 bool ConfigManager::LoadConfig(const std::string& config_path) {
     std::ifstream file(config_path);
@@ -73,7 +73,7 @@ bool ConfigManager::SaveConfig(const std::string& config_path) {
         return false;
     }
     
-    file << "# FrancoDB Configuration File\n";
+    file << "# ChronosDB Configuration File\n";
     file << "# Generated automatically\n\n";
     
     file << "port = " << port_ << "\n";
@@ -147,9 +147,9 @@ std::string ConfigManager::GenerateEncryptionKey() {
 
 void ConfigManager::InteractiveConfig() {
     std::cout << "\n==========================================" << std::endl;
-    std::cout << "  FrancoDB Configuration Setup" << std::endl;
+    std::cout << "  ChronosDB Configuration Setup" << std::endl;
     std::cout << "==========================================" << std::endl;
-    std::cout << "\nPlease configure FrancoDB settings:\n" << std::endl;
+    std::cout << "\nPlease configure ChronosDB settings:\n" << std::endl;
     
     // Port
     std::cout << "Server port [" << port_ << "]: ";
@@ -208,4 +208,4 @@ void ConfigManager::InteractiveConfig() {
     std::cout << "\nConfiguration saved!" << std::endl;
 }
 
-} // namespace francodb
+} // namespace chronosdb

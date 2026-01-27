@@ -16,7 +16,7 @@
 #include "network/database_registry.h"
 #include "recovery/log_manager.h"
 
-using namespace francodb;
+using namespace chronosdb;
 
 // Shared Resources
 DiskManager *g_disk_manager;
@@ -80,7 +80,7 @@ void StressWorker(int id, int num_ops, int max_users) {
 }
 
 void TestRealWorldTraffic() {
-    std::string db_file = "test_traffic.francodb";
+    std::string db_file = "test_traffic.chronosdb";
     // Clean up any previous test files
     if (std::filesystem::exists(db_file)) std::filesystem::remove(db_file);
     if (std::filesystem::exists(db_file + ".meta")) std::filesystem::remove(db_file + ".meta");

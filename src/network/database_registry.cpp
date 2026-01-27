@@ -3,7 +3,7 @@
 #include "common/config_manager.h"
 #include <iostream>
 
-namespace francodb {
+namespace chronosdb {
 
     void DatabaseRegistry::FlushAllDatabases() {
         // 1. Flush "Owned" and "Managed" Databases
@@ -39,4 +39,4 @@ namespace francodb {
         std::cout << "[REGISTRY] All databases persisted to disk." << std::endl;
     }
 
-} // namespace francodb
+} // namespace chronosdb

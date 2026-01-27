@@ -5,7 +5,7 @@
 #include "recovery/log_manager.h"
 #include "recovery/recovery_manager.h"
 
-using namespace francodb;
+using namespace chronosdb;
 
 void TestTimeTravel2() {
     std::string log_file = "time_machine.log";

@@ -10,7 +10,7 @@
 #include "buffer/buffer_pool_manager.h"
 #include "common/exception.h"
 
-using namespace francodb;
+using namespace chronosdb;
 
 // Helper to create a tuple from a string
 Tuple CreateTuple(const std::string &val, Schema &out_schema) {
@@ -35,7 +35,7 @@ void CheckTuple(Tuple &tuple, const Schema &schema, const std::string &expected_
 }
 
 void TestTableHeap() {
-    std::string filename = "test_table_heap.francodb";
+    std::string filename = "test_table_heap.chronosdb";
     if (std::filesystem::exists(filename)) {
         std::filesystem::remove(filename);
     }

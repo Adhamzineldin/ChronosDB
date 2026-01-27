@@ -8,7 +8,7 @@
 #include <cmath>
 #include <iostream>
 
-namespace francodb {
+namespace chronosdb {
 
 void InsertExecutor::Init() {
     // 1. Look up the table in the Catalog
@@ -409,4 +409,4 @@ const Schema *InsertExecutor::GetOutputSchema() {
     return &table_info_->schema_;
 }
 
-} // namespace francodb
+} // namespace chronosdb

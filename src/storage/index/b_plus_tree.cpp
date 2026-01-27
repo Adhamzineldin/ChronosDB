@@ -6,7 +6,7 @@
 #include "storage/index/b_plus_tree.h"
 #include "storage/index/index_key.h"
 
-namespace francodb {
+namespace chronosdb {
 
     // --- CONSTRUCTOR ---
     template<typename KeyType, typename ValueType, typename KeyComparator>
@@ -579,4 +579,4 @@ namespace francodb {
     N *BPlusTree<KeyType, ValueType, KeyComparator>::Split(N *node) { (void)node; return nullptr; } 
 
     template class BPlusTree<GenericKey<8>, RID, GenericComparator<8>>;
-} // namespace francodb
+} // namespace chronosdb

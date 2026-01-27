@@ -5,7 +5,7 @@
 #include "storage/table/tuple.h"
 #include "common/rid.h"
 
-namespace francodb {
+namespace chronosdb {
 
 // Forward declarations
 class Transaction;
@@ -224,5 +224,5 @@ public:
     virtual int GetNumPages() const = 0;
 };
 
-} // namespace francodb
+} // namespace chronosdb
 

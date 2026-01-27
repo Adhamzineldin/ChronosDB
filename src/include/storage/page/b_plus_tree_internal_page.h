@@ -5,7 +5,7 @@
 #include "storage/index/index_key.h"
 
 
-namespace francodb {
+namespace chronosdb {
     class RID;
 
     /**
@@ -49,4 +49,4 @@ namespace francodb {
     };
     
     
-} // namespace francodb
+} // namespace chronosdb

@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <iostream>
 
-namespace francodb {
+namespace chronosdb {
 
 JoinExecutor::JoinExecutor(ExecutorContext *exec_ctx,
                            std::unique_ptr<AbstractExecutor> left_executor,
@@ -307,4 +307,4 @@ const Schema *JoinExecutor::GetOutputSchema() {
     return output_schema_.get();
 }
 
-} // namespace francodb
+} // namespace chronosdb

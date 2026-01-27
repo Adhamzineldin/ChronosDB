@@ -41,7 +41,7 @@ class Cursor {
                 return this._parseText(packet);
             }
         } catch (e) {
-            if (e instanceof FrancoDBError) throw e;
+            if (e instanceof ChronosDBError) throw e;
             throw new OperationalError(`Network error: ${e.message}`);
         }
     }

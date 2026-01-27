@@ -1,21 +1,21 @@
 ﻿[Setup]
-AppName=FrancoDB
+AppName=ChronosDB
 AppVersion=1.0
-AppPublisher=FrancoDB Team
-AppPublisherURL=https://github.com/adhamzineldin/FrancoDB
+AppPublisher=ChronosDB Team
+AppPublisherURL=https://github.com/adhamzineldin/ChronosDB
 AppId={{8C5E4A9B-3F2D-4B1C-9A7E-5D8F2C1B4A3E}
-DefaultDirName={autopf}\FrancoDB
-DefaultGroupName=FrancoDB
-OutputBaseFilename=FrancoDB_Setup
+DefaultDirName={autopf}\ChronosDB
+DefaultGroupName=ChronosDB
+OutputBaseFilename=ChronosDB_Setup
 Compression=lzma
 SolidCompression=yes
 ChangesEnvironment=yes
 PrivilegesRequired=admin
 ArchitecturesInstallIn64BitMode=x64
 WizardStyle=modern
-SetupIconFile=..\..\resources\francodb.ico
-UninstallDisplayIcon={app}\bin\francodb_server.exe
-AppMutex=FrancoDBInstaller
+SetupIconFile=..\..\resources\chronosdb.ico
+UninstallDisplayIcon={app}\bin\chronosdb_server.exe
+AppMutex=ChronosDBInstaller
 UsePreviousAppDir=yes
 DirExistsWarning=auto
 
@@ -35,14 +35,14 @@ Source: "..\..\cmake-build-release\*.dll"; DestDir: "{app}\bin"; Flags: ignoreve
 ; 2. EXECUTABLES (RELEASE ONLY)
 ; ==============================================================================
 ; Server
-Source: "..\..\cmake-build-release\francodb_server.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
+Source: "..\..\cmake-build-release\chronosdb_server.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
 
-; Shell (Installed as 'francodb_shell.exe' and alias 'francodb.exe')
-Source: "..\..\cmake-build-release\francodb_shell.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
-Source: "..\..\cmake-build-release\francodb_shell.exe"; DestDir: "{app}\bin"; DestName: "francodb.exe"; Flags: ignoreversion
+; Shell (Installed as 'chronosdb_shell.exe' and alias 'chronosdb.exe')
+Source: "..\..\cmake-build-release\chronosdb_shell.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
+Source: "..\..\cmake-build-release\chronosdb_shell.exe"; DestDir: "{app}\bin"; DestName: "chronosdb.exe"; Flags: ignoreversion
 
 ; Service
-Source: "..\..\cmake-build-release\francodb_service.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
+Source: "..\..\cmake-build-release\chronosdb_service.exe"; DestDir: "{app}\bin"; Flags: ignoreversion
 
 ; ==============================================================================
 ; 3. MANAGEMENT SCRIPTS
@@ -56,12 +56,12 @@ Source: "start_server.vbs"; DestDir: "{app}\bin"; Flags: ignoreversion
 Source: "stop_server.vbs"; DestDir: "{app}\bin"; Flags: ignoreversion
 
 ; PowerShell utility module
-Source: "FrancoDBUtils.ps1"; DestDir: "{app}\bin"; Flags: ignoreversion
+Source: "ChronosDBUtils.ps1"; DestDir: "{app}\bin"; Flags: ignoreversion
 
 
 [UninstallDelete]
 ; Force delete the generated config file
-Type: files; Name: "{app}\bin\francodb.conf"
+Type: files; Name: "{app}\bin\chronosdb.conf"
 
 ; Force delete the entire data and log directories (and everything inside them)
 Type: filesandordirs; Name: "{app}\data"
@@ -73,11 +73,11 @@ Type: dirifempty; Name: "{app}"
 
 
 [Icons]
-Name: "{group}\FrancoDB Shell"; Filename: "{app}\bin\francodb.exe"; WorkingDir: "{app}\bin"
-Name: "{group}\FrancoDB Configuration"; Filename: "notepad.exe"; Parameters: """{app}\bin\francodb.conf"""
-Name: "{group}\Start FrancoDB"; Filename: "{app}\bin\start_server.bat"; WorkingDir: "{app}\bin"; IconFilename: "{app}\bin\francodb_server.exe"
-Name: "{group}\Stop FrancoDB"; Filename: "{app}\bin\stop_server.bat"; WorkingDir: "{app}\bin"; IconFilename: "{app}\bin\francodb_server.exe"
-Name: "{group}\Uninstall FrancoDB"; Filename: "{uninstallexe}"
+Name: "{group}\ChronosDB Shell"; Filename: "{app}\bin\chronosdb.exe"; WorkingDir: "{app}\bin"
+Name: "{group}\ChronosDB Configuration"; Filename: "notepad.exe"; Parameters: """{app}\bin\chronosdb.conf"""
+Name: "{group}\Start ChronosDB"; Filename: "{app}\bin\start_server.bat"; WorkingDir: "{app}\bin"; IconFilename: "{app}\bin\chronosdb_server.exe"
+Name: "{group}\Stop ChronosDB"; Filename: "{app}\bin\stop_server.bat"; WorkingDir: "{app}\bin"; IconFilename: "{app}\bin\chronosdb_server.exe"
+Name: "{group}\Uninstall ChronosDB"; Filename: "{uninstallexe}"
 
 [Registry]
 ; 1. Existing System Path Update (Keep this!)
@@ -86,22 +86,22 @@ Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environmen
     Check: NeedsAddPath(ExpandConstant('{app}\bin'))
 
 ; ==============================================================================
-; 2. URL PROTOCOL HANDLER (maayn://)
+; 2. URL PROTOCOL HANDLER (chronos://)
 ; ==============================================================================
-; This registers the protocol so Windows knows "maayn://" opens FrancoDB Shell
-Root: HKCR; Subkey: "maayn"; ValueType: string; ValueName: ""; ValueData: "URL:FrancoDB Protocol"; Flags: uninsdeletekey
-Root: HKCR; Subkey: "maayn"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""; Flags: uninsdeletekey
+; This registers the protocol so Windows knows "chronos://" opens ChronosDB Shell
+Root: HKCR; Subkey: "chronos"; ValueType: string; ValueName: ""; ValueData: "URL:ChronosDB Protocol"; Flags: uninsdeletekey
+Root: HKCR; Subkey: "chronos"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""; Flags: uninsdeletekey
 
 ; Set the Icon for the protocol (uses the shell exe icon)
-Root: HKCR; Subkey: "maayn\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\bin\francodb_shell.exe,0"; Flags: uninsdeletekey
+Root: HKCR; Subkey: "chronos\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\bin\chronosdb_shell.exe,0"; Flags: uninsdeletekey
 
 ; Define the command to run when a link is clicked
 ; We wrap %1 in quotes to handle spaces in URLs
-Root: HKCR; Subkey: "maayn\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\bin\francodb_shell.exe"" ""%1"""; Flags: uninsdeletekey
+Root: HKCR; Subkey: "chronos\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\bin\chronosdb_shell.exe"" ""%1"""; Flags: uninsdeletekey
 
 [UninstallRun]
-Filename: "sc.exe"; Parameters: "stop FrancoDBService"; Flags: runhidden; RunOnceId: "StopService"
-Filename: "sc.exe"; Parameters: "delete FrancoDBService"; Flags: runhidden; RunOnceId: "DeleteService"
+Filename: "sc.exe"; Parameters: "stop ChronosDBService"; Flags: runhidden; RunOnceId: "StopService"
+Filename: "sc.exe"; Parameters: "delete ChronosDBService"; Flags: runhidden; RunOnceId: "DeleteService"
 
 
 
@@ -212,7 +212,7 @@ begin
   CredentialsPage.Add('Username:', False);
   CredentialsPage.Add('Password:', True);
   CredentialsPage.Add('Confirm:', True);
-  CredentialsPage.Values[0] := 'maayn';
+  CredentialsPage.Values[0] := 'chronos';
 
   EncryptionPage := CreateInputOptionPage(CredentialsPage.ID, 'Encryption', 'Security', 'Choose preference:', True, False);
   EncryptionPage.Add('No encryption');
@@ -299,7 +299,7 @@ begin
     if (State = 1) or (State = -1) then
     begin
       // DOUBLE CHECK: Is the actual .exe still in memory?
-      ProcessRunning := IsProcessRunning('francodb_server.exe') or IsProcessRunning('francodb_service.exe');
+      ProcessRunning := IsProcessRunning('chronosdb_server.exe') or IsProcessRunning('chronosdb_service.exe');
       
       if not ProcessRunning then
       begin
@@ -337,19 +337,19 @@ begin
   // --- STOPPING SERVICE ---
   if CurStep = ssInstall then
   begin
-    WizardForm.StatusLabel.Caption := 'Stopping FrancoDB...';
-    Exec('sc.exe', 'stop FrancoDBService', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    WizardForm.StatusLabel.Caption := 'Stopping ChronosDB...';
+    Exec('sc.exe', 'stop ChronosDBService', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     
     // Wait up to 120 seconds
-    ServiceStopped := WaitForServiceStop('FrancoDBService', 120);
+    ServiceStopped := WaitForServiceStop('ChronosDBService', 120);
     
     if not ServiceStopped then
     begin
        if MsgBox('The database service is stuck.' + #13#10 + 
                  'Force close it? (Unsaved data might be lost)', mbError, MB_YESNO) = IDYES then
        begin
-          Exec('taskkill', '/F /IM francodb_service.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-          Exec('taskkill', '/F /IM francodb_server.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+          Exec('taskkill', '/F /IM chronosdb_service.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+          Exec('taskkill', '/F /IM chronosdb_server.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
        end
        else
        begin
@@ -357,7 +357,7 @@ begin
        end;
     end;
     
-    Exec('sc.exe', 'delete FrancoDBService', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Exec('sc.exe', 'delete ChronosDBService', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     Sleep(2000);
     
     // Clean old logs
@@ -384,15 +384,15 @@ begin
        
        if EncryptionPage.SelectedValueIndex = 2 then Key := EncryptionKeyPage.Values[0] else Key := GeneratedEncryptionKey;
 
-       ConfigContent := '# FrancoDB Config' + #13#10 + 'port = ' + Port + #13#10 + 'root_username = "' + User + '"' + #13#10 +
+       ConfigContent := '# ChronosDB Config' + #13#10 + 'port = ' + Port + #13#10 + 'root_username = "' + User + '"' + #13#10 +
                         'root_password = "' + Pass + '"' + #13#10 + 'data_directory = "' + DataDir + '"' + #13#10 +
                         'encryption_enabled = ' + BoolToStr(EncEnabled) + #13#10 + 'autosave_interval = 30';
        if EncEnabled and (Key <> '') then ConfigContent := ConfigContent + #13#10 + 'encryption_key = "' + Key + '"';
-       SaveStringToFile(ExpandConstant('{app}\bin\francodb.conf'), ConfigContent, False);
+       SaveStringToFile(ExpandConstant('{app}\bin\chronosdb.conf'), ConfigContent, False);
     end;
 
     // Install Service
-    ServicePath := ExpandConstant('{app}\bin\francodb_service.exe');
+    ServicePath := ExpandConstant('{app}\bin\chronosdb_service.exe');
     ServiceInstalled := False;
     ServiceRebootRequired := False;
     
@@ -400,7 +400,7 @@ begin
     begin
        for I := 1 to 3 do
        begin
-          Exec('sc.exe', 'create FrancoDBService binPath= "' + ServicePath + '" start= auto', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+          Exec('sc.exe', 'create ChronosDBService binPath= "' + ServicePath + '" start= auto', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
           if ResultCode = 0 then
           begin
              ServiceInstalled := True;
@@ -408,7 +408,7 @@ begin
           end
           else if (ResultCode = 1073) then
           begin
-             Exec('sc.exe', 'delete FrancoDBService', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+             Exec('sc.exe', 'delete ChronosDBService', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
              Sleep(2000);
           end
           else if (ResultCode = 1072) then
@@ -421,9 +421,9 @@ begin
 
        if ServiceInstalled then
        begin
-          Exec('sc.exe', 'failure FrancoDBService reset= 86400 actions= restart/5000', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+          Exec('sc.exe', 'failure ChronosDBService reset= 86400 actions= restart/5000', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
           Sleep(500);
-          Exec('sc.exe', 'start FrancoDBService', '', SW_HIDE, ewWaitUntilTerminated, ServiceStartResult);
+          Exec('sc.exe', 'start ChronosDBService', '', SW_HIDE, ewWaitUntilTerminated, ServiceStartResult);
           ServiceStarted := (ServiceStartResult = 0) or (ServiceStartResult = 1056);
        end
        else
@@ -450,7 +450,7 @@ begin
       SummaryText := SummaryText + '       to finish the update.' + #13#10;
     end
     else if ServiceStarted then
-      SummaryText := SummaryText + '[ OK ] Service : FrancoDB is running' + #13#10
+      SummaryText := SummaryText + '[ OK ] Service : ChronosDB is running' + #13#10
     else if not ServiceInstalled then
       SummaryText := SummaryText + '[FAIL] Service : Failed to create (Code ' + IntToStr(ServiceStartResult) + ')' + #13#10
     else if ServiceStartResult = -1 then
@@ -500,23 +500,23 @@ var
 begin
   if CurUninstallStep = usUninstall then
   begin
-    Exec('sc.exe', 'stop FrancoDBService', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Exec('sc.exe', 'stop ChronosDBService', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     
     // Wait for shutdown (Max 60s)
     for I := 1 to 60 do
     begin
-      ProcessRunning := IsProcessRunning('francodb_server.exe');
+      ProcessRunning := IsProcessRunning('chronosdb_server.exe');
       if not ProcessRunning then Break;
       Sleep(1000);
     end;
     
     // If still running after 60s, KILL IT. Uninstaller must succeed.
-    if IsProcessRunning('francodb_server.exe') then
+    if IsProcessRunning('chronosdb_server.exe') then
     begin
-        Exec('taskkill', '/F /IM francodb_server.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+        Exec('taskkill', '/F /IM chronosdb_server.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     end;
 
-    Exec('sc.exe', 'delete FrancoDBService', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Exec('sc.exe', 'delete ChronosDBService', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     Sleep(1000);
   end;
 
@@ -528,7 +528,7 @@ begin
       begin
         DelTree(ExpandConstant('{app}\data'), True, True, True);
         DelTree(ExpandConstant('{app}\log'), True, True, True);
-        DeleteFile(ExpandConstant('{app}\bin\francodb.conf'));
+        DeleteFile(ExpandConstant('{app}\bin\chronosdb.conf'));
         RemoveDir(ExpandConstant('{app}\bin'));
         RemoveDir(ExpandConstant('{app}'));
       end;

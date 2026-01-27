@@ -1,8 +1,8 @@
-# Encryption Key Storage & Retrieval in FrancoDB
+# Encryption Key Storage & Retrieval in ChronosDB
 
 ## Overview
 
-FrancoDB uses **XOR encryption** to encrypt database files (`.francodb` and `.meta` files). The encryption key is stored in the **configuration file** (`francodb.conf`) and loaded into memory at server startup. This document explains:
+ChronosDB uses **XOR encryption** to encrypt database files (`.chronosdb` and `.meta` files). The encryption key is stored in the **configuration file** (`chronosdb.conf`) and loaded into memory at server startup. This document explains:
 1. How encryption keys are generated
 2. How keys are stored in the config file
 3. How keys are retrieved and used
@@ -48,7 +48,7 @@ Generated encryption key: a1b2c3d4e5f6789abcdef0123456789abcdef0123456789abcdef0
 
 ### Storage Location
 
-**File:** `francodb.conf` (configuration file in project root)  
+**File:** `chronosdb.conf` (configuration file in project root)  
 **Format:** Plain text INI-style file  
 **Key Name:** `encryption_key`
 
@@ -63,7 +63,7 @@ bool ConfigManager::SaveConfig(const std::string& config_path) {
         return false;
     }
     
-    file << "# FrancoDB Configuration File\n";
+    file << "# ChronosDB Configuration File\n";
     file << "# Generated automatically\n\n";
     
     file << "port = " << port_ << "\n";
@@ -86,11 +86,11 @@ bool ConfigManager::SaveConfig(const std::string& config_path) {
 ### Config File Format:
 
 ```ini
-# FrancoDB Configuration File
+# ChronosDB Configuration File
 # Generated automatically
 
 port = 2501
-root_username = "maayn"
+root_username = "chronos"
 root_password = "root"
 data_directory = "data"
 encryption_enabled = true
@@ -101,7 +101,7 @@ autosave_interval = 30
 ### Important Notes:
 
 ⚠️ **Security Warning**: The encryption key is stored in **plain text** in the config file!
-- Anyone with access to `francodb.conf` can decrypt your databases
+- Anyone with access to `chronosdb.conf` can decrypt your databases
 - In production, consider:
   - File permissions (chmod 600 on Linux)
   - Environment variables
@@ -154,7 +154,7 @@ bool ConfigManager::LoadConfig(const std::string& config_path) {
 
 ### What Happens:
 
-1. **File Read**: Opens `francodb.conf` for reading
+1. **File Read**: Opens `chronosdb.conf` for reading
 2. **Line Parsing**: Reads each line, skips comments
 3. **Key Extraction**: Finds `encryption_key = "..."` line
 4. **Value Storage**: Stores key in `ConfigManager::encryption_key_` (in-memory)
@@ -178,7 +178,7 @@ private:
 ### Key Distribution Flow:
 
 ```
-francodb.conf (disk)
+chronosdb.conf (disk)
     ↓
 ConfigManager::LoadConfig() (loads into memory)
     ↓
@@ -198,14 +198,14 @@ Encryption::EncryptXOR() / DecryptXOR() (uses key for encryption)
 ```cpp
 // Load configuration
 auto& config = ConfigManager::GetInstance();
-config.LoadConfig("francodb.conf");
+config.LoadConfig("chronosdb.conf");
 
 // Get encryption settings
 bool encryption_enabled = config.IsEncryptionEnabled();
 std::string encryption_key = config.GetEncryptionKey();
 
 // Create disk manager
-std::string db_path = data_dir + "/francodb.db";
+std::string db_path = data_dir + "/chronosdb.db";
 auto disk_manager = std::make_unique<DiskManager>(db_path);
 
 // Apply encryption if enabled
@@ -214,9 +214,9 @@ if (encryption_enabled && !encryption_key.empty()) {
 }
 ```
 
-#### **2. System Database** (franco_server.cpp)
+#### **2. System Database** (chronos_server.cpp)
 
-**Location:** `src/network/franco_server.cpp:50-56`
+**Location:** `src/network/chronos_server.cpp:50-56`
 
 ```cpp
 // Create system database
@@ -420,7 +420,7 @@ void DiskManager::WriteMetadata(const std::string &data) {
 
 ### Important Notes:
 
-- **Page 0 is NOT encrypted**: Magic header (`"FRANCODB"`) must remain readable
+- **Page 0 is NOT encrypted**: Magic header (`"CHRONOSDB"`) must remain readable
 - **All other pages are encrypted**: Pages 1, 2, 3+ are encrypted
 - **Metadata is encrypted**: `.meta` files are encrypted (except magic header)
 
@@ -437,7 +437,7 @@ ConfigManager::InteractiveConfig();
 // System generates key: "a1b2c3d4e5f6789..."
 
 // 2. Save to config file
-ConfigManager::SaveConfig("francodb.conf");
+ConfigManager::SaveConfig("chronosdb.conf");
 // Writes: encryption_key = "a1b2c3d4e5f6789..."
 ```
 
@@ -445,12 +445,12 @@ ConfigManager::SaveConfig("francodb.conf");
 
 ```cpp
 // 1. Load config
-ConfigManager::LoadConfig("francodb.conf");
+ConfigManager::LoadConfig("chronosdb.conf");
 // Reads: encryption_key = "a1b2c3d4e5f6789..."
 // Stores in: ConfigManager::encryption_key_
 
 // 2. Create default database
-DiskManager dm("data/francodb.db");
+DiskManager dm("data/chronosdb.db");
 dm.SetEncryptionKey(config.GetEncryptionKey());
 // Key stored in: DiskManager::encryption_key_
 
@@ -481,7 +481,7 @@ dm.ReadPage(3, page);
 
 ## 8. Security Considerations
 
-### ✅ What FrancoDB Does:
+### ✅ What ChronosDB Does:
 
 1. **Key Generation**: Uses hardware RNG when available
 2. **Key Length**: 32 bytes (256 bits) - strong enough for XOR
@@ -490,7 +490,7 @@ dm.ReadPage(3, page);
 
 ### ⚠️ Security Limitations:
 
-1. **Plain Text Storage**: Key stored in plain text in `francodb.conf`
+1. **Plain Text Storage**: Key stored in plain text in `chronosdb.conf`
    - **Risk**: Anyone with file access can decrypt databases
    - **Mitigation**: Use file permissions (chmod 600)
 
@@ -510,12 +510,12 @@ dm.ReadPage(3, page);
 
 1. **File Permissions**:
    ```bash
-   chmod 600 francodb.conf  # Only owner can read/write
+   chmod 600 chronosdb.conf  # Only owner can read/write
    ```
 
 2. **Environment Variables** (future):
    ```cpp
-   encryption_key = std::getenv("FRANCODB_ENCRYPTION_KEY");
+   encryption_key = std::getenv("CHRONOSDB_ENCRYPTION_KEY");
    ```
 
 3. **Key Management Service** (future):
@@ -530,14 +530,14 @@ dm.ReadPage(3, page);
 | Step | Action | Location | Data Flow |
 |------|--------|----------|-----------|
 | **1. Generate** | `GenerateEncryptionKey()` | `config_manager.cpp:136` | Random bytes → 64-char hex string |
-| **2. Store** | `SaveConfig()` | `config_manager.cpp:70` | Memory → `francodb.conf` (plain text) |
-| **3. Load** | `LoadConfig()` | `config_manager.cpp:18` | `francodb.conf` → Memory (`encryption_key_`) |
+| **2. Store** | `SaveConfig()` | `config_manager.cpp:70` | Memory → `chronosdb.conf` (plain text) |
+| **3. Load** | `LoadConfig()` | `config_manager.cpp:18` | `chronosdb.conf` → Memory (`encryption_key_`) |
 | **4. Apply** | `SetEncryptionKey()` | `disk_manager.h:76` | Config → `DiskManager::encryption_key_` |
 | **5. Use** | `EncryptXOR()` / `DecryptXOR()` | `encryption.cpp:9` | Key → XOR cipher → Encrypted/Decrypted data |
 
 ### Key Takeaways:
 
-- ✅ Encryption key is stored in **`francodb.conf`** (plain text)
+- ✅ Encryption key is stored in **`chronosdb.conf`** (plain text)
 - ✅ Key is loaded into **memory** at server startup
 - ✅ Key is applied to **each database** via `SetEncryptionKey()`
 - ✅ Encryption uses **XOR cipher** (symmetric, reversible)

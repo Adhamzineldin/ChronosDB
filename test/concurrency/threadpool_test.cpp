@@ -5,7 +5,7 @@
 #include <cassert>
 #include "common/thread_pool.h"
 
-using namespace francodb;
+using namespace chronosdb;
 
 void TestBasicExecution() {
     std::cout << "[1/3] Testing Basic Execution..." << std::endl;

@@ -6,7 +6,7 @@
 #include "recovery/log_manager.h"
 #include "storage/storage_interface.h"  // For IBufferManager
 
-namespace francodb {
+namespace chronosdb {
 
 // Forward declarations
 class InsertStatement;
@@ -120,5 +120,5 @@ private:
     ExecutionResult ExecuteJoin(SelectStatement* stmt, ExecutorContext* ctx, Transaction* txn);
 };
 
-} // namespace francodb
+} // namespace chronosdb
 

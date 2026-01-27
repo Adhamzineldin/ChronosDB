@@ -5,10 +5,10 @@ from typing import Optional, Tuple, Any, List, Dict, Union
 # ==========================================
 # 1. CUSTOM EXCEPTIONS
 # ==========================================
-class FrancoDBError(Exception): pass
-class OperationalError(FrancoDBError): pass
-class AuthError(FrancoDBError): pass
-class QueryError(FrancoDBError): pass
+class ChronosDBError(Exception): pass
+class OperationalError(ChronosDBError): pass
+class AuthError(ChronosDBError): pass
+class QueryError(ChronosDBError): pass
 
 # ==========================================
 # 2. PROTOCOL CONSTANTS
@@ -165,7 +165,7 @@ class Cursor:
 # ==========================================
 # 4. CONNECTION CLASS
 # ==========================================
-class FrancoDB:
+class ChronosDB:
     def __init__(self, host='localhost', port=2501, timeout=10):
         self.host = host
         self.port = port
@@ -200,6 +200,6 @@ class FrancoDB:
     def __exit__(self, exc_type, exc_val, exc_tb): self.close()
 
 def connect(host='localhost', port=2501, user='', password='', database=''):
-    conn = FrancoDB(host, port)
+    conn = ChronosDB(host, port)
     conn.connect(user, password, database)
     return conn

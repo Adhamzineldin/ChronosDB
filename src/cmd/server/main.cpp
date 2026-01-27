@@ -18,7 +18,7 @@
 #include <sys/time.h>
 #endif
 
-#include "network/franco_server.h"
+#include "network/chronos_server.h"
 #include "storage/disk/disk_manager.h"
 #include "buffer/buffer_pool_manager.h"
 #include "buffer/partitioned_buffer_pool_manager.h"
@@ -26,14 +26,14 @@
 #include "buffer/adaptive_distributed_buffer_pool.h"
 #include "catalog/catalog.h"
 #include "common/config.h"
-#include "common/franco_net_config.h"
+#include "common/chronos_net_config.h"
 #include "common/config_manager.h"
 
-using namespace francodb;
+using namespace chronosdb;
 namespace fs = std::filesystem;
 
 // Global pointers for resource management
-std::unique_ptr<FrancoServer> g_Server;
+std::unique_ptr<ChronosServer> g_Server;
 std::atomic<bool> g_ShutdownRequested(false);
 
 std::string GetExecutableDir() {
@@ -53,7 +53,7 @@ void SetupServiceLogging(const std::string &exe_dir) {
         try { fs::create_directories(log_dir); } catch (...) {
         }
     }
-    fs::path log_path = log_dir / "francodb_server.log";
+    fs::path log_path = log_dir / "chronosdb_server.log";
 
     // Force open log file (Retry logic)
     for (int i = 0; i < 3; i++) {
@@ -94,7 +94,7 @@ BOOL WINAPI ConsoleHandler(DWORD signal) {
 }
 
 void ShutdownEventMonitor() {
-    HANDLE hEvent = OpenEventW(SYNCHRONIZE, FALSE, L"Global\\FrancoDBShutdownEvent");
+    HANDLE hEvent = OpenEventW(SYNCHRONIZE, FALSE, L"Global\\ChronosDBShutdownEvent");
     if (hEvent) {
         std::cout << "[INFO] Monitoring shutdown event..." << std::endl;
         WaitForSingleObject(hEvent, INFINITE);
@@ -116,7 +116,7 @@ int main(int argc, char *argv[]) {
     if (is_service) SetupServiceLogging(exe_dir);
 
     std::cout << "==========================================" << std::endl;
-    std::cout << "     FRANCO DB SERVER v2.0 (Active)" << std::endl;
+    std::cout << "     CHRONOS DB SERVER v2.0 (Active)" << std::endl;
     std::cout << "==========================================" << std::endl;
 
 #ifdef _WIN32
@@ -131,7 +131,7 @@ int main(int argc, char *argv[]) {
     try {
         // 1. CONFIG
         auto &config = ConfigManager::GetInstance();
-        fs::path config_path = fs::path(exe_dir) / "francodb.conf";
+        fs::path config_path = fs::path(exe_dir) / "chronosdb.conf";
 
         if (fs::exists(config_path)) config.LoadConfig(config_path.string());
         else config.SaveConfig(config_path.string());
@@ -149,7 +149,7 @@ int main(int argc, char *argv[]) {
         }
 
 
-        auto disk_manager = std::make_unique<DiskManager>((system_dir / "disk_manager.francodb").string());
+        auto disk_manager = std::make_unique<DiskManager>((system_dir / "disk_manager.chronosdb").string());
         if (config.IsEncryptionEnabled()) disk_manager->SetEncryptionKey(config.GetEncryptionKey());
 
         // ========================================================================
@@ -240,8 +240,8 @@ int main(int argc, char *argv[]) {
         }
 
         // 3. START SERVER
-        g_Server = std::make_unique<FrancoServer>(bpm.get(), catalog.get(), log_manager.get());
-        std::cout << "[READY] FrancoDB Server listening on port " << config.GetPort() << "..." << std::endl;
+        g_Server = std::make_unique<ChronosServer>(bpm.get(), catalog.get(), log_manager.get());
+        std::cout << "[READY] ChronosDB Server listening on port " << config.GetPort() << "..." << std::endl;
 
         // === BLOCKING CALL === 
         // This holds the Main Thread until TriggerShutdown() calls g_Server->Stop()

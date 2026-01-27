@@ -11,7 +11,7 @@
 #include <iostream>
 #include <cmath>
 
-namespace francodb {
+namespace chronosdb {
 
 void DeleteExecutor::Init() {
     table_info_ = exec_ctx_->GetCatalog()->GetTable(plan_->table_name_);
@@ -139,5 +139,5 @@ bool DeleteExecutor::EvaluatePredicate(const Tuple &tuple) {
     return PredicateEvaluator::Evaluate(tuple, table_info_->schema_, plan_->where_clause_);
 }
 
-} // namespace francodb
+} // namespace chronosdb
 

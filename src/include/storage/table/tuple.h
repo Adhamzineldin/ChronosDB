@@ -7,7 +7,7 @@
 #include "common/value.h" // <--- CRITICAL: Need this for Value
 #include "storage/table/schema.h" // <--- CRITICAL: Need this for Schema
 
-namespace francodb {
+namespace chronosdb {
     class Tuple {
     public:
         Tuple() = default;

@@ -6,7 +6,7 @@
 // FIX: Include the key definition so we can instantiate the template
 #include "storage/index/index_key.h"
 
-namespace francodb {
+namespace chronosdb {
 
     /*****************************************************************************
      * HELPER METHODS AND UTILITIES
@@ -105,4 +105,4 @@ namespace francodb {
     // We instantiate for GenericKey<8> and page_id_t (int) because Internal Pages point to PageIDs.
     template class BPlusTreeInternalPage<GenericKey<8>, page_id_t, GenericComparator<8>>;
 
-} // namespace francodb
+} // namespace chronosdb

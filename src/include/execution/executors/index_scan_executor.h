@@ -9,7 +9,7 @@
 #include "common/config.h"
 #include "common/exception.h"
 
-namespace francodb {
+namespace chronosdb {
 
 class IndexScanExecutor : public AbstractExecutor {
 public:
@@ -36,4 +36,4 @@ private:
     Transaction *txn_;
 };
 
-} // namespace francodb
+} // namespace chronosdb

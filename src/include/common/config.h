@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace francodb {
+namespace chronosdb {
     // ========================================================================
     // TYPE ALIASES
     // ========================================================================
@@ -147,6 +147,6 @@ namespace francodb {
     // Maximum query size (1MB)
     static constexpr size_t MAX_QUERY_SIZE = 1024 * 1024;
 
-} // namespace francodb
+} // namespace chronosdb
 
 

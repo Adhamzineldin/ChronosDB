@@ -1,6 +1,6 @@
 #include "common/type.h"
 
-namespace francodb {
+namespace chronosdb {
 
 uint32_t Type::GetTypeSize(TypeId type_id) {
     switch (type_id) {
@@ -25,5 +25,5 @@ std::string Type::TypeToString(TypeId type_id) {
     }
 }
 
-} // namespace francodb
+} // namespace chronosdb
 

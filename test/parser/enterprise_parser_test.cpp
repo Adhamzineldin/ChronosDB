@@ -3,7 +3,7 @@
 #include "parser/parser.h"
 #include "parser/lexer.h"
 
-using namespace francodb;
+using namespace chronosdb;
 
 /**
  * Enterprise Features Parser Test

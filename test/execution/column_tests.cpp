@@ -1,6 +1,6 @@
 #include "../framework/test_runner.h"
 
-namespace francodb_test {
+namespace chronosdb_test {
 
 void RunColumnTests(TestRunner& runner) {
     // Column Type Tests
@@ -45,5 +45,5 @@ void RunColumnTests(TestRunner& runner) {
     });
 }
 
-} // namespace francodb_test
+} // namespace chronosdb_test
 

@@ -4,7 +4,7 @@
 #include <iostream>
 #include <chrono>
 
-namespace francodb {
+namespace chronosdb {
 
     // ========================================================================
     // CONSTRUCTOR / DESTRUCTOR
@@ -327,5 +327,5 @@ namespace francodb {
         return dirty_pages;
     }
 
-} // namespace francodb
+} // namespace chronosdb
 

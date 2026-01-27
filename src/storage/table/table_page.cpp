@@ -2,7 +2,7 @@
 #include "common/exception.h"
 #include "concurrency/transaction.h"
 
-namespace francodb {
+namespace chronosdb {
     void TablePage::Init(page_id_t page_id, page_id_t prev_id, page_id_t next_id, Transaction *txn) {
         (void) txn;
 
@@ -277,4 +277,4 @@ namespace francodb {
 
         return true;
     }
-} // namespace francodb
+} // namespace chronosdb

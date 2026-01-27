@@ -15,7 +15,7 @@
 #include <fstream>
 #include <sstream>
 
-namespace francodb {
+namespace chronosdb {
 
     /**
      * Checkpoint-Based Snapshot Manager
@@ -642,5 +642,5 @@ namespace francodb {
         }
     };
 
-} // namespace francodb
+} // namespace chronosdb
 

@@ -8,7 +8,7 @@
 #include "parser/statement.h"
 #include "recovery/log_record.h"
 
-namespace francodb {
+namespace chronosdb {
 
     struct TableMetadata {
         TableMetadata(Schema schema, std::string name, std::unique_ptr<TableHeap> &&table_heap, page_id_t first_page_id, uint32_t oid)
@@ -42,4 +42,4 @@ namespace francodb {
         LogRecord::lsn_t GetCheckpointLSN() const { return last_checkpoint_lsn_; }
     };
 
-} // namespace francodb
+} // namespace chronosdb

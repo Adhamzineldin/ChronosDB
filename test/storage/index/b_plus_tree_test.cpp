@@ -11,7 +11,7 @@
 #include "common/rid.h"
 #include "common/value.h"
 
-using namespace francodb;
+using namespace chronosdb;
 
 // Helper to create a GenericKey from an integer
 static GenericKey<8> MakeKey(int n) {
@@ -22,7 +22,7 @@ static GenericKey<8> MakeKey(int n) {
 }
 
 void TestSinglePageTree() {
-    std::string filename = "test_tree_single.francodb";
+    std::string filename = "test_tree_single.chronosdb";
     if (std::filesystem::exists(filename)) {
         std::filesystem::remove(filename);
     }

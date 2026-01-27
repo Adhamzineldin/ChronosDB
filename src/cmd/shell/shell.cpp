@@ -8,8 +8,8 @@
 #include <iomanip>
 #include <sstream>
 
-#include "network/franco_client.h"
-#include "common/franco_net_config.h"
+#include "network/chronos_client.h"
+#include "common/chronos_net_config.h"
 #include "parser/lexer.h"
 
 #ifdef _WIN32
@@ -18,7 +18,7 @@
 #include <unistd.h>
 #endif
 
-using namespace francodb;
+using namespace chronosdb;
 namespace fs = std::filesystem;
 
 // -----------------------------------------------------------------------------
@@ -26,7 +26,7 @@ namespace fs = std::filesystem;
 // -----------------------------------------------------------------------------
 void DisplayDynamicSyntax() {
     std::cout << "\n" << std::string(80, '=') << std::endl;
-    std::cout << "                      FRANCO DB SYNTAX REFERENCE" << std::endl;
+    std::cout << "                      CHRONOS DB SYNTAX REFERENCE" << std::endl;
     std::cout << std::string(80, '=') << std::endl;
     
     // Get keywords from lexer
@@ -284,9 +284,9 @@ void DisplayDynamicSyntax() {
 }
 
 // -----------------------------------------------------------------------------
-// FSQL FILE EXECUTION (FrancoSQL Script Files)
+// FSQL FILE EXECUTION (ChronosSQL Script Files)
 // -----------------------------------------------------------------------------
-bool ExecuteFSQLFile(FrancoClient& client, const std::string& filepath, const std::string& current_db) {
+bool ExecuteFSQLFile(ChronosClient& client, const std::string& filepath, const std::string& current_db) {
     std::ifstream file(filepath);
     if (!file.is_open()) {
         std::cerr << "[ERROR] Cannot open file: " << filepath << std::endl;
@@ -480,7 +480,7 @@ std::string GenerateKey() {
 // -----------------------------------------------------------------------------
 void RunSetupWizard(const std::string& configPath) {
     std::cout << "\n" << std::string(50, '=') << std::endl;
-    std::cout << "      FRANCO DB CONFIGURATION WIZARD" << std::endl;
+    std::cout << "      CHRONOS DB CONFIGURATION WIZARD" << std::endl;
     std::cout << std::string(50, '=') << std::endl;
 
     std::string input;
@@ -492,8 +492,8 @@ void RunSetupWizard(const std::string& configPath) {
     if (!input.empty()) try { port = std::stoi(input); } catch(...) {}
 
     // 2. USERNAME
-    std::string user = "maayn";
-    std::cout << "Root Username [maayn]: ";
+    std::string user = "chronos";
+    std::cout << "Root Username [chronos]: ";
     std::getline(std::cin, input);
     if (!input.empty()) user = input;
 
@@ -534,7 +534,7 @@ void RunSetupWizard(const std::string& configPath) {
     // 6. SAVE
     std::ofstream file(configPath);
     if (file.is_open()) {
-        file << "# FrancoDB Configuration\n";
+        file << "# ChronosDB Configuration\n";
         file << "port = " << port << "\n";
         file << "root_username = \"" << user << "\"\n";
         file << "root_password = \"" << pass << "\"\n";
@@ -553,9 +553,9 @@ void RunSetupWizard(const std::string& configPath) {
 // MAIN
 // -----------------------------------------------------------------------------
 int main(int argc, char* argv[]) {
-    FrancoClient db_client;
+    ChronosClient db_client;
     std::string username = net::DEFAULT_ADMIN_USERNAME;
-    std::string current_db = "francodb";
+    std::string current_db = "chronosdb";
     bool connected = false;
 
     if (argc > 1) {
@@ -566,7 +566,7 @@ int main(int argc, char* argv[]) {
 
         // --- CONFIG RESET COMMAND ---
         if (cmd1 == "config" && cmd2 == "reset") {
-            fs::path config_path = fs::path(GetExecutableDir()) / "francodb.conf";
+            fs::path config_path = fs::path(GetExecutableDir()) / "chronosdb.conf";
             RunSetupWizard(config_path.string());
             return 0;
         }
@@ -576,13 +576,13 @@ int main(int argc, char* argv[]) {
             std::string action = (cmd1 == "server") ? cmd2 : cmd1;
             if (!IsAdmin()) { std::cerr << "Run as Admin required." << std::endl; return 1; }
             
-            if (action == "start") return system("net start FrancoDBService");
-            if (action == "stop") return system("net stop FrancoDBService");
-            if (action == "restart") { system("net stop FrancoDBService"); return system("net start FrancoDBService"); }
+            if (action == "start") return system("net start ChronosDBService");
+            if (action == "stop") return system("net stop ChronosDBService");
+            if (action == "restart") { system("net stop ChronosDBService"); return system("net start ChronosDBService"); }
         }
 
         // --- LOGIN COMMANDS ---
-        if (cmd1 == "login" || cmd1.find("maayn://") == 0) {
+        if (cmd1 == "login" || cmd1.find("chronos://") == 0) {
              std::string url = (cmd1 == "login") ? cmd2 : cmd1;
              if (db_client.ConnectFromString(url)) {
                  connected = true;
@@ -597,10 +597,10 @@ int main(int argc, char* argv[]) {
         }
         
         // --- FSQL FILE EXECUTION FROM COMMAND LINE ---
-        // Usage: francodb_shell file.fsql
-        //        francodb_shell run file.fsql
-        //        francodb_shell exec file.fsql
-        //        francodb_shell -f file.fsql
+        // Usage: chronosdb_shell file.fsql
+        //        chronosdb_shell run file.fsql
+        //        chronosdb_shell exec file.fsql
+        //        chronosdb_shell -f file.fsql
         std::string fsql_file = "";
         if (cmd1 == "run" || cmd1 == "exec" || cmd1 == "-f") {
             fsql_file = cmd2;
@@ -614,7 +614,7 @@ int main(int argc, char* argv[]) {
             // Need to connect first if not already connected
             if (!connected) {
                 std::cout << "==========================================" << std::endl;
-                std::cout << "     FrancoDB FSQL Script Executor        " << std::endl;
+                std::cout << "     ChronosDB FSQL Script Executor        " << std::endl;
                 std::cout << "==========================================" << std::endl;
                 
                 std::string password, host, port_str;
@@ -650,7 +650,7 @@ int main(int argc, char* argv[]) {
 
     if (!connected) {
         std::cout << "==========================================" << std::endl;
-        std::cout << "            FrancoDB Shell v2.1           " << std::endl;
+        std::cout << "            ChronosDB Shell v2.1           " << std::endl;
         std::cout << "==========================================" << std::endl;
         
         std::string password, host, port_str;
@@ -704,7 +704,7 @@ int main(int argc, char* argv[]) {
             continue;
         }
 
-        // --- EXECUTE FSQL FILE (FrancoSQL Script) ---
+        // --- EXECUTE FSQL FILE (ChronosSQL Script) ---
         if (input.rfind("run ", 0) == 0 || input.rfind("RUN ", 0) == 0 || 
             input.rfind("exec ", 0) == 0 || input.rfind("EXEC ", 0) == 0 ||
             input.rfind("source ", 0) == 0 || input.rfind("SOURCE ", 0) == 0) {

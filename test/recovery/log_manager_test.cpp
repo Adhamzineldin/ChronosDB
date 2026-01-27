@@ -6,7 +6,7 @@
 #include "recovery/log_record.h"
 #include "common/value.h"
 
-using namespace francodb;
+using namespace chronosdb;
 
 void TestRecovery() {
     std::string log_file = "recovery_test.log";

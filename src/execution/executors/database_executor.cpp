@@ -4,7 +4,7 @@
  * Implementation of Database Management Operations
  * Extracted from ExecutionEngine to satisfy Single Responsibility Principle.
  * 
- * @author FrancoDB Team
+ * @author ChronosDB Team
  */
 
 #include "execution/database_executor.h"
@@ -13,11 +13,11 @@
 #include "storage/storage_interface.h"  // For IBufferManager
 #include "buffer/buffer_pool_manager.h"
 #include "catalog/catalog.h"
-#include "common/franco_net_config.h"
+#include "common/chronos_net_config.h"
 #include <filesystem>
 #include <algorithm>
 
-namespace francodb {
+namespace chronosdb {
 
 // ============================================================================
 // CREATE DATABASE
@@ -36,7 +36,7 @@ ExecutionResult DatabaseExecutor::CreateDatabase(CreateDatabaseStatement* stmt, 
         // Protect system/reserved database names
         std::string db_lower = stmt->db_name_;
         std::transform(db_lower.begin(), db_lower.end(), db_lower.begin(), ::tolower);
-        if (db_lower == "system" || db_lower == "francodb") {
+        if (db_lower == "system" || db_lower == "chronosdb") {
             return ExecutionResult::Error("Cannot create database with reserved name: " + stmt->db_name_);
         }
 
@@ -94,7 +94,7 @@ ExecutionResult DatabaseExecutor::UseDatabase(UseDatabaseStatement* stmt,
             namespace fs = std::filesystem;
             auto& config = ConfigManager::GetInstance();
             fs::path db_dir = fs::path(config.GetDataDirectory()) / stmt->db_name_;
-            fs::path db_file = db_dir / (stmt->db_name_ + ".francodb");
+            fs::path db_file = db_dir / (stmt->db_name_ + ".chronosdb");
             if (fs::exists(db_file)) {
                 entry = db_registry_->GetOrCreate(stmt->db_name_);
             }
@@ -149,7 +149,7 @@ ExecutionResult DatabaseExecutor::DropDatabase(DropDatabaseStatement* stmt, Sess
         // Protect system/reserved databases
         std::string db_lower = stmt->db_name_;
         std::transform(db_lower.begin(), db_lower.end(), db_lower.begin(), ::tolower);
-        if (db_lower == "system" || db_lower == "francodb") {
+        if (db_lower == "system" || db_lower == "chronosdb") {
             return ExecutionResult::Error("Cannot drop system database: " + stmt->db_name_);
         }
 
@@ -159,7 +159,7 @@ ExecutionResult DatabaseExecutor::DropDatabase(DropDatabaseStatement* stmt, Sess
         auto& config = ConfigManager::GetInstance();
         std::string data_dir = config.GetDataDirectory();
         std::filesystem::path db_dir = std::filesystem::path(data_dir) / stmt->db_name_;
-        std::filesystem::path db_file = db_dir / (stmt->db_name_ + ".francodb");
+        std::filesystem::path db_file = db_dir / (stmt->db_name_ + ".chronosdb");
         
         bool exists_on_disk = std::filesystem::exists(db_file);
         
@@ -197,5 +197,5 @@ ExecutionResult DatabaseExecutor::DropDatabase(DropDatabaseStatement* stmt, Sess
     }
 }
 
-} // namespace francodb
+} // namespace chronosdb
 

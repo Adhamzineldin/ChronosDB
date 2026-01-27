@@ -12,7 +12,7 @@
 #include <iostream>
 #include <sstream>
 
-namespace francodb {
+namespace chronosdb {
 
 Catalog::Catalog(IBufferManager *bpm) : bpm_(bpm), next_table_oid_(0) {
     LoadCatalog();
@@ -290,5 +290,5 @@ std::vector<TableMetadata*> Catalog::GetAllTables() {
     return result;
 }
 
-} // namespace francodb
+} // namespace chronosdb
 

@@ -8,7 +8,7 @@
 #include "common/rid.h"
 #include "storage/storage_interface.h"  // For IBufferManager
 
-namespace francodb {
+namespace chronosdb {
 
     struct IndexInfo {
         // Accept IBufferManager for polymorphic buffer pool usage
@@ -23,4 +23,4 @@ namespace francodb {
         std::unique_ptr<BPlusTree<GenericKey<8>, RID, GenericComparator<8>>> b_plus_tree_;
     };
 
-} // namespace francodb
+} // namespace chronosdb

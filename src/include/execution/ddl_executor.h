@@ -5,7 +5,7 @@
 #include "catalog/catalog.h"
 #include "recovery/log_manager.h"
 
-namespace francodb {
+namespace chronosdb {
 
 // Forward declarations
 class CreateStatement;
@@ -104,5 +104,5 @@ private:
     void LogDDL(LogRecordType type, const std::string& object_name);
 };
 
-} // namespace francodb
+} // namespace chronosdb
 

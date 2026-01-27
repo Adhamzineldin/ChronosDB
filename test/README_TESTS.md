@@ -1,4 +1,4 @@
-# FrancoDB Comprehensive Test Suite
+# ChronosDB Comprehensive Test Suite
 
 ## 🎯 Overview
 
@@ -61,7 +61,7 @@ The test runner shows:
 ### Example Output
 ```
 ========================================
-  FrancoDB Comprehensive Test Suite
+  ChronosDB Comprehensive Test Suite
   S+ Grade - All Modules
 ========================================
 
@@ -298,7 +298,7 @@ Before pushing code, ensure:
 $ ./run_all_tests
 
 ========================================
-  FrancoDB Comprehensive Test Suite
+  ChronosDB Comprehensive Test Suite
   S+ Grade - All Modules
 ========================================
 

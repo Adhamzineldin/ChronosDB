@@ -4,7 +4,7 @@
 #include "execution/executor_context.h"
 #include "storage/table/schema.h"
 
-namespace francodb {
+namespace chronosdb {
 
     class AbstractExecutor {
     public:
@@ -31,4 +31,4 @@ namespace francodb {
         ExecutorContext *exec_ctx_;
     };
 
-} // namespace francodb
+} // namespace chronosdb

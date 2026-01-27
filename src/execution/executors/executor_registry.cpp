@@ -31,7 +31,7 @@
  * compatibility. The new DDLExecutor and DMLExecutor classes can be called
  * directly or through this factory.
  * 
- * @author FrancoDB Team
+ * @author ChronosDB Team
  */
 
 #include "execution/executor_factory.h"
@@ -49,7 +49,7 @@
 #include "network/session_context.h"
 #include "common/exception.h"
 
-namespace francodb {
+namespace chronosdb {
 
 /**
  * ExecutorRegistry - Initializes all executor registrations
@@ -219,5 +219,5 @@ namespace {
     static RegistryInitializer _registry_init;
 }
 
-} // namespace francodb
+} // namespace chronosdb
 

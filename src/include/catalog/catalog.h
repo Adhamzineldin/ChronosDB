@@ -13,7 +13,7 @@
 #include "storage/storage_interface.h"  // For IBufferManager
 #include "storage/page/free_page_manager.h"
 
-namespace francodb {
+namespace chronosdb {
 
     // Forward declaration
     class BufferPoolManager;

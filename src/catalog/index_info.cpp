@@ -4,7 +4,7 @@
 #include "common/config.h"
 #include "common/rid.h"
 
-namespace francodb {
+namespace chronosdb {
 
 IndexInfo::IndexInfo(std::string name, std::string table_name, std::string col_name, 
               TypeId key_type, IBufferManager *bpm)
@@ -28,5 +28,5 @@ IndexInfo::IndexInfo(std::string name, std::string table_name, std::string col_n
         name_, bpm, GenericComparator<8>(key_type), leaf_max_size, internal_max_size);
 }
 
-} // namespace francodb
+} // namespace chronosdb
 

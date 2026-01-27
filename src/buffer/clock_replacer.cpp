@@ -1,6 +1,6 @@
 #include "buffer/clock_replacer.h"
 
-namespace francodb {
+namespace chronosdb {
 
 ClockReplacer::ClockReplacer(size_t num_pages) : capacity_(num_pages) {
     // Initialize vector with empty frames
@@ -84,4 +84,4 @@ size_t ClockReplacer::Size() {
     return size;
 }
 
-} // namespace francodb
+} // namespace chronosdb

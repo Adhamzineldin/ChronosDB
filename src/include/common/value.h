@@ -9,7 +9,7 @@
 #include "common/type.h"
 #include "common/exception.h"
 
-namespace francodb {
+namespace chronosdb {
     class Value {
     public:
         Value();
@@ -63,4 +63,4 @@ namespace francodb {
 
         std::string string_val_;
     };
-} // namespace francodb
+} // namespace chronosdb

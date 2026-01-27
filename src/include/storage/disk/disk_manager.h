@@ -20,20 +20,20 @@
 #include "common/config.h"
 #include "common/config_manager.h"
 
-namespace francodb {
+namespace chronosdb {
     uint32_t CalculateChecksum(const char* data);
     void UpdatePageChecksum(char* page_data, uint32_t page_id);
 
     /**
      * DiskManager takes care of the allocation and deallocation of pages within a database.
      * It performs the physical read/write operations to the disk.
-     * Enforces the .francodb file extension.
+     * Enforces the .chronosdb file extension.
      */
     class DiskManager {
     public:
         /**
          * Creates or opens a database file.
-         * Automatically appends ".francodb" if missing.
+         * Automatically appends ".chronosdb" if missing.
          * @param db_file The base name of the database.
          */
         explicit DiskManager(const std::string &db_file);
@@ -41,12 +41,12 @@ namespace francodb {
         ~DiskManager();
 
         /**
-         * Read a specific page from the .francodb file.
+         * Read a specific page from the .chronosdb file.
          */
         void ReadPage(uint32_t page_id, char *page_data);
 
         /**
-         * Write a specific page to the .francodb file.
+         * Write a specific page to the .chronosdb file.
          */
         void WritePage(uint32_t page_id, const char *page_data);
         
@@ -58,7 +58,7 @@ namespace francodb {
         int GetFileSize(const std::string &file_name);
     
         /**
-         * Returns the enforced file name (e.g., "users.francodb").
+         * Returns the enforced file name (e.g., "users.chronosdb").
          */
         inline std::string GetFileName() const { return file_name_; }
         
@@ -70,7 +70,7 @@ namespace francodb {
         void ShutDown();
 
         // --- NEW: SECURE METADATA MANAGEMENT ---
-        // These methods handle the .francodb.meta file with magic headers
+        // These methods handle the .chronosdb.meta file with magic headers
         void WriteMetadata(const std::string &data);
         bool ReadMetadata(std::string &data);
         
@@ -93,4 +93,4 @@ namespace francodb {
 #endif
     };
 
-} // namespace francodb
+} // namespace chronosdb

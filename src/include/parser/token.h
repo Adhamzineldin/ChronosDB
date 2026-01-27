@@ -1,7 +1,7 @@
 #pragma once
 #include <string>
 
-namespace francodb {
+namespace chronosdb {
 
     enum class TokenType {
         // --- KEYWORDS ---
@@ -153,4 +153,4 @@ namespace francodb {
         std::string text;
     };
 
-} // namespace francodb
+} // namespace chronosdb

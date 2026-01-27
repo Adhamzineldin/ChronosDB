@@ -13,7 +13,7 @@
  * Google Test/Catch2 Style - Company-Grade Quality
  */
 
-namespace francodb_test {
+namespace chronosdb_test {
 
 struct TestResult {
     std::string test_name;
@@ -146,7 +146,7 @@ inline void AssertEquals(const char* actual, const char* expected, const std::st
 }
 
 #define ASSERT_EQ(actual, expected, message) \
-    francodb_test::AssertEquals((actual), (expected), (message))
+    chronosdb_test::AssertEquals((actual), (expected), (message))
 
 #define ASSERT_NE(actual, expected, message) \
     if ((actual) == (expected)) { \
@@ -169,5 +169,5 @@ inline void AssertEquals(const char* actual, const char* expected, const std::st
         throw std::runtime_error(oss.str()); \
     }
 
-} // namespace francodb_test
+} // namespace chronosdb_test
 

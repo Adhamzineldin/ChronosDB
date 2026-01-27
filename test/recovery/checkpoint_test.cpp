@@ -7,7 +7,7 @@
 #include "buffer/buffer_pool_manager.h"
 #include "storage/disk/disk_manager.h"
 
-using namespace francodb;
+using namespace chronosdb;
 
 void TestCheckpoint() {
     std::string db_file = "test_chk.db";

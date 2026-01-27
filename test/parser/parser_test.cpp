@@ -4,7 +4,7 @@
 #include <cmath>
 #include "parser/parser.h"
 
-using namespace francodb;
+using namespace chronosdb;
 
 // Helper to catch errors
 void ExpectException(const std::string &sql, const std::string &test_name) {

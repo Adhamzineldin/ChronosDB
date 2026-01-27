@@ -3,7 +3,7 @@
 #include "execution/predicate_evaluator.h"
 #include "common/type.h"
 
-namespace francodb {
+namespace chronosdb {
 
     void SeqScanExecutor::Init() {
         // 1. Determine which Table Heap to scan (Live vs Time Travel)
@@ -62,4 +62,4 @@ namespace francodb {
         return PredicateEvaluator::Evaluate(tuple, table_info_->schema_, plan_->where_clause_);
     }
 
-} // namespace francodb
+} // namespace chronosdb

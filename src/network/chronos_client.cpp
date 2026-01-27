@@ -16,17 +16,17 @@ typedef int socket_t;
 #define INVALID_SOCK -1
 #endif
 
-#include "network/franco_client.h"
+#include "network/chronos_client.h"
 #include "network/protocol.h"
-#include "common/franco_net_config.h"
+#include "common/chronos_net_config.h"
 
 #include <cstring>
 #include <iostream>
 #include <sstream>
 
-namespace francodb {
+namespace chronosdb {
 
-    FrancoClient::FrancoClient(ProtocolType protocol)
+    ChronosClient::ChronosClient(ProtocolType protocol)
         : protocol_(std::unique_ptr<ProtocolSerializer>(CreateProtocol(protocol))),
           protocol_type_(protocol) {
 #ifdef _WIN32
@@ -35,14 +35,14 @@ namespace francodb {
 #endif
     }
 
-    FrancoClient::~FrancoClient() {
+    ChronosClient::~ChronosClient() {
         Disconnect();
 #ifdef _WIN32
         WSACleanup();
 #endif
     }
 
-    bool FrancoClient::Connect(const std::string& host, int port, const std::string &username, const std::string &password, const std::string &database) {
+    bool ChronosClient::Connect(const std::string& host, int port, const std::string &username, const std::string &password, const std::string &database) {
         // 1. Resolve Hostname (DNS)
         // This handles "localhost", "127.0.0.1", "google.com", IPv4, and IPv6 automatically.
         struct addrinfo hints{}, *result = nullptr;
@@ -118,8 +118,8 @@ namespace francodb {
         return true;
     }
 
-    bool FrancoClient::ConnectFromString(const std::string &connection_string) {
-        if (connection_string.find("maayn://") != 0) {
+    bool ChronosClient::ConnectFromString(const std::string &connection_string) {
+        if (connection_string.find("chronos://") != 0) {
             return false;
         }
         
@@ -171,7 +171,7 @@ namespace francodb {
         return Connect(host, port, username, password, database);
     }
 
-    std::string FrancoClient::Query(const std::string& sql) {
+    std::string ChronosClient::Query(const std::string& sql) {
         if (!is_connected_) return "ERROR: Not connected.";
 
         // 1. Send Request
@@ -232,7 +232,7 @@ namespace francodb {
         // =========================================================
     }
 
-    void FrancoClient::Disconnect() {
+    void ChronosClient::Disconnect() {
         if (is_connected_) {
 #ifdef _WIN32
             closesocket((socket_t)sock_);
@@ -243,4 +243,4 @@ namespace francodb {
         }
     }
 
-} // namespace francodb
+} // namespace chronosdb

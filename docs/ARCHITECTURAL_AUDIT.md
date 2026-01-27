@@ -1,4 +1,4 @@
-# FrancoDB Architectural & Code Quality Audit
+# ChronosDB Architectural & Code Quality Audit
 ## Principal Database Kernel Architect Deep-Dive Analysis
 
 **Auditor**: Principal Database Kernel Architect (ex-PostgreSQL/Oracle internals)  
@@ -49,7 +49,7 @@ Tuple TableHeap::Iterator::operator*() {
 #pragma once
 #include "buffer/buffer_pool_manager.h"
 
-namespace francodb {
+namespace chronosdb {
 
 class PageGuard {
 public:
@@ -91,7 +91,7 @@ private:
     bool is_write_locked_;
 };
 
-} // namespace francodb
+} // namespace chronosdb
 ```
 
 **Fixed Iterator::operator*()**:
@@ -504,7 +504,7 @@ ExecutionResult ExecutionEngine::Execute(Statement *stmt, SessionContext *sessio
 #include "parser/statement.h"
 #include "execution/execution_result.h"
 
-namespace francodb {
+namespace chronosdb {
 
 class ExecutorContext;
 class SessionContext;
@@ -541,7 +541,7 @@ private:
         return true; \
     }();
 
-} // namespace francodb
+} // namespace chronosdb
 ```
 
 **New ExecutionEngine**:
@@ -659,7 +659,7 @@ bool UpdateExecutor::EvaluatePredicate(const Tuple &tuple) { /* ... */ }
 #include "catalog/schema.h"
 #include "parser/where_condition.h"
 
-namespace francodb {
+namespace chronosdb {
 
 class PredicateEvaluator {
 public:
@@ -689,7 +689,7 @@ private:
     static bool CompareValues(const Value& left, const Value& right, const std::string& op);
 };
 
-} // namespace francodb
+} // namespace chronosdb
 ```
 
 ---
@@ -711,7 +711,7 @@ private:
 // src/include/storage/storage_interface.h (NEW FILE)
 #pragma once
 
-namespace francodb {
+namespace chronosdb {
 
 class ITableStorage {
 public:
@@ -733,7 +733,7 @@ public:
     virtual bool FlushPage(page_id_t page_id) = 0;
 };
 
-} // namespace francodb
+} // namespace chronosdb
 ```
 
 Then inject interfaces:
@@ -767,7 +767,7 @@ GenericKey<8> key;  // Magic 8
 
 ```cpp
 // src/include/common/config.h
-namespace francodb::config {
+namespace chronosdb::config {
     // Page Layout
     constexpr page_id_t METADATA_PAGE_ID = 0;
     constexpr page_id_t CATALOG_PAGE_ID = 1;

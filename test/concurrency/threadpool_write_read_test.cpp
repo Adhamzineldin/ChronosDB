@@ -8,7 +8,7 @@
 #include <random>
 #include "common/thread_pool.h"
 
-using namespace francodb;
+using namespace chronosdb;
 
 // --- SHARED BANK SIMULATION ---
 // Note: Using regular mutex instead of shared_mutex due to potential MinGW bugs

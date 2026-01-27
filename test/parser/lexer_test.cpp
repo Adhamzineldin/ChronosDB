@@ -3,7 +3,7 @@
 #include <cassert>
 #include "parser/lexer.h"
 
-using namespace francodb;
+using namespace chronosdb;
 
 void TestLexer() {
     std::cout << "[TEST] Starting Franco Lexer Test..." << std::endl;

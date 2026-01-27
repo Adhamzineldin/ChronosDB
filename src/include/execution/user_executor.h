@@ -3,7 +3,7 @@
 #include "execution/execution_result.h"
 #include "common/auth_manager.h"
 
-namespace francodb {
+namespace chronosdb {
 
 // Forward declarations
 class CreateUserStatement;
@@ -19,7 +19,7 @@ class DeleteUserStatement;
  * - ALTER USER ROLE
  * - DELETE USER
  * 
- * @author FrancoDB Team
+ * @author ChronosDB Team
  */
 class UserExecutor {
 public:
@@ -49,5 +49,5 @@ private:
     AuthManager* auth_manager_;
 };
 
-} // namespace francodb
+} // namespace chronosdb
 

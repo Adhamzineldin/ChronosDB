@@ -7,7 +7,7 @@
 #include "storage/page/page.h"
 #include "common/config.h"
 
-namespace francodb {
+namespace chronosdb {
 
 #define B_PLUS_TREE_PAGE_TYPE BPlusTreePage
 
@@ -51,4 +51,4 @@ namespace francodb {
         page_id_t page_id_;      // Bytes 24-27
     };
 
-} // namespace francodb
+} // namespace chronosdb

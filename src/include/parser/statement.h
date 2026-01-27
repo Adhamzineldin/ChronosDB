@@ -6,7 +6,7 @@
 #include "storage/table/schema.h"
 #include "common/value.h"
 
-namespace francodb {
+namespace chronosdb {
     enum class StatementType {
         CREATE, INSERT, SELECT, DELETE_CMD, UPDATE_CMD, DROP, CREATE_INDEX, BEGIN, ROLLBACK, COMMIT, CREATE_DB, USE_DB,
         LOGIN, CREATE_USER, ALTER_USER_ROLE, DELETE_USER, SHOW_USERS, SHOW_DATABASES, SHOW_TABLES, SHOW_STATUS, WHOAMI,
@@ -299,4 +299,4 @@ namespace francodb {
         StatementType GetType() const override { return StatementType::STOP_SERVER; }
     };
     
-} // namespace francodb
+} // namespace chronosdb

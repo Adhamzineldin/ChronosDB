@@ -10,7 +10,7 @@
 #include <atomic>
 #include <condition_variable>
 
-namespace francodb {
+namespace chronosdb {
 
     // Forward declaration
     class Catalog;
@@ -289,5 +289,5 @@ namespace francodb {
         void SetCatalog(Catalog* catalog) { catalog_ = catalog; }
     };
 
-} // namespace francodb
+} // namespace chronosdb
 

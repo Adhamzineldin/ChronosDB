@@ -1,8 +1,8 @@
-# FrancoDB S+ Grade Project - Complete Documentation Index
+# ChronosDB S+ Grade Project - Complete Documentation Index
 
 ## 🌟 Start Here
 
-**Welcome to FrancoDB S+ Grade Enhancement!**
+**Welcome to ChronosDB S+ Grade Enhancement!**
 
 This document serves as your entry point to all project documentation and code.
 
@@ -325,7 +325,7 @@ A: Check `DELIVERABLES_CHECKLIST.md`
 
 ## 🌟 Summary
 
-**FrancoDB S+ Grade Enhancement Project**
+**ChronosDB S+ Grade Enhancement Project**
 
 Complete with:
 - ✅ Enterprise features (JOINs, FKs, nullable columns)

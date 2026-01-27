@@ -6,7 +6,7 @@
 #include "storage/table/column.h"
 #include "catalog/foreign_key.h"
 
-namespace francodb {
+namespace chronosdb {
 
 /**
  * ALTER TABLE Statement: Modify table structure
@@ -147,5 +147,5 @@ public:
     std::string table_name_;  // Empty = vacuum all
 };
 
-} // namespace francodb
+} // namespace chronosdb
 

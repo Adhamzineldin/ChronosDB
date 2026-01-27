@@ -1,4 +1,4 @@
-# FrancoDB S+ Enhancement Test Suite
+# ChronosDB S+ Enhancement Test Suite
 
 ## Overview
 Comprehensive test cases for all S+ grade enhancements including JOINs, FOREIGN KEYs, nullable columns, and advanced SQL executors.

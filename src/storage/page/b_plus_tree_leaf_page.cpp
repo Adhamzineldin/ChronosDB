@@ -5,7 +5,7 @@
 // FIX: Include key definition
 #include "storage/index/index_key.h" 
 
-namespace francodb {
+namespace chronosdb {
 
     /*****************************************************************************
      * HELPER METHODS AND UTILITIES
@@ -112,4 +112,4 @@ namespace francodb {
     // Instantiate for GenericKey<8> and RID (Leaf pages store RIDs)
     template class BPlusTreeLeafPage<GenericKey<8>, RID, GenericComparator<8>>;
 
-} // namespace francodb
+} // namespace chronosdb

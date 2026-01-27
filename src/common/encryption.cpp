@@ -4,7 +4,7 @@
 #include <iomanip>
 #include <cstring>
 
-namespace francodb {
+namespace chronosdb {
 
 void Encryption::EncryptXOR(const std::string& key, char* data, size_t size) {
     if (key.empty()) return; // No encryption if key is empty
@@ -58,4 +58,4 @@ std::vector<uint8_t> Encryption::DeriveKey(const std::string& key_str, size_t ke
     return key;
 }
 
-} // namespace francodb
+} // namespace chronosdb

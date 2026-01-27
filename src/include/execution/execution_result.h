@@ -3,7 +3,7 @@
 #include <string>
 #include <memory>
 
-namespace francodb {
+namespace chronosdb {
 
     // Holds the data for a SELECT query
     struct ResultSet {
@@ -42,4 +42,4 @@ namespace francodb {
         }
     };
 
-} // namespace francodb
+} // namespace chronosdb

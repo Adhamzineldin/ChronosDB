@@ -1,4 +1,4 @@
-# FrancoDB S+ Grade Project - Complete Enhancement Summary
+# ChronosDB S+ Grade Project - Complete Enhancement Summary
 
 ## 📦 What Was Added
 
@@ -288,7 +288,7 @@ JoinExecutor(std::unique_ptr<SeqScanExecutor> left);
 ## 📁 File Structure
 
 ```
-FrancoDB/
+ChronosDB/
 ├── src/
 │   ├── include/
 │   │   ├── parser/
@@ -362,7 +362,7 @@ FrancoDB/
 
 ## 🌟 Final Grade Assessment
 
-**FrancoDB achieved S+ Grade through:**
+**ChronosDB achieved S+ Grade through:**
 
 ✅ **Complete Feature Set**
 - 5 JOIN types implemented
@@ -406,7 +406,7 @@ FrancoDB/
 
 ## 🎉 Conclusion
 
-FrancoDB has been successfully upgraded to S+ grade with:
+ChronosDB has been successfully upgraded to S+ grade with:
 - ✅ Enterprise-grade architecture
 - ✅ SOLID principles compliance
 - ✅ Clean code practices

@@ -12,7 +12,7 @@
 #include <atomic>
 #include <iostream>
 
-namespace francodb {
+namespace chronosdb {
 
 class ThreadPool {
 public:
@@ -90,4 +90,4 @@ private:
     std::atomic<bool> stop;
 };
 
-} // namespace francodb
+} // namespace chronosdb

@@ -2,7 +2,7 @@
 #include "common/type.h"
 #include <sstream>
 
-namespace francodb {
+namespace chronosdb {
 
 Column::Column(std::string name, TypeId type, bool is_primary_key,
                bool is_nullable, bool is_unique)
@@ -60,5 +60,5 @@ bool Column::ValidateValue(const Value& value) const {
     return true;
 }
 
-} // namespace francodb
+} // namespace chronosdb
 

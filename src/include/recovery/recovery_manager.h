@@ -13,7 +13,7 @@
 #include <memory>
 #include <functional>
 
-namespace francodb {
+namespace chronosdb {
 
     // Forward declaration
     class TableHeap;
@@ -419,5 +419,5 @@ namespace francodb {
         RecoveryStats last_recovery_stats_;
     };
 
-} // namespace francodb
+} // namespace chronosdb
 

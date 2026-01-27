@@ -1,6 +1,6 @@
 #include "buffer/lru_replacer.h"
 
-namespace francodb {
+namespace chronosdb {
 
 LRUReplacer::LRUReplacer(size_t num_pages) : capacity_(num_pages) {}
 
@@ -78,4 +78,4 @@ size_t LRUReplacer::Size() {
     return lru_list_.size();
 }
 
-} // namespace francodb
+} // namespace chronosdb

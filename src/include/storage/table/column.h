@@ -5,7 +5,7 @@
 #include "common/type.h"
 #include "common/value.h"
 
-namespace francodb {
+namespace chronosdb {
 
     /**
      * Column: Represents a table column with constraint support
@@ -65,5 +65,5 @@ namespace francodb {
         std::string check_constraint_;     // CHECK constraint expression
     };
 
-} // namespace francodb
+} // namespace chronosdb
 

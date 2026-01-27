@@ -1,4 +1,4 @@
-# FrancoDB Docker Deployment
+# ChronosDB Docker Deployment
 
 ## Quick Start
 
@@ -24,7 +24,7 @@ Edit `docker-compose.yml` to customize:
 
 Data is stored in:
 - `./data` directory (mounted volume)
-- Docker volume `francodb_data` (if using volumes)
+- Docker volume `chronosdb_data` (if using volumes)
 
 ## Health Check
 
@@ -44,21 +44,21 @@ For production, consider:
 ### AWS ECS / Fargate
 ```bash
 # Build and push to ECR
-docker build -t francodb:latest .
-docker tag francodb:latest <account>.dkr.ecr.<region>.amazonaws.com/francodb:latest
-docker push <account>.dkr.ecr.<region>.amazonaws.com/francodb:latest
+docker build -t chronosdb:latest .
+docker tag chronosdb:latest <account>.dkr.ecr.<region>.amazonaws.com/chronosdb:latest
+docker push <account>.dkr.ecr.<region>.amazonaws.com/chronosdb:latest
 ```
 
 ### Google Cloud Run
 ```bash
 # Build and deploy
-gcloud builds submit --tag gcr.io/<project>/francodb
-gcloud run deploy francodb --image gcr.io/<project>/francodb --port 2501
+gcloud builds submit --tag gcr.io/<project>/chronosdb
+gcloud run deploy chronosdb --image gcr.io/<project>/chronosdb --port 2501
 ```
 
 ### Azure Container Instances
 ```bash
 # Build and push to ACR
-az acr build --registry <registry> --image francodb:latest .
-az container create --resource-group <rg> --name francodb --image <registry>.azurecr.io/francodb:latest --ports 2501
+az acr build --registry <registry> --image chronosdb:latest .
+az container create --resource-group <rg> --name chronosdb --image <registry>.azurecr.io/chronosdb:latest --ports 2501
 ```

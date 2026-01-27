@@ -1,4 +1,4 @@
-# FrancoDB Installers
+# ChronosDB Installers
 
 Professional installation packages for all platforms.
 
@@ -8,7 +8,7 @@ Professional installation packages for all platforms.
 **Location**: `windows/`
 - **Format**: `.exe` (Inno Setup)
 - **Features**: Service installation, GUI wizard, auto-configuration
-- **Output**: `FrancoDB_Setup_1.0.0.exe`
+- **Output**: `ChronosDB_Setup_1.0.0.exe`
 - **Docs**: [windows/README.md](windows/README.md)
 
 **Build**:
@@ -24,7 +24,7 @@ cd windows
 **Location**: `linux/`
 - **Format**: `.deb` (Debian Package)
 - **Features**: Systemd service, automatic user creation, APT integration
-- **Output**: `francodb_1.0.0_amd64.deb`
+- **Output**: `chronosdb_1.0.0_amd64.deb`
 - **Docs**: [linux/README.md](linux/README.md)
 
 **Build**:
@@ -40,7 +40,7 @@ chmod +x build_deb.sh
 **Location**: `docker/`
 - **Format**: Docker Image + Compose
 - **Features**: Multi-stage build, health checks, production-ready
-- **Image**: `francodb:latest`
+- **Image**: `chronosdb:latest`
 - **Docs**: [docker/README.md](docker/README.md)
 
 **Deploy**:
@@ -134,7 +134,7 @@ chmod +x build_deb.sh
 ```bash
 # Build Docker image
 cd installers/docker
-docker build -t francodb:latest .
+docker build -t chronosdb:latest .
 ```
 
 ---
@@ -165,13 +165,13 @@ installers/
 
 All built installers are placed in:
 ```
-FrancoDB/Output/
-├── FrancoDB_Setup_1.0.0.exe         (Windows)
-├── francodb_1.0.0_amd64.deb         (Linux)
-└── francodb_1.0.0_amd64.deb.md5     (Checksum)
+ChronosDB/Output/
+├── ChronosDB_Setup_1.0.0.exe         (Windows)
+├── chronosdb_1.0.0_amd64.deb         (Linux)
+└── chronosdb_1.0.0_amd64.deb.md5     (Checksum)
 ```
 
-Docker image: `francodb:latest` (local registry)
+Docker image: `chronosdb:latest` (local registry)
 
 ---
 
@@ -219,7 +219,7 @@ VERSION="1.0.0"
 
 **Docker** (tag):
 ```bash
-docker build -t francodb:1.0.0 .
+docker build -t chronosdb:1.0.0 .
 ```
 
 ---
@@ -230,17 +230,17 @@ docker build -t francodb:1.0.0 .
 
 **Windows**:
 ```powershell
-signtool sign /f cert.pfx /p password FrancoDB_Setup.exe
+signtool sign /f cert.pfx /p password ChronosDB_Setup.exe
 ```
 
 **Linux**:
 ```bash
-dpkg-sig --sign builder francodb_1.0.0_amd64.deb
+dpkg-sig --sign builder chronosdb_1.0.0_amd64.deb
 ```
 
 **Docker**:
 ```bash
-docker trust sign francodb:1.0.0
+docker trust sign chronosdb:1.0.0
 ```
 
 ---
@@ -266,16 +266,16 @@ docker trust sign francodb:1.0.0
 
 ```bash
 gh release create v1.0.0 \
-  Output/FrancoDB_Setup_1.0.0.exe \
-  Output/francodb_1.0.0_amd64.deb
+  Output/ChronosDB_Setup_1.0.0.exe \
+  Output/chronosdb_1.0.0_amd64.deb
 ```
 
 ### Docker Hub
 
 ```bash
-docker tag francodb:latest username/francodb:1.0.0
-docker push username/francodb:1.0.0
-docker push username/francodb:latest
+docker tag chronosdb:latest username/chronosdb:1.0.0
+docker push username/chronosdb:1.0.0
+docker push username/chronosdb:latest
 ```
 
 ### Package Managers
@@ -306,8 +306,8 @@ docker push username/francodb:latest
 
 ## 🆘 Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/FrancoDB/issues)
-- **Email**: dev@francodb.io
+- **Issues**: [GitHub Issues](https://github.com/yourusername/ChronosDB/issues)
+- **Email**: dev@chronosdb.io
 - **Docs**: [Installation Guide](../INSTALLATION_GUIDE.md)
 
 ---

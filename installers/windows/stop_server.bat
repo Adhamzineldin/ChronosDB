@@ -1,13 +1,13 @@
 @echo off
 REM ==============================================================================
-REM FrancoDB Server Stop Script (Batch Version)
+REM ChronosDB Server Stop Script (Batch Version)
 REM ==============================================================================
-REM This batch script gracefully stops the FrancoDB service on Windows.
+REM This batch script gracefully stops the ChronosDB service on Windows.
 REM ==============================================================================
 
 setlocal enabledelayedexpansion
 
-echo FrancoDB Service Stop
+echo ChronosDB Service Stop
 echo ======================================
 echo.
 
@@ -21,8 +21,8 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 REM Try to stop the service gracefully
-echo [INFO] Stopping FrancoDB service...
-sc stop FrancoDBService >nul 2>&1
+echo [INFO] Stopping ChronosDB service...
+sc stop ChronosDBService >nul 2>&1
 set STOP_RESULT=%ERRORLEVEL%
 
 if %STOP_RESULT% EQU 0 (
@@ -36,16 +36,16 @@ if %STOP_RESULT% EQU 0 (
 )
 
 REM Check if processes are still running
-tasklist /FI "IMAGENAME eq francodb_server.exe" 2>nul | find /I /N "francodb_server.exe" >nul
+tasklist /FI "IMAGENAME eq chronosdb_server.exe" 2>nul | find /I /N "chronosdb_server.exe" >nul
 if %ERRORLEVEL% EQU 0 (
     echo [WARN] Process still running. Force terminating...
-    taskkill /F /IM francodb_server.exe 2>nul
-    taskkill /F /IM francodb_service.exe 2>nul
+    taskkill /F /IM chronosdb_server.exe 2>nul
+    taskkill /F /IM chronosdb_service.exe 2>nul
     timeout /t 2 /nobreak
 )
 
 :cleanup
-echo [OK] FrancoDB stopped
+echo [OK] ChronosDB stopped
 echo.
 echo ======================================
 echo Script completed. Press any key to close.

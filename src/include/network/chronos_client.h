@@ -1,15 +1,15 @@
-// network/franco_client.h
+// network/chronos_client.h
 #pragma once
 
 #include <string>
 #include <memory>
 
-#include "common/franco_net_config.h"
+#include "common/chronos_net_config.h"
 #include "network/protocol.h"
 
-namespace francodb {
+namespace chronosdb {
 
-    class FrancoClient {
+    class ChronosClient {
     private:
         uintptr_t sock_{0};
         bool is_connected_{false};
@@ -17,8 +17,8 @@ namespace francodb {
         ProtocolType protocol_type_;
 
     public:
-        explicit FrancoClient(ProtocolType protocol = ProtocolType::TEXT);
-        ~FrancoClient();
+        explicit ChronosClient(ProtocolType protocol = ProtocolType::TEXT);
+        ~ChronosClient();
 
         bool Connect(const std::string &ip = "127.0.0.1",
                      int port = net::DEFAULT_PORT,
@@ -26,11 +26,11 @@ namespace francodb {
                      const std::string &password = "",
                      const std::string &database = "");
         
-        // Connection string format: maayn://user:pass@host:port/dbname
+        // Connection string format: chronos://user:pass@host:port/dbname
         // Examples:
-        //   maayn://maayn:root@localhost:2501/mydb
-        //   maayn://maayn:root@localhost/mydb  (default port 2501)
-        //   maayn://maayn:root@localhost      (no database)
+        //   chronos://chronos:root@localhost:2501/mydb
+        //   chronos://chronos:root@localhost/mydb  (default port 2501)
+        //   chronos://chronos:root@localhost      (no database)
         bool ConnectFromString(const std::string &connection_string);
         
         std::string Query(const std::string &sql);

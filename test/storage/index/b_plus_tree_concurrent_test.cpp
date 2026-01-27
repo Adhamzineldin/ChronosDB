@@ -13,7 +13,7 @@
 #include "common/rid.h"
 #include "common/value.h"
 
-using namespace francodb;
+using namespace chronosdb;
 
 // --- HELPERS ---
 static GenericKey<8> MakeKey(int n) {
@@ -44,7 +44,7 @@ void ReadRange(BPlusTree<GenericKey<8>, RID, GenericComparator<8>> *tree, int st
 
 // --- TEST 1: CONCURRENT INSERTS ---
 void TestConcurrentInsert(int num_threads, int keys_per_thread) {
-    std::string filename = "test_concurrent_insert.francodb";
+    std::string filename = "test_concurrent_insert.chronosdb";
     if (std::filesystem::exists(filename)) std::filesystem::remove(filename);
 
     std::cout << "\n[TEST] Concurrent Insert (" << num_threads << " Threads, " << keys_per_thread << " Keys/Thread)..." << std::endl;
@@ -98,7 +98,7 @@ void TestConcurrentInsert(int num_threads, int keys_per_thread) {
 
 // --- TEST 2: MIXED READ/WRITE ---
 void TestMixedReadWrite() {
-    std::string filename = "test_mixed_rw.francodb";
+    std::string filename = "test_mixed_rw.chronosdb";
     if (std::filesystem::exists(filename)) std::filesystem::remove(filename);
 
     std::cout << "\n[TEST] Mixed Read/Write Stampede..." << std::endl;

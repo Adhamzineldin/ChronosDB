@@ -3,7 +3,7 @@
 #include <iostream>
 #include <vector>
 
-namespace francodb {
+namespace chronosdb {
 
 Schema::Schema(const std::vector<Column> &columns) : columns_(columns) {
     uint32_t current_offset = 0;
@@ -62,4 +62,4 @@ int32_t Schema::GetColIdx(const std::string &col_name) const {
     return -1;
 }
 
-} // namespace francodb
+} // namespace chronosdb

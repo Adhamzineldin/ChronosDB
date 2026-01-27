@@ -1,4 +1,4 @@
-# FrancoDB Advanced Features - Implementation & SOLID Design Guide
+# ChronosDB Advanced Features - Implementation & SOLID Design Guide
 
 ## 📚 Table of Contents
 
@@ -717,7 +717,7 @@ TEST(JoinExecutorPerformance, HashJoinVsNestedLoop) {
 
 ## 🎓 Conclusion
 
-FrancoDB now follows enterprise-grade principles with:
+ChronosDB now follows enterprise-grade principles with:
 - ✅ SOLID architecture
 - ✅ Design patterns for extensibility
 - ✅ Clean, maintainable code

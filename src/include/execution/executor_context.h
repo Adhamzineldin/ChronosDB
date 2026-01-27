@@ -6,7 +6,7 @@
 #include "concurrency/lock_manager.h"
 #include "recovery/log_manager.h"
 
-namespace francodb {
+namespace chronosdb {
 
     /**
      * ExecutorContext holds global state that all executors need.
@@ -42,4 +42,4 @@ namespace francodb {
         LockManager *lock_manager_;
     };
 
-} // namespace francodb
+} // namespace chronosdb

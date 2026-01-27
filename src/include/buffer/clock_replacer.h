@@ -4,7 +4,7 @@
 #include <mutex>
 #include "buffer/replacer.h"
 
-namespace francodb {
+namespace chronosdb {
 
     /**
      * ClockReplacer implements the Clock (Second Chance) algorithm.
@@ -41,4 +41,4 @@ namespace francodb {
         std::mutex mutex_;
     };
 
-} // namespace francodb
+} // namespace chronosdb

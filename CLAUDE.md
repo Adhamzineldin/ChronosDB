@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-FrancoDB is a high-performance, multi-protocol database management system written in C++20. It features role-based access control (RBAC), persistent storage with crash recovery, and FQL (Franco Query Language) - SQL with Arabic-style keyword alternatives.
+ChronosDB is a high-performance, multi-protocol database management system written in C++20. It features role-based access control (RBAC), persistent storage with crash recovery, and CQL (Chronos Query Language) - SQL with Arabic-style keyword alternatives.
 
 ## Build Commands
 
@@ -20,10 +20,10 @@ ctest -R ComprehensiveTestSuite --output-on-failure
 cmake --build . --target test_quick
 
 # Run server (default port 2501)
-./build/francodb_server
+./build/chronosdb_server
 
 # Run interactive shell
-./build/francodb_shell
+./build/chronosdb_shell
 ```
 
 ## Architecture
@@ -32,7 +32,7 @@ cmake --build . --target test_quick
 
 - **Storage Layer** (`src/storage/`, `src/buffer/`): Disk manager, buffer pool (multiple strategies including adaptive partitioned), B+ tree indexes, page management
 - **Catalog** (`src/catalog/`): Schema and metadata management for tables, columns, indexes
-- **Parser** (`src/parser/`): Lexer and parser for SQL/FQL statements, supports Arabic keyword alternatives
+- **Parser** (`src/parser/`): Lexer and parser for SQL/CQL statements, supports Arabic keyword alternatives
 - **Execution Engine** (`src/execution/`): Factory pattern with specialized executors (DDL, DML, database, transaction, user, system)
 - **Network** (`src/network/`): Multi-protocol server (TEXT, JSON, BINARY) with connection handling and database registry
 - **Recovery** (`src/recovery/`): Write-ahead logging, checkpointing, crash recovery, snapshots
@@ -67,15 +67,15 @@ Located in `src/include/common/config.h`:
 - PAGE_SIZE: 4KB
 - BUFFER_POOL_SIZE: 65536 pages (256MB default)
 - Default port: 2501
-- Default credentials: username=`maayn`, password=`root`
+- Default credentials: username=`chronos`, password=`root`
 
 ## Connection String Format
 
 ```
-maayn://username:password@host:port/database
+chronos://username:password@host:port/database
 ```
 
-Example: `maayn://maayn:root@localhost:2501/mydb`
+Example: `chronos://chronos:root@localhost:2501/mydb`
 
 ## Test Structure
 

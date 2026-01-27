@@ -6,7 +6,7 @@
 #include "catalog/catalog.h"
 #include <atomic>
 
-namespace francodb {
+namespace chronosdb {
 
 /**
  * TransactionExecutor - Transaction control operations
@@ -19,7 +19,7 @@ namespace francodb {
  * 
  * Thread Safety: Uses atomic operations for transaction ID generation.
  * 
- * @author FrancoDB Team
+ * @author ChronosDB Team
  */
 class TransactionExecutor {
 public:
@@ -96,5 +96,5 @@ private:
     std::atomic<int>* next_txn_id_ = nullptr;  // Shared with ExecutionEngine
 };
 
-} // namespace francodb
+} // namespace chronosdb
 

@@ -9,7 +9,7 @@
 #include <algorithm>
 #include <filesystem>
 
-namespace francodb {
+namespace chronosdb {
     ClientConnectionHandler::ClientConnectionHandler(ExecutionEngine *engine, AuthManager *auth_manager)
         : engine_(engine),
           session_(std::make_shared<SessionContext>()),

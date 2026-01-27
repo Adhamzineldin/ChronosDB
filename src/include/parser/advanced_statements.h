@@ -4,7 +4,7 @@
 #include <vector>
 #include "parser/statement.h"
 
-namespace francodb {
+namespace chronosdb {
 
 /**
  * JoinType: Types of SQL JOIN operations
@@ -115,5 +115,5 @@ struct CheckConstraint {
         : name(n), expression(expr) {}
 };
 
-} // namespace francodb
+} // namespace chronosdb
 

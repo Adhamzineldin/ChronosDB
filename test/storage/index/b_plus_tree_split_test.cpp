@@ -11,7 +11,7 @@
 #include "common/rid.h"
 #include "common/value.h"
 
-using namespace francodb;
+using namespace chronosdb;
 
 GenericKey<8> MakeKeySplit(int n) {
     GenericKey<8> k;
@@ -21,7 +21,7 @@ GenericKey<8> MakeKeySplit(int n) {
 }
 
 void TestSplitTree() {
-    std::string filename = "test_tree_split.francodb";
+    std::string filename = "test_tree_split.chronosdb";
     if (std::filesystem::exists(filename)) {
         std::filesystem::remove(filename);
     }

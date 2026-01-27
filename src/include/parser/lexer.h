@@ -5,7 +5,7 @@
 #include <map>
 #include "parser/token.h"
 
-namespace francodb {
+namespace chronosdb {
 
     class Lexer {
     public:
@@ -30,4 +30,4 @@ namespace francodb {
         size_t cursor_;
     };
 
-} // namespace francodb
+} // namespace chronosdb

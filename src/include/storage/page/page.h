@@ -7,7 +7,7 @@
 #include "common/config.h"
 #include "common/rwlatch.h" // <--- 1. Include the Latch Definition
 
-namespace francodb {
+namespace chronosdb {
 
     // lsn_t and INVALID_LSN are now defined in common/config.h
 
@@ -105,4 +105,4 @@ namespace francodb {
         ReaderWriterLatch rwlatch_; 
     };
 
-} // namespace francodb
+} // namespace chronosdb

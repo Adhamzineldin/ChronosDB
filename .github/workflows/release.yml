@@ -145,8 +145,8 @@ jobs:
           file: installers/docker/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ steps.meta.outputs.owner }}/francodb:${{ steps.meta.outputs.version }}
-            ghcr.io/${{ steps.meta.outputs.owner }}/francodb:latest
+            ghcr.io/${{ steps.meta.outputs.owner }}/chronosdb:${{ steps.meta.outputs.version }}
+            ghcr.io/${{ steps.meta.outputs.owner }}/chronosdb:latest
 
   release:
     runs-on: ubuntu-latest
@@ -182,14 +182,14 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ steps.meta.outputs.version }}
-          name: FrancoDB ${{ steps.meta.outputs.version }}
+          name: ChronosDB ${{ steps.meta.outputs.version }}
           body: |
-            ## FrancoDB ${{ steps.meta.outputs.version }}
+            ## ChronosDB ${{ steps.meta.outputs.version }}
             
             ### Downloads
-            - **Windows**: Download `FrancoDB_Setup.exe` and run the installer
-            - **Linux (Debian/Ubuntu)**: Download the `.deb` file and run `sudo dpkg -i francodb_*.deb`
-            - **Docker**: `docker pull ghcr.io/${{ steps.meta.outputs.owner }}/francodb:${{ steps.meta.outputs.version }}`
+            - **Windows**: Download `ChronosDB_Setup.exe` and run the installer
+            - **Linux (Debian/Ubuntu)**: Download the `.deb` file and run `sudo dpkg -i chronosdb_*.deb`
+            - **Docker**: `docker pull ghcr.io/${{ steps.meta.outputs.owner }}/chronosdb:${{ steps.meta.outputs.version }}`
             
             ### What's New
             See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.

@@ -5,7 +5,7 @@
 #include "common/config.h"
 #include "storage/page/page.h"
 
-namespace francodb {
+namespace chronosdb {
 
     /**
      * Manages the allocation and deallocation of pages on disk.
@@ -43,4 +43,4 @@ namespace francodb {
         }
     };
 
-} // namespace francodb
+} // namespace chronosdb

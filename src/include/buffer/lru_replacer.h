@@ -5,7 +5,7 @@
 #include <unordered_map>
 #include "common/config.h"
 #include "buffer/replacer.h"
-namespace francodb {
+namespace chronosdb {
 
     /**
      * LRUReplacer tracks page usage.
@@ -45,4 +45,4 @@ namespace francodb {
         size_t capacity_;
     };
 
-} // namespace francodb
+} // namespace chronosdb

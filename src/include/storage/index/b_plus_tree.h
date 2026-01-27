@@ -9,7 +9,7 @@
 #include "storage/storage_interface.h"  // For IBufferManager
 #include "common/rwlatch.h" 
 
-namespace francodb {
+namespace chronosdb {
 
 #define B_PLUS_TREE_TYPE BPlusTree<KeyType, ValueType, KeyComparator>
 
@@ -70,4 +70,4 @@ private:
     ReaderWriterLatch root_latch_; 
 };
 
-} // namespace francodb
+} // namespace chronosdb

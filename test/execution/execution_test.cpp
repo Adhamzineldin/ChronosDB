@@ -11,7 +11,7 @@
 #include "common/auth_manager.h"
 #include "recovery/log_manager.h"
 
-using namespace francodb;
+using namespace chronosdb;
 
 static void RunQuery(ExecutionEngine &engine, const std::string &sql) {
     std::cout << "SQL: " << sql << std::endl;
@@ -26,7 +26,7 @@ static void RunQuery(ExecutionEngine &engine, const std::string &sql) {
 }
 
 void TestExecutionEngine() {
-    std::string db_file = "francodb.francodb";
+    std::string db_file = "chronosdb.chronosdb";
     std::string meta_file = db_file + ".meta";
     
     // Remove any previous instance of the database files
@@ -50,7 +50,7 @@ void TestExecutionEngine() {
     ExecutionEngine engine(bpm, catalog, auth_manager, db_registry, log_manager);
 
     try {
-        std::cout << "--- STARTING FRANCO DB ENGINE ---" << std::endl;
+        std::cout << "--- STARTING CHRONOS DB ENGINE ---" << std::endl;
 
         // A. CREATE TABLE with PRIMARY KEY
         // 2E3MEL GADWAL users (id RAKAM ASASI, name GOMLA, points KASR);

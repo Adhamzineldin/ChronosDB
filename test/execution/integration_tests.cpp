@@ -1,9 +1,9 @@
 #include "../framework/test_runner.h"
 #include <vector>
 
-using namespace francodb_test;
+using namespace chronosdb_test;
 
-namespace francodb_test {
+namespace chronosdb_test {
 
 // Forward declarations for all test modules
 void RunBufferPoolTests(TestRunner& runner);
@@ -128,5 +128,5 @@ void RunCatalogTests(TestRunner& runner) {
     runner.RunTest("Catalog", "Metadata_Retrieval", []() { ASSERT_TRUE(true); });
 }
 
-} // namespace francodb_test
+} // namespace chronosdb_test
 

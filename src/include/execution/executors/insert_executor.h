@@ -8,7 +8,7 @@
 #include "common/exception.h"
 #include "catalog/index_info.h"
 
-namespace francodb {
+namespace chronosdb {
 
     class InsertExecutor : public AbstractExecutor {
     public:
@@ -29,4 +29,4 @@ namespace francodb {
         Transaction *txn_;
     };
 
-} // namespace francodb
+} // namespace chronosdb

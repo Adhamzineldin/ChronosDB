@@ -6,7 +6,7 @@
 #include <iostream>
 #include <algorithm> // For std::max
 
-namespace francodb {
+namespace chronosdb {
 
 Tuple::Tuple(const std::vector<Value> &values, const Schema &schema) {
     if (values.size() != schema.GetColumnCount()) {
@@ -137,4 +137,4 @@ Value Tuple::GetValue(const Schema &schema, uint32_t column_idx) const {
     return Value::DeserializeFrom(data_.data() + offset, type, 0);
 }
 
-} // namespace francodb
+} // namespace chronosdb

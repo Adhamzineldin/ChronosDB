@@ -4,7 +4,7 @@
 #include <string>
 #include "execution/execution_result.h"
 
-namespace francodb {
+namespace chronosdb {
     enum class ProtocolType {
         TEXT,    // Plain text for CLI/human
         JSON,    // JSON for web APIs

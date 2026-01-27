@@ -1,5 +1,5 @@
 # =========================================================
-# FrancoDB Test Suite - CMake Configuration
+# ChronosDB Test Suite - CMake Configuration
 # Build: cmake --build . --target run_all_tests
 # Run:   ctest -R ComprehensiveTestSuite --output-on-failure
 # =========================================================
@@ -29,7 +29,7 @@ list(FILTER TEST_MODULES EXCLUDE REGEX "run_all_tests\\.cpp$")
 set(RUNNER_SOURCE "run_all_tests.cpp")
 
 # DEBUG: Print discovered files to help verify what CMake sees
-message(STATUS "--- FrancoDB Test Discovery ---")
+message(STATUS "--- ChronosDB Test Discovery ---")
 message(STATUS "Main Runner: ${RUNNER_SOURCE}")
 message(STATUS "Test Modules Found: ${TEST_MODULES}")
 
@@ -41,7 +41,7 @@ message(STATUS "Test Modules Found: ${TEST_MODULES}")
 list(LENGTH TEST_MODULES LIST_LEN)
 if(LIST_LEN GREATER 0)
     add_executable(run_all_tests ${RUNNER_SOURCE} ${TEST_MODULES})
-    target_link_libraries(run_all_tests PRIVATE francodb_lib)
+    target_link_libraries(run_all_tests PRIVATE chronosdb_lib)
     if(WIN32)
         target_link_libraries(run_all_tests PRIVATE ws2_32)
     endif()
@@ -77,7 +77,7 @@ foreach(test_source ${TEST_MODULES})
     add_executable(${target_name} ${test_source})
 
     # Link libraries
-    target_link_libraries(${target_name} PRIVATE francodb_lib)
+    target_link_libraries(${target_name} PRIVATE chronosdb_lib)
     if(WIN32)
         target_link_libraries(${target_name} PRIVATE ws2_32)
     endif()

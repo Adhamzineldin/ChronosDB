@@ -1,4 +1,4 @@
-const francodb = require('./francodb');
+const chronosdb = require('./chronosdb');
 const readline = require('readline');
 
 // --- UI Helpers ---
@@ -93,14 +93,14 @@ function question(prompt) {
 }
 
 async function mainApp() {
-    console.log(`${UI.HEADER}${UI.BOLD}=== FrancoDB Admin Console ===${UI.ENDC}`);
+    console.log(`${UI.HEADER}${UI.BOLD}=== ChronosDB Admin Console ===${UI.ENDC}`);
 
     let conn;
     try {
-        conn = await francodb.connect({
+        conn = await chronosdb.connect({
             host: '127.0.0.1',
             port: 2501,
-            user: 'maayn',
+            user: 'chronos',
             password: 'root',
             database: 'mydb'
         });
@@ -199,7 +199,7 @@ async function mainApp() {
 
         // --- OPTION 5: CUSTOM ---
         else if (choice === '5') {
-            const q = await question("FQL Query: ");
+            const q = await question("CQL Query: ");
             try {
                 const result = await cur.execute(q);
                 console.log(result);

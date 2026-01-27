@@ -3,7 +3,7 @@
 #include "storage/storage_interface.h"  // For IBufferManager
 #include "storage/page/page.h"
 
-namespace francodb {
+namespace chronosdb {
 
 /**
  * PageGuard - RAII wrapper for buffer pool pages.
@@ -268,5 +268,5 @@ public:
         : PageGuard(bpm, page_id, false) {}
 };
 
-} // namespace francodb
+} // namespace chronosdb
 

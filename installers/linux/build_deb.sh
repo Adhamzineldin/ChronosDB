@@ -1,5 +1,5 @@
 #!/bin/bash
-# FrancoDB .deb Package Builder for Linux
+# ChronosDB .deb Package Builder for Linux
 # Creates a production-ready .deb installer
 # Location: installers/linux/build_deb.sh
 
@@ -8,7 +8,7 @@ set -e
 # Script is in installers/linux/, so project root is two levels up
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-DEB_DIR=$(mktemp -d -t francodb-deb.XXXXXX)
+DEB_DIR=$(mktemp -d -t chronosdb-deb.XXXXXX)
 
 BUILD_DIR="${PROJECT_ROOT}/build"
 OUTPUT_DIR="${SCRIPT_DIR}/Output"
@@ -17,7 +17,7 @@ VERSION="1.0.0"
 ARCH="amd64"
 
 echo "=========================================="
-echo "  FrancoDB .deb Package Builder"
+echo "  ChronosDB .deb Package Builder"
 echo "=========================================="
 echo "Script Dir:   $SCRIPT_DIR"
 echo "Project Root: $PROJECT_ROOT"
@@ -33,13 +33,13 @@ fi
 
 # Create directory structure for .deb
 mkdir -p "$DEB_DIR/DEBIAN"
-mkdir -p "$DEB_DIR/opt/francodb/bin"
-mkdir -p "$DEB_DIR/opt/francodb/etc"
-mkdir -p "$DEB_DIR/opt/francodb/data"
-mkdir -p "$DEB_DIR/opt/francodb/log"
+mkdir -p "$DEB_DIR/opt/chronosdb/bin"
+mkdir -p "$DEB_DIR/opt/chronosdb/etc"
+mkdir -p "$DEB_DIR/opt/chronosdb/data"
+mkdir -p "$DEB_DIR/opt/chronosdb/log"
 mkdir -p "$DEB_DIR/etc/systemd/system"
 mkdir -p "$DEB_DIR/usr/local/bin"
-mkdir -p "$DEB_DIR/usr/share/doc/francodb"
+mkdir -p "$DEB_DIR/usr/share/doc/chronosdb"
 mkdir -p "$DEB_DIR/usr/share/man/man1"
 
 # IMPORTANT: Set correct permissions on DEBIAN directory (must be 0755 or 0775 for dpkg-deb)
@@ -50,7 +50,7 @@ umask 0022
 # Create output directory if it doesn't exist
 mkdir -p "$OUTPUT_DIR"
 
-echo "Building FrancoDB from source..."
+echo "Building ChronosDB from source..."
 
 # Build if not already built
 if [ ! -d "$BUILD_DIR" ]; then
@@ -69,33 +69,33 @@ fi
 
 # Copy binaries
 echo "Copying binaries..."
-if [ -f "$BUILD_DIR/francodb_server" ]; then
-    cp "$BUILD_DIR/francodb_server" "$DEB_DIR/opt/francodb/bin/"
-    chmod 755 "$DEB_DIR/opt/francodb/bin/francodb_server"
+if [ -f "$BUILD_DIR/chronosdb_server" ]; then
+    cp "$BUILD_DIR/chronosdb_server" "$DEB_DIR/opt/chronosdb/bin/"
+    chmod 755 "$DEB_DIR/opt/chronosdb/bin/chronosdb_server"
 fi
 
-if [ -f "$BUILD_DIR/francodb_shell" ]; then
-    cp "$BUILD_DIR/francodb_shell" "$DEB_DIR/opt/francodb/bin/"
-    chmod 755 "$DEB_DIR/opt/francodb/bin/francodb_shell"
+if [ -f "$BUILD_DIR/chronosdb_shell" ]; then
+    cp "$BUILD_DIR/chronosdb_shell" "$DEB_DIR/opt/chronosdb/bin/"
+    chmod 755 "$DEB_DIR/opt/chronosdb/bin/chronosdb_shell"
 fi
 
-if [ -f "$BUILD_DIR/francodb_service" ]; then
-    cp "$BUILD_DIR/francodb_service" "$DEB_DIR/opt/francodb/bin/"
-    chmod 755 "$DEB_DIR/opt/francodb/bin/francodb_service"
+if [ -f "$BUILD_DIR/chronosdb_service" ]; then
+    cp "$BUILD_DIR/chronosdb_service" "$DEB_DIR/opt/chronosdb/bin/"
+    chmod 755 "$DEB_DIR/opt/chronosdb/bin/chronosdb_service"
 fi
 
 # Copy configuration template
-cat > "$DEB_DIR/opt/francodb/etc/francodb.conf.template" << 'EOF'
-# FrancoDB Configuration File
-# Edit this file and save as francodb.conf
+cat > "$DEB_DIR/opt/chronosdb/etc/chronosdb.conf.template" << 'EOF'
+# ChronosDB Configuration File
+# Edit this file and save as chronosdb.conf
 
 # Network Configuration
 port = 2501
 bind_address = "0.0.0.0"
 
 # Data Storage
-data_directory = "/opt/francodb/data"
-log_directory = "/opt/francodb/log"
+data_directory = "/opt/chronosdb/data"
+log_directory = "/opt/chronosdb/log"
 
 # Performance
 buffer_pool_size = 1024
@@ -109,29 +109,29 @@ log_format = "json"
 encryption_enabled = false
 
 # Root User (set during installation)
-root_username = "maayn"
+root_username = "chronos"
 root_password = "change_me"
 EOF
-chmod 644 "$DEB_DIR/opt/francodb/etc/francodb.conf.template"
+chmod 644 "$DEB_DIR/opt/chronosdb/etc/chronosdb.conf.template"
 
 # Create symlinks
-ln -s /opt/francodb/bin/francodb_server "$DEB_DIR/usr/local/bin/francodb_server"
-ln -s /opt/francodb/bin/francodb_shell "$DEB_DIR/usr/local/bin/francodb"
+ln -s /opt/chronosdb/bin/chronosdb_server "$DEB_DIR/usr/local/bin/chronosdb_server"
+ln -s /opt/chronosdb/bin/chronosdb_shell "$DEB_DIR/usr/local/bin/chronosdb"
 
 # Copy systemd service file
-cat > "$DEB_DIR/etc/systemd/system/francodb.service" << 'EOF'
+cat > "$DEB_DIR/etc/systemd/system/chronosdb.service" << 'EOF'
 [Unit]
-Description=FrancoDB Database Server
-Documentation=https://github.com/yourusername/FrancoDB
+Description=ChronosDB Database Server
+Documentation=https://github.com/yourusername/ChronosDB
 After=network.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=francodb
-Group=francodb
-WorkingDirectory=/opt/francodb
-ExecStart=/opt/francodb/bin/francodb_server --config /opt/francodb/etc/francodb.conf
+User=chronosdb
+Group=chronosdb
+WorkingDirectory=/opt/chronosdb
+ExecStart=/opt/chronosdb/bin/chronosdb_server --config /opt/chronosdb/etc/chronosdb.conf
 ExecReload=/bin/kill -HUP $MAINPID
 KillMode=process
 Restart=on-failure
@@ -141,7 +141,7 @@ RestartSec=10s
 ProtectSystem=strict
 ProtectHome=yes
 NoNewPrivileges=true
-ReadWritePaths=/opt/francodb/data /opt/francodb/log
+ReadWritePaths=/opt/chronosdb/data /opt/chronosdb/log
 
 # Resource limits
 LimitNOFILE=65536
@@ -150,17 +150,17 @@ LimitNPROC=4096
 [Install]
 WantedBy=multi-user.target
 EOF
-chmod 644 "$DEB_DIR/etc/systemd/system/francodb.service"
+chmod 644 "$DEB_DIR/etc/systemd/system/chronosdb.service"
 
 # Create DEBIAN/control file
 cat > "$DEB_DIR/DEBIAN/control" << EOF
-Package: francodb
+Package: chronosdb
 Version: $VERSION
 Architecture: $ARCH
-Maintainer: FrancoDB Team <dev@francodb.io>
-Homepage: https://github.com/adhamzineldin/FrancoDB
-Description: FrancoDB - S+ Grade Enterprise Database System
- FrancoDB is a high-performance relational database with:
+Maintainer: ChronosDB Team <dev@chronosdb.io>
+Homepage: https://github.com/adhamzineldin/ChronosDB
+Description: ChronosDB - S+ Grade Enterprise Database System
+ ChronosDB is a high-performance relational database with:
  - Advanced SQL support (JOINs, GROUP BY, aggregates)
  - FOREIGN KEY constraints with referential integrity
  - Nullable column support with default values
@@ -181,10 +181,10 @@ cat > "$DEB_DIR/DEBIAN/preinst" << 'EOF'
 #!/bin/bash
 set -e
 
-# Create francodb user if it doesn't exist
-if ! id francodb >/dev/null 2>&1; then
-    echo "Creating francodb user..."
-    useradd -r -s /sbin/nologin -d /opt/francodb -m francodb || true
+# Create chronosdb user if it doesn't exist
+if ! id chronosdb >/dev/null 2>&1; then
+    echo "Creating chronosdb user..."
+    useradd -r -s /sbin/nologin -d /opt/chronosdb -m chronosdb || true
 fi
 
 exit 0
@@ -197,28 +197,28 @@ cat > "$DEB_DIR/DEBIAN/postinst" << 'EOF'
 set -e
 
 # Set permissions
-chown -R francodb:francodb /opt/francodb
-chmod 755 /opt/francodb
-chmod 700 /opt/francodb/data /opt/francodb/log
-chmod 644 /opt/francodb/etc/*.template
+chown -R chronosdb:chronosdb /opt/chronosdb
+chmod 755 /opt/chronosdb
+chmod 700 /opt/chronosdb/data /opt/chronosdb/log
+chmod 644 /opt/chronosdb/etc/*.template
 
 # Copy config if not exists
-if [ ! -f /opt/francodb/etc/francodb.conf ]; then
-    cp /opt/francodb/etc/francodb.conf.template /opt/francodb/etc/francodb.conf
-    chmod 600 /opt/francodb/etc/francodb.conf
-    chown francodb:francodb /opt/francodb/etc/francodb.conf
+if [ ! -f /opt/chronosdb/etc/chronosdb.conf ]; then
+    cp /opt/chronosdb/etc/chronosdb.conf.template /opt/chronosdb/etc/chronosdb.conf
+    chmod 600 /opt/chronosdb/etc/chronosdb.conf
+    chown chronosdb:chronosdb /opt/chronosdb/etc/chronosdb.conf
 fi
 
 # Reload systemd
 systemctl daemon-reload || true
 
 echo ""
-echo "FrancoDB installed successfully!"
+echo "ChronosDB installed successfully!"
 echo ""
 echo "Next steps:"
-echo "1. Edit configuration: sudo nano /opt/francodb/etc/francodb.conf"
-echo "2. Start the service: sudo systemctl start francodb"
-echo "3. Enable on boot: sudo systemctl enable francodb"
+echo "1. Edit configuration: sudo nano /opt/chronosdb/etc/chronosdb.conf"
+echo "2. Start the service: sudo systemctl start chronosdb"
+echo "3. Enable on boot: sudo systemctl enable chronosdb"
 echo ""
 
 exit 0
@@ -231,8 +231,8 @@ cat > "$DEB_DIR/DEBIAN/prerm" << 'EOF'
 set -e
 
 # Stop the service
-systemctl stop francodb || true
-systemctl disable francodb || true
+systemctl stop chronosdb || true
+systemctl disable chronosdb || true
 
 exit 0
 EOF
@@ -245,7 +245,7 @@ set -e
 
 # Remove user if uninstall was clean
 if [ "$1" = "purge" ]; then
-    userdel -r francodb || true
+    userdel -r chronosdb || true
 fi
 
 systemctl daemon-reload || true
@@ -255,14 +255,14 @@ EOF
 chmod 755 "$DEB_DIR/DEBIAN/postrm"
 
 # Create copyright file
-cat > "$DEB_DIR/usr/share/doc/francodb/copyright" << 'EOF'
+cat > "$DEB_DIR/usr/share/doc/chronosdb/copyright" << 'EOF'
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: FrancoDB
-Upstream-Contact: FrancoDB Team <dev@francodb.io>
-Source: https://github.com/yourusername/FrancoDB
+Upstream-Name: ChronosDB
+Upstream-Contact: ChronosDB Team <dev@chronosdb.io>
+Source: https://github.com/yourusername/ChronosDB
 
 Files: *
-Copyright: 2024-2026 FrancoDB Team
+Copyright: 2024-2026 ChronosDB Team
 License: MIT
 
 License: MIT
@@ -278,8 +278,8 @@ License: MIT
 EOF
 
 # Create changelog
-cat > "$DEB_DIR/usr/share/doc/francodb/changelog" << 'EOF'
-francodb (1.0.0) stable; urgency=medium
+cat > "$DEB_DIR/usr/share/doc/chronosdb/changelog" << 'EOF'
+chronosdb (1.0.0) stable; urgency=medium
 
   * Initial release
   * Added JOIN operations (INNER, LEFT, RIGHT, FULL, CROSS)
@@ -292,11 +292,11 @@ francodb (1.0.0) stable; urgency=medium
   * SOLID principles architecture
   * Enterprise-grade code quality
 
- -- FrancoDB Team <dev@francodb.io>  Sat, 19 Jan 2026 00:00:00 +0000
+ -- ChronosDB Team <dev@chronosdb.io>  Sat, 19 Jan 2026 00:00:00 +0000
 EOF
 
 # Build the .deb package
-DEB_FILENAME="francodb_${VERSION}_${ARCH}.deb"
+DEB_FILENAME="chronosdb_${VERSION}_${ARCH}.deb"
 echo ""
 echo "Building .deb package..."
 
@@ -318,7 +318,7 @@ echo "To install:"
 echo "  sudo dpkg -i ${DEB_FILENAME}"
 echo ""
 echo "To start service:"
-echo "  sudo systemctl start francodb"
+echo "  sudo systemctl start chronosdb"
 echo ""
 
 # Create MD5 checksum

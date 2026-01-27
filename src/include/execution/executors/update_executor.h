@@ -7,7 +7,7 @@
 #include "catalog/index_info.h"
 #include "storage/index/index_key.h"
 
-namespace francodb {
+namespace chronosdb {
 
 class UpdateExecutor : public AbstractExecutor {
 public:
@@ -32,4 +32,4 @@ private:
     Transaction *txn_;
 };
 
-} // namespace francodb
+} // namespace chronosdb

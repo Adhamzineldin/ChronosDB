@@ -6,7 +6,7 @@
 #include <chrono>
 #include <filesystem>
 
-namespace francodb {
+namespace chronosdb {
 
     // ========================================================================
     // SERIALIZATION HELPERS
@@ -733,4 +733,4 @@ namespace francodb {
         }
     }
 
-} // namespace francodb
+} // namespace chronosdb

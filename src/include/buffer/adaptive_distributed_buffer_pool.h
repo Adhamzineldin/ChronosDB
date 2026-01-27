@@ -15,7 +15,7 @@
 #include <algorithm>
 #include <numeric>
 
-namespace francodb {
+namespace chronosdb {
 
 /**
  * Per-Partition Metrics for fine-grained adaptive control
@@ -492,5 +492,5 @@ private:
     } global_metrics_;
 };
 
-} // namespace francodb
+} // namespace chronosdb
 

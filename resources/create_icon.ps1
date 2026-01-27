@@ -1,7 +1,7 @@
-# PowerShell script to help create an icon for FrancoDB
+# PowerShell script to help create an icon for ChronosDB
 # This script provides instructions and can download a placeholder icon
 
-Write-Host "FrancoDB Icon Creation Helper" -ForegroundColor Cyan
+Write-Host "ChronosDB Icon Creation Helper" -ForegroundColor Cyan
 Write-Host "==============================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -23,20 +23,20 @@ Write-Host ""
 
 if ($magickAvailable) {
     Write-Host "   Option A: Using ImageMagick (if you have a PNG file):" -ForegroundColor Cyan
-    Write-Host "   magick convert your_image.png -define icon:auto-resize=256,128,64,48,32,16 resources\francodb.ico" -ForegroundColor White
+    Write-Host "   magick convert your_image.png -define icon:auto-resize=256,128,64,48,32,16 resources\chronosdb.ico" -ForegroundColor White
     Write-Host ""
 }
 
 Write-Host "   Option B: Online converter:" -ForegroundColor Cyan
 Write-Host "   - Visit https://www.icoconverter.com/" -ForegroundColor White
 Write-Host "   - Upload your PNG image" -ForegroundColor White
-Write-Host "   - Download and save as resources\francodb.ico" -ForegroundColor White
+Write-Host "   - Download and save as resources\chronosdb.ico" -ForegroundColor White
 Write-Host ""
 
 Write-Host "   Option C: Use GIMP or Photoshop:" -ForegroundColor Cyan
 Write-Host "   - Open your image" -ForegroundColor White
 Write-Host "   - Export as ICO format" -ForegroundColor White
-Write-Host "   - Save to resources\francodb.ico" -ForegroundColor White
+Write-Host "   - Save to resources\chronosdb.ico" -ForegroundColor White
 Write-Host ""
 
 Write-Host "   Option D: Use a default icon:" -ForegroundColor Cyan
@@ -48,9 +48,9 @@ Write-Host "Note: The icon file is optional. The installer will work without it.
 Write-Host ""
 
 # Check if icon already exists
-if (Test-Path "resources\francodb.ico") {
-    Write-Host "[OK] Icon file found: resources\francodb.ico" -ForegroundColor Green
+if (Test-Path "resources\chronosdb.ico") {
+    Write-Host "[OK] Icon file found: resources\chronosdb.ico" -ForegroundColor Green
 } else {
-    Write-Host "[INFO] Icon file not found: resources\francodb.ico" -ForegroundColor Yellow
+    Write-Host "[INFO] Icon file not found: resources\chronosdb.ico" -ForegroundColor Yellow
     Write-Host "       You can create one using the methods above." -ForegroundColor Yellow
 }

@@ -1,6 +1,6 @@
-# FrancoDB Client SDK
+# ChronosDB Client SDK
 
-This document describes how to use FrancoDB in your applications.
+This document describes how to use ChronosDB in your applications.
 
 ## Supported Languages
 
@@ -14,28 +14,28 @@ This document describes how to use FrancoDB in your applications.
 ### Connection String Format
 
 ```
-maayn://username:password@host:port/database
+chronos://username:password@host:port/database
 ```
 
 ### Default Values
 - **Host:** localhost
 - **Port:** 2501
-- **Username:** maayn (default admin)
+- **Username:** chronos (default admin)
 - **Password:** root
 - **Database:** (optional)
 
 ## C++ Client API
 
 ```cpp
-#include "network/franco_client.h"
+#include "network/chronos_client.h"
 
-using namespace francodb;
+using namespace chronosdb;
 
 // Create client
-FrancoClient client;
+ChronosClient client;
 
 // Connect
-client.ConnectFromString("maayn://maayn:root@localhost:2501/mydb");
+client.ConnectFromString("chronos://chronos:root@localhost:2501/mydb");
 
 // Execute query
 std::string result = client.Query("SELECT * FROM users;\n");
@@ -47,13 +47,13 @@ client.Disconnect();
 ## Python Client API
 
 ```python
-from francodb_client import FrancoDBClient
+from chronosdb_client import ChronosDBClient
 
 # Create client
-client = FrancoDBClient('localhost', 2501)
+client = ChronosDBClient('localhost', 2501)
 
 # Connect
-client.connect('maayn', 'root', 'mydb')
+client.connect('chronos', 'root', 'mydb')
 
 # Execute query
 result = client.query("SELECT * FROM users;\n")
@@ -65,13 +65,13 @@ client.disconnect()
 ## JavaScript/Node.js Client API
 
 ```javascript
-const FrancoDBClient = require('./francodb-client');
+const ChronosDBClient = require('./chronosdb-client');
 
 // Create client
-const client = new FrancoDBClient('localhost', 2501);
+const client = new ChronosDBClient('localhost', 2501);
 
 // Connect
-await client.connect('maayn', 'root', 'mydb');
+await client.connect('chronos', 'root', 'mydb');
 
 // Execute query
 const result = await client.query('SELECT * FROM users;\n');
@@ -82,7 +82,7 @@ client.disconnect();
 
 ## Protocol
 
-FrancoDB uses a simple text-based protocol over TCP:
+ChronosDB uses a simple text-based protocol over TCP:
 
 1. **Connect** to server on port 2501
 2. **Authenticate** with `LOGIN username password;`
@@ -93,7 +93,7 @@ FrancoDB uses a simple text-based protocol over TCP:
 ### Example Protocol Flow
 
 ```
-Client -> Server: LOGIN maayn root;\n
+Client -> Server: LOGIN chronos root;\n
 Server -> Client: LOGIN OK\n
 
 Client -> Server: USE mydb;\n
@@ -132,12 +132,12 @@ See the `examples/` directory for complete working examples in each language.
 # Build the library
 mkdir build && cd build
 cmake -G Ninja -DCMAKE_BUILD_TYPE=Release ..
-cmake --build . --target francodb_lib
+cmake --build . --target chronosdb_lib
 
 # Link in your project
 # Add to your CMakeLists.txt:
-# target_link_libraries(your_app francodb_lib)
-# target_include_directories(your_app PRIVATE ${FRANCODB_SOURCE_DIR}/src/include)
+# target_link_libraries(your_app chronosdb_lib)
+# target_include_directories(your_app PRIVATE ${CHRONOSDB_SOURCE_DIR}/src/include)
 ```
 
 ## License

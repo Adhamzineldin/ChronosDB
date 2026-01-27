@@ -11,7 +11,7 @@
 #include "buffer/replacer.h" // Use the generic interface
 #include "storage/storage_interface.h"  // For IBufferManager
 
-namespace francodb {
+namespace chronosdb {
 
     // Forward declaration
     class LogManager;
@@ -71,4 +71,4 @@ namespace francodb {
         std::atomic<page_id_t> next_page_id_ = 0;
     };
 
-} // namespace francodb
+} // namespace chronosdb

@@ -13,7 +13,7 @@
  * 
  * Thread Safety: All methods are thread-safe when used with proper catalog locking.
  * 
- * @author FrancoDB Team
+ * @author ChronosDB Team
  */
 
 #include "execution/ddl_executor.h"
@@ -29,7 +29,7 @@
 #include <iomanip>
 #include <set>
 
-namespace francodb {
+namespace chronosdb {
 
 // ============================================================================
 // CREATE TABLE - Full Enterprise Implementation
@@ -500,5 +500,5 @@ void DDLExecutor::LogDDL(LogRecordType type, const std::string& object_name) {
     }
 }
 
-} // namespace francodb
+} // namespace chronosdb
 

@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <string>
 
-namespace francodb {
+namespace chronosdb {
 
 Value::Value() : type_id_(TypeId::INVALID), integer_(0) {}
 Value::Value(TypeId type, int32_t i) : type_id_(type), integer_(i) {}
@@ -128,4 +128,4 @@ std::ostream &operator<<(std::ostream &os, const Value &val) {
     return os;
 }
 
-} // namespace francodb
+} // namespace chronosdb

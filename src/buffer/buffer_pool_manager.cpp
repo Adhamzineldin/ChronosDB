@@ -6,7 +6,7 @@
 #include "storage/disk/disk_manager.h"
 #include "recovery/log_manager.h"  // For WAL protocol enforcement
 
-namespace francodb {
+namespace chronosdb {
     BufferPoolManager::BufferPoolManager(size_t pool_size, DiskManager *disk_manager)
         : pool_size_(pool_size), disk_manager_(disk_manager) {
         pages_ = new Page[pool_size_];
@@ -255,4 +255,4 @@ namespace francodb {
             replacer_ = new LRUReplacer(pool_size_); 
         }
     }
-} // namespace francodb
+} // namespace chronosdb

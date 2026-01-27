@@ -33,8 +33,8 @@ jobs:
         with:
           name: linux-build
           path: |
-            build/francodb_server
-            build/francodb_shell
+            build/chronosdb_server
+            build/chronosdb_shell
           if-no-files-found: warn
 
   build-windows:
@@ -64,6 +64,6 @@ jobs:
         with:
           name: windows-build
           path: |
-            build/francodb_server.exe
-            build/francodb_shell.exe
+            build/chronosdb_server.exe
+            build/chronosdb_shell.exe
           if-no-files-found: warn

@@ -15,7 +15,7 @@
 #include "network/database_registry.h"
 #include "recovery/log_manager.h"
 
-using namespace francodb;
+using namespace chronosdb;
 
 // Test result tracking
 int tests_passed = 0;
@@ -456,24 +456,24 @@ void TestMultipleTables(ExecutionEngine &engine) {
 // ============================================================================
 // MAIN TEST RUNNER
 // ============================================================================
-void TestFrancoDBSystem() {
+void TestChronosDBSystem() {
     // Reset counters at start of test
     tests_passed = 0;
     tests_failed = 0;
     
     // Use a simpler filename - tests run from the build directory
-    std::string db_file = "francodb_system_test.francodb";
+    std::string db_file = "chronosdb_system_test.chronosdb";
     
     // Aggressively delete ALL variations of database files
     // Use a wildcard approach by checking multiple patterns
     std::vector<std::string> potential_files = {
         db_file,
         db_file + ".meta",
-        "francodb_system_test.francodb.francodb",
-        "francodb_system_test.francodb.francodb.meta",
-        "francodb_system_test.meta",
-        "francodb_system_test.idx",
-        "francodb_system_test.log"
+        "chronosdb_system_test.chronosdb.chronosdb",
+        "chronosdb_system_test.chronosdb.chronosdb.meta",
+        "chronosdb_system_test.meta",
+        "chronosdb_system_test.idx",
+        "chronosdb_system_test.log"
     };
     
     for (const auto& f : potential_files) {
@@ -493,7 +493,7 @@ void TestFrancoDBSystem() {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     
     std::cout << "\n" << std::string(60, '=') << std::endl;
-    std::cout << "FRANCO DB COMPREHENSIVE SYSTEM TEST" << std::endl;
+    std::cout << "CHRONOS DB COMPREHENSIVE SYSTEM TEST" << std::endl;
     std::cout << std::string(60, '=') << std::endl;
     
     // Initialize database
@@ -583,10 +583,10 @@ void TestFrancoDBSystem() {
         
         // Throw exception if any tests failed so TestRunner can track it
         if (tests_failed > 0) {
-            throw std::runtime_error("FrancoDB System Test: " + std::to_string(tests_failed) + " tests failed");
+            throw std::runtime_error("ChronosDB System Test: " + std::to_string(tests_failed) + " tests failed");
         }
         
-        std::cout << "\n[SUCCESS] All FrancoDB system tests passed!" << std::endl;
+        std::cout << "\n[SUCCESS] All ChronosDB system tests passed!" << std::endl;
         
     } catch (const std::exception &e) {
         std::cout << "\n[FATAL ERROR] Test suite crashed: " << e.what() << std::endl;

@@ -1,4 +1,4 @@
-# FrancoDB - S+ Grade Database System
+# ChronosDB - S+ Grade Database System
 
 ## 🌟 Project Status: S+ Grade - Production Ready
 
@@ -269,7 +269,7 @@ ALTER TABLE orders
 ## 📁 Project Structure
 
 ```
-FrancoDB/
+ChronosDB/
 ├── src/
 │   ├── include/
 │   │   ├── parser/
@@ -413,7 +413,7 @@ When adding new features, ensure:
 
 ## 📝 License
 
-FrancoDB - Educational Database System
+ChronosDB - Educational Database System
 Built with SOLID principles and enterprise-grade architecture
 
 ---
@@ -437,7 +437,7 @@ Built with SOLID principles and enterprise-grade architecture
 
 ---
 
-**FrancoDB: Production-Ready Database System with Enterprise Architecture**
+**ChronosDB: Production-Ready Database System with Enterprise Architecture**
 
 🌟 **Grade: S+** 🌟
 

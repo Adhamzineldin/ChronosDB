@@ -14,11 +14,11 @@
 #include <sys/types.h>
 #endif
 
-namespace francodb
+namespace chronosdb
 {
-    constexpr char FRAME_FILE_MAGIC[] = "FRANCO_DATABASE_MADE_BY_MAAYN";
+    constexpr char FRAME_FILE_MAGIC[] = "CHRONOS_DATABASE_BY_CHRONOS";
     constexpr size_t MAGIC_LEN = sizeof(FRAME_FILE_MAGIC) - 1;
-    constexpr char META_FILE_MAGIC[] = "FRANCO_META";
+    constexpr char META_FILE_MAGIC[] = "CHRONOS_META";
     constexpr size_t META_MAGIC_LEN = sizeof(META_FILE_MAGIC) - 1;
 
     uint32_t CalculateChecksum(const char* data)
@@ -45,7 +45,7 @@ namespace francodb
         encryption_enabled_ = false;
 
         std::filesystem::path path(db_file);
-        if (path.extension() != ".francodb") file_name_ = db_file + ".francodb";
+        if (path.extension() != ".chronosdb") file_name_ = db_file + ".chronosdb";
         else file_name_ = db_file;
 
         meta_file_name_ = file_name_ + ".meta";

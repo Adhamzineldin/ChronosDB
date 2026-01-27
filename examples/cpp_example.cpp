@@ -1,19 +1,19 @@
-// Example: Using FrancoDB Client in C++
+// Example: Using ChronosDB Client in C++
 #include <iostream>
-#include "francodb_client.h"
+#include "chronosdb_client.h"
 
-using namespace francodb;
+using namespace chronosdb;
 
 int main() {
-    FrancoClient client;
+    ChronosClient client;
     
     // Connect
-    if (!client.ConnectFromString("maayn://maayn:root@localhost:2501/mydb")) {
-        std::cerr << "Failed to connect to FrancoDB." << std::endl;
+    if (!client.ConnectFromString("chronos://chronos:root@localhost:2501/mydb")) {
+        std::cerr << "Failed to connect to ChronosDB." << std::endl;
         return 1;
     }
     
-    std::cout << "Connected to FrancoDB!" << std::endl;
+    std::cout << "Connected to ChronosDB!" << std::endl;
     
     // 1. Create & Insert (Text Mode is default)
     client.Query("2e3mel gadwal users (id rakam, name gomla);");

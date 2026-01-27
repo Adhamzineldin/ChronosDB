@@ -1,6 +1,6 @@
 #include "storage/page/b_plus_tree_page.h"
 
-namespace francodb {
+namespace chronosdb {
 
     /*
      * Helper methods to get/set page type
@@ -72,4 +72,4 @@ namespace francodb {
         return page_id_;
     }
 
-} // namespace francodb
+} // namespace chronosdb

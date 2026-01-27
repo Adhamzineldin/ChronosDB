@@ -9,10 +9,10 @@
 #include "storage/table/tuple.h"
 #include "common/value.h"
 
-using namespace francodb;
+using namespace chronosdb;
 
 void TestFullSystem() {
-    std::string db_name = "francodb_system.francodb";
+    std::string db_name = "chronosdb_system.chronosdb";
     // Clean up any previous test files
     if (std::filesystem::exists(db_name)) {
         std::filesystem::remove(db_name);

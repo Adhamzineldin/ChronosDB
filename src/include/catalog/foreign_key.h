@@ -4,7 +4,7 @@
 #include <vector>
 #include "common/rid.h"
 
-namespace francodb {
+namespace chronosdb {
 
 /**
  * ForeignKeyConstraint: Manages referential integrity
@@ -73,5 +73,5 @@ private:
     Action on_update_action_ = Action::RESTRICT;
 };
 
-} // namespace francodb
+} // namespace chronosdb
 

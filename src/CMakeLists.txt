@@ -1,30 +1,30 @@
 # Find all cpp files
-file(GLOB_RECURSE FRANCODB_SOURCES CONFIGURE_DEPENDS
+file(GLOB_RECURSE CHRONOSDB_SOURCES CONFIGURE_DEPENDS
         "*.cpp"
 )
 
 # Remove main.cpp from library sources
-list(FILTER FRANCODB_SOURCES EXCLUDE REGEX "main.cpp")
+list(FILTER CHRONOSDB_SOURCES EXCLUDE REGEX "main.cpp")
 
 # Find all header files
-file(GLOB_RECURSE FRANCODB_HEADERS CONFIGURE_DEPENDS
+file(GLOB_RECURSE CHRONOSDB_HEADERS CONFIGURE_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/include/*.h"
         "${CMAKE_CURRENT_SOURCE_DIR}/include/*.hpp"
 )
 
 # Create library
-add_library(francodb_lib
-        ${FRANCODB_SOURCES}
-        ${FRANCODB_HEADERS}
+add_library(chronosdb_lib
+        ${CHRONOSDB_SOURCES}
+        ${CHRONOSDB_HEADERS}
 )
 
 # Include paths
-target_include_directories(francodb_lib
+target_include_directories(chronosdb_lib
         PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 # Executable
-add_executable(FrancoDB main.cpp
+add_executable(ChronosDB main.cpp
         include/buffer/lru_replacer.h
         include/buffer/buffer_pool_manager.h
         buffer/lru_replacer.cpp
@@ -56,4 +56,4 @@ add_executable(FrancoDB main.cpp
         storage/table/tuple.cpp
         include/catalog/table_metadata.h
         include/catalog/catalog.h)
-target_link_libraries(FrancoDB francodb_lib)
+target_link_libraries(ChronosDB chronosdb_lib)

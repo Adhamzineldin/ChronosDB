@@ -1,8 +1,8 @@
-# FrancoDB Architecture & Glossary
+# ChronosDB Architecture & Glossary
 
 ## Complete System Documentation
 
-This document provides a comprehensive reference for all modules, components, abbreviations, and professional terminology used in FrancoDB.
+This document provides a comprehensive reference for all modules, components, abbreviations, and professional terminology used in ChronosDB.
 
 ---
 
@@ -25,7 +25,7 @@ This document provides a comprehensive reference for all modules, components, ab
 
 ## System Overview
 
-FrancoDB is a **disk-based relational database management system (RDBMS)** built from scratch in C++20. It implements core database concepts including:
+ChronosDB is a **disk-based relational database management system (RDBMS)** built from scratch in C++20. It implements core database concepts including:
 
 - **ACID Transactions** - Atomicity, Consistency, Isolation, Durability
 - **WAL (Write-Ahead Logging)** - All changes logged before applied
@@ -45,7 +45,7 @@ FrancoDB is a **disk-based relational database management system (RDBMS)** built
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                          NETWORK LAYER                               │
-│              FrancoServer, ConnectionHandler, Protocol               │
+│              ChronosServer, ConnectionHandler, Protocol               │
 └─────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
@@ -76,7 +76,7 @@ FrancoDB is a **disk-based relational database management system (RDBMS)** built
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                            DISK FILES                                │
-│              .francodb (data) │ .log (WAL) │ .idx (indexes)          │
+│              .chronosdb (data) │ .log (WAL) │ .idx (indexes)          │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -322,7 +322,7 @@ Client-server communication.
 
 | File | Purpose |
 |------|---------|
-| `franco_server.cpp/h` | TCP server, connection handling |
+| `chronos_server.cpp/h` | TCP server, connection handling |
 | `connection_handler.cpp/h` | Per-client session management |
 | `database_registry.cpp/h` | Multi-database instance management |
 | `session_context.h` | Per-session state (current_db, user, role) |
@@ -498,7 +498,7 @@ Client-server communication.
 
 ## Franco (Arabic) SQL Keywords
 
-FrancoDB supports dual-language SQL syntax. Here are all supported keywords:
+ChronosDB supports dual-language SQL syntax. Here are all supported keywords:
 
 ### Data Definition (DDL)
 
@@ -635,7 +635,7 @@ FrancoDB supports dual-language SQL syntax. Here are all supported keywords:
 ## File Organization
 
 ```
-FrancoDB/
+ChronosDB/
 ├── src/
 │   ├── include/          # Header files (.h)
 │   │   ├── buffer/       # Buffer pool headers

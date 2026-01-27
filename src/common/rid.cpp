@@ -1,7 +1,7 @@
 #include "common/rid.h"
 #include <sstream>
 
-namespace francodb {
+namespace chronosdb {
 
 RID::RID() : page_id_(INVALID_PAGE_ID), slot_num_(-1) {}
 
@@ -23,5 +23,5 @@ std::string RID::ToString() const {
     return os.str();
 }
 
-} // namespace francodb
+} // namespace chronosdb
 

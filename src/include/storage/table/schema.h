@@ -5,7 +5,7 @@
 #include <cassert>
 #include "storage/table/column.h"
 
-namespace francodb {
+namespace chronosdb {
     class Schema {
     public:
         Schema(const std::vector<Column> &columns);

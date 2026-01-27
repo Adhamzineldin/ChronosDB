@@ -16,31 +16,31 @@ The service wrapper was waiting 1 second after starting the server process befor
 ### 1. Rebuild the Service Executable
 ```powershell
 # Navigate to project root
-cd G:\University\Graduation\FrancoDB
+cd G:\University\Graduation\ChronosDB
 
 # Rebuild the service
-cmake --build cmake-build-debug --target francodb_service --config Debug
+cmake --build cmake-build-debug --target chronosdb_service --config Debug
 ```
 
 ### 2. Reinstall the Service
 ```powershell
 # Stop and remove old service
-sc stop FrancoDBService
-sc delete FrancoDBService
+sc stop ChronosDBService
+sc delete ChronosDBService
 
 # Copy new service executable
-copy cmake-build-debug\francodb_service.exe "C:\Program Files\FrancoDB\bin\"
+copy cmake-build-debug\chronosdb_service.exe "C:\Program Files\ChronosDB\bin\"
 
 # Recreate service
-sc create FrancoDBService binPath= "C:\Program Files\FrancoDB\bin\francodb_service.exe" start= auto
+sc create ChronosDBService binPath= "C:\Program Files\ChronosDB\bin\chronosdb_service.exe" start= auto
 
 # Start service
-sc start FrancoDBService
+sc start ChronosDBService
 ```
 
 ### 3. Or Reinstall Using the Installer
-1. Uninstall FrancoDB from Control Panel
-2. Rebuild the service: `cmake --build cmake-build-debug --target francodb_service`
+1. Uninstall ChronosDB from Control Panel
+2. Rebuild the service: `cmake --build cmake-build-debug --target chronosdb_service`
 3. Recompile the installer
 4. Run the installer again
 
@@ -48,7 +48,7 @@ sc start FrancoDBService
 
 ### Check Service Status
 ```cmd
-sc query FrancoDBService
+sc query ChronosDBService
 ```
 
 Should show: `STATE: 4 RUNNING`
@@ -56,32 +56,32 @@ Should show: `STATE: 4 RUNNING`
 ### Check Event Viewer
 1. Open Event Viewer: `eventvwr.msc`
 2. Navigate to: Windows Logs → Application
-3. Filter by Source: "FrancoDBService"
-4. Look for: "FrancoDB Service started successfully"
+3. Filter by Source: "ChronosDBService"
+4. Look for: "ChronosDB Service started successfully"
 
 ### Test Server Connection
 ```cmd
-francodb_shell
+chronosdb_shell
 ```
 
 ## If Still Failing
 
 ### Check Event Viewer for Errors
 ```powershell
-Get-EventLog -LogName Application -Source "FrancoDBService" -Newest 10 | Format-List *
+Get-EventLog -LogName Application -Source "ChronosDBService" -Newest 10 | Format-List *
 ```
 
 ### Verify Files Exist
 ```cmd
-dir "C:\Program Files\FrancoDB\bin\francodb_*.exe"
-dir "C:\Program Files\FrancoDB\bin\francodb.conf"
+dir "C:\Program Files\ChronosDB\bin\chronosdb_*.exe"
+dir "C:\Program Files\ChronosDB\bin\chronosdb.conf"
 ```
 
 ### Manual Test
 Try running the server manually to see if it starts:
 ```cmd
-cd "C:\Program Files\FrancoDB\bin"
-francodb_server.exe
+cd "C:\Program Files\ChronosDB\bin"
+chronosdb_server.exe
 ```
 
 If it fails, check the error message - might be a config file issue.

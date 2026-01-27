@@ -10,7 +10,7 @@
 #include "parser/statement.h" // Needed for StatementType
 #include "recovery/log_manager.h" 
 
-namespace francodb {
+namespace chronosdb {
     class AuthManager; // Forward declaration
     class ExecutionEngine; // Forward declaration
 
@@ -84,4 +84,4 @@ namespace francodb {
         std::unordered_map<std::string, UserInfo> users_cache_;
         bool initialized_;
     };
-} // namespace francodb
+} // namespace chronosdb

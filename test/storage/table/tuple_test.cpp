@@ -7,7 +7,7 @@
 #include "storage/table/schema.h"
 #include "common/value.h"
 
-using namespace francodb;
+using namespace chronosdb;
 
 void TestTuplePacking() {
     std::cout << "[TEST] Starting S-Grade Tuple Packing Test..." << std::endl;

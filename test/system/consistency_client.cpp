@@ -15,7 +15,7 @@
 // --- CONFIG ---
 const std::string SERVER_IP = "127.0.0.1";
 const int SERVER_PORT = 2501;      
-const std::string USER = "maayn";  
+const std::string USER = "chronos";  
 const std::string PASS = "root";   
 
 const int NUM_THREADS = 8;
@@ -37,10 +37,10 @@ void LogError(const std::string& msg) {
     std::cerr << "[DATA ERROR] " << msg << std::endl;
 }
 
-class FrancoClient {
+class ChronosClient {
     SOCKET sock;
 public:
-    FrancoClient() : sock(INVALID_SOCKET) {}
+    ChronosClient() : sock(INVALID_SOCKET) {}
 
     bool Connect() {
         sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -97,7 +97,7 @@ public:
 };
 
 void Worker(int thread_id) {
-    FrancoClient client;
+    ChronosClient client;
     if (!client.Connect()) return;
 
     // Login
@@ -166,11 +166,11 @@ void Worker(int thread_id) {
 void TestConsistencyClient() {
     WSADATA wsaData;
     WSAStartup(MAKEWORD(2, 2), &wsaData);
-    Log("=== FRANCODB DATA INTEGRITY TEST ===");
+    Log("=== CHRONOSDB DATA INTEGRITY TEST ===");
 
     // 1. Admin Setup
     {
-        FrancoClient admin;
+        ChronosClient admin;
         if (admin.Connect()) {
             admin.Send("LOGIN " + USER + " " + PASS + ";");
             admin.Send("2E3MEL DATABASE verify_db;");

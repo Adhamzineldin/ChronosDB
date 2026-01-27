@@ -6,7 +6,7 @@
 #include "common/exception.h"
 #include "storage/storage_interface.h"
 
-namespace francodb {
+namespace chronosdb {
 
     // Forward declaration
     class BufferPoolManager;
@@ -108,4 +108,4 @@ namespace francodb {
         page_id_t first_page_id_;
     };
 
-} // namespace francodb
+} // namespace chronosdb

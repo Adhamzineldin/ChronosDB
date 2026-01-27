@@ -6,7 +6,7 @@
 #include "network/database_registry.h"
 #include "storage/storage_interface.h"  // For IBufferManager
 
-namespace francodb {
+namespace chronosdb {
 
 // Forward declarations
 class CreateDatabaseStatement;
@@ -25,7 +25,7 @@ class ExecutorContext;
  * - USE DATABASE
  * - DROP DATABASE
  * 
- * @author FrancoDB Team
+ * @author ChronosDB Team
  */
 class DatabaseExecutor {
 public:
@@ -69,5 +69,5 @@ private:
     LogManager* log_manager_;
 };
 
-} // namespace francodb
+} // namespace chronosdb
 

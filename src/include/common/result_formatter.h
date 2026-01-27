@@ -4,11 +4,11 @@
 #include <memory>
 #include "execution/execution_result.h"
 
-namespace francodb {
+namespace chronosdb {
 
     class ResultFormatter {
     public:
         static std::string Format(std::shared_ptr<ResultSet> rs);
     };
 
-} // namespace francodb
+} // namespace chronosdb

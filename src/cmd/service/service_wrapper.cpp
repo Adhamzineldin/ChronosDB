@@ -9,7 +9,7 @@
 #include <chrono>
 #include <algorithm>
 
-static TCHAR g_ServiceName[] = TEXT("FrancoDBService");
+static TCHAR g_ServiceName[] = TEXT("ChronosDBService");
 SERVICE_STATUS g_ServiceStatus;
 SERVICE_STATUS_HANDLE g_StatusHandle = NULL;
 HANDLE g_ServiceStopEvent = INVALID_HANDLE_VALUE;
@@ -34,7 +34,7 @@ void LogDebug(const std::string &msg) {
         std::filesystem::path logDir = std::filesystem::path(GetExeDir()).parent_path() / "log";
         if (!std::filesystem::exists(logDir)) std::filesystem::create_directories(logDir);
         
-        std::ofstream log(logDir / "francodb_service.log", std::ios::app);
+        std::ofstream log(logDir / "chronosdb_service.log", std::ios::app);
         if (log.is_open()) {
             auto now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
             char timeBuf[26];
@@ -59,7 +59,7 @@ void ReportStatus(DWORD currentState, DWORD win32ExitCode, DWORD waitHint) {
 
 bool StartServerProcess() {
     std::filesystem::path binDir = GetExeDir();
-    std::filesystem::path serverExe = binDir / "francodb_server.exe";
+    std::filesystem::path serverExe = binDir / "chronosdb_server.exe";
 
     if (!std::filesystem::exists(serverExe)) {
         LogDebug("ERROR: Server executable not found at " + serverExe.string());
@@ -156,7 +156,7 @@ VOID WINAPI ServiceCtrlHandler(DWORD CtrlCode) {
 }
 
 VOID WINAPI ServiceMain(DWORD argc, LPTSTR *argv) {
-    LogDebug("=== FrancoDB Service Starting ===");
+    LogDebug("=== ChronosDB Service Starting ===");
     
     g_StatusHandle = RegisterServiceCtrlHandler(g_ServiceName, ServiceCtrlHandler);
     if (!g_StatusHandle) {
@@ -168,7 +168,7 @@ VOID WINAPI ServiceMain(DWORD argc, LPTSTR *argv) {
     g_ServiceStopEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
     
     // ✅ Create shutdown event BEFORE starting server
-    g_ShutdownEvent = CreateEventW(NULL, TRUE, FALSE, L"Global\\FrancoDBShutdownEvent");
+    g_ShutdownEvent = CreateEventW(NULL, TRUE, FALSE, L"Global\\ChronosDBShutdownEvent");
     if (g_ShutdownEvent == NULL) {
         LogDebug("ERROR: Could not create shutdown event. Error: " + std::to_string(GetLastError()));
     } else {
@@ -243,7 +243,7 @@ VOID WINAPI ServiceMain(DWORD argc, LPTSTR *argv) {
     
     if (g_ShutdownEvent) CloseHandle(g_ShutdownEvent);
     
-    LogDebug("=== FrancoDB Service Stopped ===");
+    LogDebug("=== ChronosDB Service Stopped ===");
     ReportStatus(SERVICE_STOPPED, 0, 0);
 }
 

@@ -4,14 +4,14 @@
  * Implementation of User Management Operations
  * Extracted from ExecutionEngine to satisfy Single Responsibility Principle.
  * 
- * @author FrancoDB Team
+ * @author ChronosDB Team
  */
 
 #include "execution/user_executor.h"
 #include "parser/statement.h"
 #include <algorithm>
 
-namespace francodb {
+namespace chronosdb {
 
 // ============================================================================
 // CREATE USER
@@ -54,8 +54,8 @@ ExecutionResult UserExecutor::AlterUserRole(AlterUserRoleStatement* stmt) {
     else if (role_upper == "DENIED") r = UserRole::DENIED;
     else return ExecutionResult::Error("Invalid Role: " + stmt->role_);
 
-    // Default to "francodb" if no database specified
-    std::string target_db = stmt->db_name_.empty() ? "francodb" : stmt->db_name_;
+    // Default to "chronosdb" if no database specified
+    std::string target_db = stmt->db_name_.empty() ? "chronosdb" : stmt->db_name_;
 
     if (auth_manager_->SetUserRole(stmt->username_, target_db, r)) {
         return ExecutionResult::Message("User role updated successfully for DB: " + target_db);
@@ -78,5 +78,5 @@ ExecutionResult UserExecutor::DeleteUser(DeleteUserStatement* stmt) {
     return ExecutionResult::Error("Failed to delete user (User might not exist or is Root).");
 }
 
-} // namespace francodb
+} // namespace chronosdb
 

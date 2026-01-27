@@ -6,7 +6,7 @@
 #include "storage/page/b_plus_tree_page.h"
 #include "common/rid.h"
 
-namespace francodb {
+namespace chronosdb {
 
 #define B_PLUS_TREE_LEAF_PAGE_TYPE BPlusTreeLeafPage<KeyType, ValueType, KeyComparator>
 
@@ -61,4 +61,4 @@ namespace francodb {
     
     
 
-} // namespace francodb
+} // namespace chronosdb

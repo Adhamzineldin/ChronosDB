@@ -36,12 +36,12 @@ Makefile
 *.deb
 *.md5
 
-# Specific executable names for FrancoDB
-francodb
-francodb_test
+# Specific executable names for ChronosDB
+chronosdb
+chronosdb_test
 
 # ----------------------------------------------------------------------
-# 3. FrancoDB Data Files (CRITICAL)
+# 3. ChronosDB Data Files (CRITICAL)
 # ----------------------------------------------------------------------
 # Never commit the actual database storage files or logs
 *.bin

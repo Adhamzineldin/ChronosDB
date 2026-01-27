@@ -1,4 +1,4 @@
-// setup.cpp - FrancoDB Initial Setup Utility
+// setup.cpp - ChronosDB Initial Setup Utility
 #include <iostream>
 #include <string>
 #include <fstream>
@@ -92,7 +92,7 @@ bool CreateConfigFile(const std::string& configPath, int port,
         return false;
     }
     
-    file << "# FrancoDB Configuration File\n";
+    file << "# ChronosDB Configuration File\n";
     file << "# Generated automatically by setup utility\n\n";
     
     file << "port = " << port << "\n";
@@ -110,13 +110,13 @@ bool CreateConfigFile(const std::string& configPath, int port,
 
 int main(int argc, char* argv[]) {
     std::cout << "==========================================" << std::endl;
-    std::cout << "  FrancoDB Initial Setup" << std::endl;
+    std::cout << "  ChronosDB Initial Setup" << std::endl;
     std::cout << "==========================================" << std::endl;
     std::cout << std::endl;
 
     // Default values
     int port = 2501;
-    std::string rootUsername = "maayn";
+    std::string rootUsername = "chronos";
     std::string rootPassword = "root";
     std::string dataDir = "./data";
     bool encryptionEnabled = false;
@@ -145,10 +145,10 @@ int main(int argc, char* argv[]) {
         } else if (arg == "--non-interactive") {
             interactive = false;
         } else if (arg == "--help" || arg == "-h") {
-            std::cout << "Usage: francodb_setup [options]" << std::endl;
+            std::cout << "Usage: chronosdb_setup [options]" << std::endl;
             std::cout << "Options:" << std::endl;
             std::cout << "  --port PORT          Server port (default: 2501)" << std::endl;
-            std::cout << "  --username USER      Root username (default: maayn)" << std::endl;
+            std::cout << "  --username USER      Root username (default: chronos)" << std::endl;
             std::cout << "  --password PASS      Root password (default: root)" << std::endl;
             std::cout << "  --data-dir DIR       Data directory (default: data)" << std::endl;
             std::cout << "  --encryption         Enable encryption" << std::endl;
@@ -251,7 +251,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Create configuration file
-    std::string configPath = "francodb.conf";
+    std::string configPath = "chronosdb.conf";
     std::cout << "Creating configuration file..." << std::endl;
     if (CreateConfigFile(configPath, port, rootUsername, rootPassword, dataDir, 
                         encryptionEnabled, encryptionKey, autosaveInterval)) {
@@ -272,8 +272,8 @@ int main(int argc, char* argv[]) {
     std::cout << "  Data Directory: " << dataDir << std::endl;
     std::cout << "  Encryption: " << (encryptionEnabled ? "Enabled" : "Disabled") << std::endl;
     std::cout << std::endl;
-    std::cout << "You can now start the server with: francodb_server.exe" << std::endl;
-    std::cout << "Or use the shell with: francodb_shell.exe" << std::endl;
+    std::cout << "You can now start the server with: chronosdb_server.exe" << std::endl;
+    std::cout << "Or use the shell with: chronosdb_shell.exe" << std::endl;
 
     return 0;
 }

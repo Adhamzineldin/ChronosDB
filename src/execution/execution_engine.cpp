@@ -13,7 +13,7 @@
  * 2. Delegation via dispatch map (no switch/if-else chains)
  * 3. Recovery operations (CHECKPOINT, RECOVER)
  * 
- * @author FrancoDB Team
+ * @author ChronosDB Team
  */
 
 #include "execution/execution_engine.h"
@@ -39,7 +39,7 @@
 #include <unordered_map>
 #include <functional>
 
-namespace francodb {
+namespace chronosdb {
     std::shared_mutex ExecutionEngine::global_lock_;
 
     // ============================================================================
@@ -294,7 +294,7 @@ namespace francodb {
         if (!session) return "";
 
         // Reserved database protections
-        bool is_reserved_db = (session->current_db == "francodb" || session->current_db == "system");
+        bool is_reserved_db = (session->current_db == "chronosdb" || session->current_db == "system");
         bool is_superadmin = (session->role == UserRole::SUPERADMIN);
 
         if (is_reserved_db && !is_superadmin) {
@@ -437,4 +437,4 @@ namespace francodb {
         
         return ExecutionResult::Message("SHUTDOWN INITIATED. Server will stop after completing current operations.");
     }
-} // namespace francodb
+} // namespace chronosdb

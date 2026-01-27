@@ -2,11 +2,11 @@
 #include <iostream>
 
 /**
- * FrancoDB Comprehensive Test Suite
+ * ChronosDB Comprehensive Test Suite
  * Single entry point to run ALL tests for ALL modules
  */
 
-namespace francodb_test {
+namespace chronosdb_test {
 // SQL Feature Tests
 void RunColumnTests(TestRunner& runner);
 void RunJoinTests(TestRunner& runner);
@@ -18,7 +18,7 @@ void RunDistinctTests(TestRunner& runner);
 void RunModuleStubs(TestRunner& runner);
 void RunAllIntegrationTests(TestRunner& runner);
 void RunBufferPoolTests(TestRunner& runner);
-} // namespace francodb_test
+} // namespace chronosdb_test
 
 // Storage & System Tests
 void TestTuplePacking();
@@ -48,7 +48,7 @@ void TestReadWriteMix();
 void TestRealWorldTraffic();
 
 // System Tests
-void TestFrancoDBSystem();
+void TestChronosDBSystem();
 void TestConsistencyClient();
 void TestStressClient();
 void TestRecovery();
@@ -56,10 +56,10 @@ void TestTimeTravel();
 void TestCheckpoint();
 
 int main(int, char**) {
-    using namespace francodb_test;
+    using namespace chronosdb_test;
     
     std::cout << "========================================" << std::endl;
-    std::cout << "  FrancoDB COMPREHENSIVE TEST SUITE" << std::endl;
+    std::cout << "  ChronosDB COMPREHENSIVE TEST SUITE" << std::endl;
     std::cout << "  ALL MODULES | ALL FEATURES | S+ GRADE" << std::endl;
     std::cout << "========================================\n" << std::endl;
 
@@ -118,7 +118,7 @@ int main(int, char**) {
 
     // SYSTEM TESTS
     std::cout << "\n╔═══ SYSTEM TESTS ═══╗" << std::endl;
-    runner.RunTest("System", "FrancoDB System", [] { TestFrancoDBSystem(); });
+    runner.RunTest("System", "ChronosDB System", [] { TestChronosDBSystem(); });
     runner.RunTest("System", "Consistency Client", [] { TestConsistencyClient(); });
     runner.RunTest("System", "Stress Client", [] { TestStressClient(); });
     runner.RunTest("System", "Log Manager", [] { TestRecovery(); });

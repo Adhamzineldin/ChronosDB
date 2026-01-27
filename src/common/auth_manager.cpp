@@ -5,14 +5,14 @@
 #include "storage/table/schema.h"
 #include "common/exception.h"
 #include "network/session_context.h"
-#include "common/franco_net_config.h"
+#include "common/chronos_net_config.h"
 #include "common/config_manager.h"
 #include <sstream>
 #include <functional>
 #include <iomanip>
 #include <iostream>
 
-namespace francodb {
+namespace chronosdb {
 
     // Global instance pointer
     AuthManager* g_auth_manager = nullptr;
@@ -79,8 +79,8 @@ namespace francodb {
     void AuthManager::InitializeSystemDatabase() {
         if (initialized_) return;
 
-        // 1. Create 'franco_users' table if missing
-        if (system_catalog_->GetTable("franco_users") == nullptr) {
+        // 1. Create 'chronos_users' table if missing
+        if (system_catalog_->GetTable("chronos_users") == nullptr) {
             std::vector<Column> user_cols;
             user_cols.emplace_back("username", TypeId::VARCHAR, static_cast<uint32_t>(64), true);
             user_cols.emplace_back("password_hash", TypeId::VARCHAR, static_cast<uint32_t>(128), false);
@@ -88,7 +88,7 @@ namespace francodb {
             user_cols.emplace_back("role", TypeId::VARCHAR, static_cast<uint32_t>(16), false);    // Permission
             Schema user_schema(user_cols);
 
-            if (system_catalog_->CreateTable("franco_users", user_schema) == nullptr) {
+            if (system_catalog_->CreateTable("chronos_users", user_schema) == nullptr) {
                 std::cerr << "[AUTH] Failed to create system user table." << std::endl;
                 return; 
             }
@@ -104,7 +104,7 @@ namespace francodb {
             std::string admin_hash = HashPassword(root_pass);
             
             // SUPERADMIN role on 'default' implies global superadmin
-            std::string insert_sql = "EMLA GOWA franco_users ELKEYAM ('" + root_user + "', '" + admin_hash +
+            std::string insert_sql = "EMLA GOWA chronos_users ELKEYAM ('" + root_user + "', '" + admin_hash +
                                      "', 'default', 'SUPERADMIN');";
 
             Lexer lexer(insert_sql);
@@ -127,7 +127,7 @@ namespace francodb {
     void AuthManager::LoadUsers() {
         users_cache_.clear();
         try {
-            std::string select_sql = "2E5TAR * MEN franco_users;";
+            std::string select_sql = "2E5TAR * MEN chronos_users;";
             Lexer lexer(select_sql);
             Parser parser(std::move(lexer));
             auto stmt = parser.ParseQuery();
@@ -170,7 +170,7 @@ namespace francodb {
 
         // 1. Truncate table
         try {
-            std::string clear_sql = "2EMSA7 MEN franco_users;"; 
+            std::string clear_sql = "2EMSA7 MEN chronos_users;"; 
             Lexer l_clear(clear_sql);
             Parser p_clear(std::move(l_clear));
             auto stmt_clear = p_clear.ParseQuery();
@@ -190,7 +190,7 @@ namespace francodb {
                     case UserRole::DENIED:     role_str = "DENIED"; break;
                 }
                 
-                std::string insert_sql = "EMLA GOWA franco_users ELKEYAM ('" +
+                std::string insert_sql = "EMLA GOWA chronos_users ELKEYAM ('" +
                                          username + "', '" + user.password_hash + "', '" +
                                          db + "', '" + role_str + "');";
                 try {
@@ -372,11 +372,11 @@ namespace francodb {
     }
 
     bool AuthManager::SetUserRole(const std::string &username, UserRole new_role) {
-        return SetUserRole(username, "francodb", new_role);
+        return SetUserRole(username, "chronosdb", new_role);
     }
     
     UserRole AuthManager::GetUserRole(const std::string &username) {
-        return GetUserRole(username, "francodb");
+        return GetUserRole(username, "chronosdb");
     }
 
 }
