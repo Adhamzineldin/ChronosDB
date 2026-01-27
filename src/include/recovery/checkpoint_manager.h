@@ -3,6 +3,7 @@
 #include "storage/storage_interface.h"  // For IBufferManager
 #include "recovery/log_manager.h"
 #include "recovery/checkpoint_index.h"
+#include "recovery/checkpoint_snapshot_manager.h"
 #include <mutex>
 #include <iostream>
 #include <fstream>
@@ -288,6 +289,9 @@ namespace chronosdb {
         std::unique_ptr<CheckpointIndex> checkpoint_index_;
         std::string checkpoint_index_path_;
 
+        // Checkpoint snapshot manager for Git-style snapshots
+        std::unique_ptr<CheckpointSnapshotManager> snapshot_manager_;
+
     public:
         /**
          * Set the catalog for updating table checkpoint LSNs
@@ -303,12 +307,28 @@ namespace chronosdb {
         }
 
         /**
+         * Get the checkpoint snapshot manager.
+         * Returns nullptr if not initialized.
+         */
+        CheckpointSnapshotManager* GetSnapshotManager() const {
+            return snapshot_manager_.get();
+        }
+
+        /**
          * Initialize the checkpoint index.
          * Call this after the log manager is ready.
          *
          * @param db_name Database name for log file path
          */
         void InitializeCheckpointIndex(const std::string& db_name);
+
+        /**
+         * Initialize the checkpoint snapshot manager.
+         * Call this after checkpoint index is initialized.
+         *
+         * @param base_path Base data directory path
+         */
+        void InitializeSnapshotManager(const std::string& base_path);
 
         /**
          * Save the checkpoint index to disk.
