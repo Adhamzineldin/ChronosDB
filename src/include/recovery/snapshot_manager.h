@@ -157,33 +157,36 @@ namespace chronosdb {
             }
 
             // ================================================================
-            // CHECKPOINT INDEX OPTIMIZATION (O(log K) + O(D) instead of O(N))
-            // CURRENTLY DISABLED FOR SAFETY - NEEDS MORE TESTING
+            // CHECKPOINT INDEX OPTIMIZATION - FUNDAMENTALLY FLAWED
             // ================================================================
-            if (false && checkpoint_index != nullptr) {  // DISABLED
-                const CheckpointEntry* nearest = checkpoint_index->FindNearestBefore(target_time);
+            // This optimization was disabled because it's architecturally broken:
+            //
+            // THE BUG:
+            //   1. Create EMPTY snapshot heap
+            //   2. Skip to checkpoint offset in log
+            //   3. Replay from checkpoint to target time
+            //   Result: MISSING all data before checkpoint!
+            //
+            // EXAMPLE FAILURE:
+            //   LSN 1-999:   INSERT 999 rows
+            //   LSN 1000:    CHECKPOINT (saved offset=5000)
+            //   LSN 1001:    INSERT 1 row
+            //   Query: SELECT * AS OF 'now'
+            //   Bug: Skip to offset 5000 → replay LSN 1001 → Get 1 row (missing 999!)
+            //
+            // WHY IT'S BROKEN:
+            //   Checkpoints don't store database state - they only mark flush points.
+            //   Skipping log sections requires having the state AT that point.
+            //
+            // CORRECT SOLUTION (requires major changes):
+            //   1. Store full table snapshots at each checkpoint (like Git commits)
+            //   2. Load checkpoint snapshot as base
+            //   3. Replay delta from checkpoint to target
+            //
+            // FOR NOW: Always replay from LSN 0 (correct but O(N))
+            // ================================================================
 
-                if (nearest != nullptr && nearest->timestamp > 0) {
-                    // Found a checkpoint before target_time - use optimized path
-                    std::cout << "[SnapshotManager]   OPTIMIZATION: Using checkpoint at timestamp "
-                              << nearest->timestamp << " (LSN " << nearest->lsn
-                              << ", offset " << nearest->log_offset << ")" << std::endl;
-
-                    recovery.ReplayIntoHeapFromOffset(
-                        snapshot.get(),
-                        table_name,
-                        nearest->log_offset,  // Start from checkpoint position
-                        target_time,          // Stop at target
-                        target_db
-                    );
-
-                    return snapshot;
-                } else {
-                    std::cout << "[SnapshotManager]   No suitable checkpoint found - using full replay" << std::endl;
-                }
-            }
-
-            // Fallback: Replay from beginning to target_time
+            // CORRECT approach: Full replay from beginning
             recovery.ReplayIntoHeap(snapshot.get(), table_name, target_time, target_db);
 
             return snapshot;
