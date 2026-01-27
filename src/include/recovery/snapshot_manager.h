@@ -110,7 +110,12 @@ namespace chronosdb {
             
             auto snapshot = std::make_unique<TableHeap>(bpm, nullptr);
             RecoveryManager recovery(log_manager, catalog, bpm, nullptr);
-            
+
+            std::cout << "[SnapshotManager]   Created snapshot heap at: " << (void*)snapshot.get() << std::endl;
+            std::cout << "[SnapshotManager]   Live table heap is at: " << (void*)table_info->table_heap_.get() << std::endl;
+            std::cout << "[SnapshotManager]   Ensuring snapshot != live table: "
+                      << (snapshot.get() != table_info->table_heap_.get() ? "PASS" : "FAIL!") << std::endl;
+
             uint64_t current_time = LogRecord::GetCurrentTimestamp();
             
             // Special case: querying current or future state
@@ -153,8 +158,9 @@ namespace chronosdb {
 
             // ================================================================
             // CHECKPOINT INDEX OPTIMIZATION (O(log K) + O(D) instead of O(N))
+            // CURRENTLY DISABLED FOR SAFETY - NEEDS MORE TESTING
             // ================================================================
-            if (checkpoint_index != nullptr) {
+            if (false && checkpoint_index != nullptr) {  // DISABLED
                 const CheckpointEntry* nearest = checkpoint_index->FindNearestBefore(target_time);
 
                 if (nearest != nullptr && nearest->timestamp > 0) {
