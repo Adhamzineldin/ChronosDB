@@ -12,132 +12,97 @@
 #include <cmath>
 
 namespace chronosdb {
-
-void DeleteExecutor::Init() {
-    table_info_ = exec_ctx_->GetCatalog()->GetTable(plan_->table_name_);
-    if (table_info_ == nullptr) {
-        throw Exception(ExceptionType::EXECUTION, "Table not found: " + plan_->table_name_);
-    }
-}
-
-bool DeleteExecutor::Next(Tuple *tuple) {
-    (void)tuple; // Unused
-    if (is_finished_) return false;
-
-    // 1. Gather all RIDs and tuples to delete
-    std::vector<std::pair<RID, Tuple>> tuples_to_delete;
-    
-    // Get lock manager for row-level locking (Issue #2 Fix - Consistent Lock Order)
-    LockManager* lock_mgr = exec_ctx_->GetLockManager();
-    
-    // --- SCAN LOGIC with PageGuard (Issue #1 Fix) ---
-    page_id_t curr_page_id = table_info_->first_page_id_;
-    auto bpm = exec_ctx_->GetBufferPoolManager();
-
-    while (curr_page_id != INVALID_PAGE_ID) {
-        PageGuard guard(bpm, curr_page_id, false);  // Read lock for scan
-        if (!guard.IsValid()) {
-            break; // Skip if page fetch fails
+    void DeleteExecutor::Init() {
+        table_info_ = exec_ctx_->GetCatalog()->GetTable(plan_->table_name_);
+        if (table_info_ == nullptr) {
+            throw Exception(ExceptionType::EXECUTION, "Table not found: " + plan_->table_name_);
         }
-        auto *table_page = guard.As<TablePage>();
-        
-        // Loop over all slots in page
-        for (uint32_t i = 0; i < table_page->GetTupleCount(); ++i) {
-            RID rid(curr_page_id, i);
-            Tuple t;
-            
-            // Read tuple (if it exists)
-            if (table_page->GetTuple(rid, &t, nullptr)) {
-                // Check WHERE clause
-                if (EvaluatePredicate(t)) {
-                    tuples_to_delete.push_back({rid, t});
+    }
+
+    bool DeleteExecutor::Next(Tuple *tuple) {
+        (void) tuple;
+        if (is_finished_) return false;
+
+        // 1. Gather all RIDs and tuples to delete
+        std::vector<std::pair<RID, Tuple> > tuples_to_delete;
+        LockManager *lock_mgr = exec_ctx_->GetLockManager();
+
+        page_id_t curr_page_id = table_info_->first_page_id_;
+        auto bpm = exec_ctx_->GetBufferPoolManager();
+
+        while (curr_page_id != INVALID_PAGE_ID) {
+            PageGuard guard(bpm, curr_page_id, false);
+            if (!guard.IsValid()) break;
+            auto *table_page = guard.As<TablePage>();
+
+            for (uint32_t i = 0; i < table_page->GetTupleCount(); ++i) {
+                RID rid(curr_page_id, i);
+                Tuple t;
+                if (table_page->GetTuple(rid, &t, nullptr)) {
+                    if (EvaluatePredicate(t)) {
+                        tuples_to_delete.push_back({rid, t});
+                    }
                 }
             }
+            curr_page_id = table_page->GetNextPageId();
         }
-        curr_page_id = table_page->GetNextPageId();
-        // PageGuard auto-releases here
-    }
 
-    // 2. Perform Deletes (with index updates and row locking)
-    int count = 0;
-    for (const auto &pair : tuples_to_delete) {
-        const RID &rid = pair.first;
-        const Tuple &tuple = pair.second;
-        
-        // Issue #2 Fix: Acquire exclusive lock on this row before modifying
-        if (lock_mgr && txn_) {
-            txn_id_t txn_id = txn_->GetTransactionId();
-            if (!lock_mgr->LockRow(txn_id, rid, LockMode::EXCLUSIVE)) {
-                throw Exception(ExceptionType::EXECUTION, 
-                    "Could not acquire lock on row - transaction aborted");
+        // 2. Perform Deletes
+        for (const auto &pair: tuples_to_delete) {
+            const RID &rid = pair.first;
+            const Tuple &tuple = pair.second;
+
+            if (lock_mgr && txn_) {
+                if (!lock_mgr->LockRow(txn_->GetTransactionId(), rid, LockMode::EXCLUSIVE)) {
+                    throw Exception(ExceptionType::EXECUTION, "Could not acquire lock");
+                }
             }
-        }
-        
-        // Verify the tuple still exists (might have been deleted by another thread)
-        Tuple verify_tuple;
-        if (!table_info_->table_heap_->GetTuple(rid, &verify_tuple, txn_)) {
-            // Tuple was already deleted, skip
-            continue;
-        }
-        
-        // Verify it still matches the predicate (re-check after lock acquisition)
-        if (!EvaluatePredicate(verify_tuple)) {
-            // Tuple no longer matches predicate, skip
-            continue;
-        }
-        
-        // Track modification for rollback
-        if (txn_) {
-            txn_->AddModifiedTuple(rid, verify_tuple, true, plan_->table_name_); // true = is_deleted
-        }
-        
-        // A. Remove from indexes BEFORE deleting from table
-        auto indexes = exec_ctx_->GetCatalog()->GetTableIndexes(plan_->table_name_);
-        for (auto *index : indexes) {
-            int col_idx = table_info_->schema_.GetColIdx(index->col_name_);
-            Value key_val = tuple.GetValue(table_info_->schema_, col_idx);
-            
-            GenericKey<8> key;
-            key.SetFromValue(key_val);
-            
-            index->b_plus_tree_->Remove(key, txn_);
-        }
-        
-        // B. Delete from table (only if not already deleted)
-        bool deleted = table_info_->table_heap_->MarkDelete(rid, txn_);
-        if (deleted && txn_) {
-            txn_->AddModifiedTuple(rid, tuple, true, plan_->table_name_);
-            
-            if (exec_ctx_->GetLogManager()) {
-                // Serialize ALL values as a pipe-separated string for complete tuple recovery
+
+            Tuple verify_tuple;
+            if (!table_info_->table_heap_->GetTuple(rid, &verify_tuple, txn_)) continue;
+            if (!EvaluatePredicate(verify_tuple)) continue;
+
+            if (txn_) txn_->AddModifiedTuple(rid, verify_tuple, true, plan_->table_name_);
+
+            // A. Remove from indexes
+            auto indexes = exec_ctx_->GetCatalog()->GetTableIndexes(plan_->table_name_);
+            for (auto *index: indexes) {
+                int col_idx = table_info_->schema_.GetColIdx(index->col_name_);
+                Value key_val = tuple.GetValue(table_info_->schema_, col_idx);
+                GenericKey<8> key;
+                key.SetFromValue(key_val);
+                index->b_plus_tree_->Remove(key, txn_);
+            }
+
+            // B. Delete from table
+            bool deleted = table_info_->table_heap_->MarkDelete(rid, txn_);
+            if (deleted && txn_ && exec_ctx_->GetLogManager()) {
+                // OPTIMIZATION: Reserve String Memory for Logging
                 std::string tuple_str;
+                tuple_str.reserve(table_info_->schema_.GetColumnCount() * 10); // Estimate
+
                 for (uint32_t i = 0; i < table_info_->schema_.GetColumnCount(); i++) {
                     if (i > 0) tuple_str += "|";
                     tuple_str += tuple.GetValue(table_info_->schema_, i).ToString();
                 }
                 Value old_val(TypeId::VARCHAR, tuple_str);
-            
-                LogRecord log_rec(txn_->GetTransactionId(), txn_->GetPrevLSN(), 
+                LogRecord log_rec(txn_->GetTransactionId(), txn_->GetPrevLSN(),
                                   LogRecordType::APPLY_DELETE, plan_->table_name_, old_val);
                 auto lsn = exec_ctx_->GetLogManager()->AppendLogRecord(log_rec);
                 txn_->SetPrevLSN(lsn);
             }
         }
+
+        is_finished_ = true;
+        return false;
     }
 
-    // Logging removed to avoid interleaved output during concurrent operations
-    is_finished_ = true;
-    return false;
-}
+    const Schema *DeleteExecutor::GetOutputSchema() {
+        return &table_info_->schema_;
+    }
 
-const Schema *DeleteExecutor::GetOutputSchema() {
-    return &table_info_->schema_;
-}
-
-bool DeleteExecutor::EvaluatePredicate(const Tuple &tuple) {
-    // Issue #12 Fix: Use shared PredicateEvaluator to eliminate code duplication
-    return PredicateEvaluator::Evaluate(tuple, table_info_->schema_, plan_->where_clause_);
-}
-
+    bool DeleteExecutor::EvaluatePredicate(const Tuple &tuple) {
+        // Issue #12 Fix: Use shared PredicateEvaluator to eliminate code duplication
+        return PredicateEvaluator::Evaluate(tuple, table_info_->schema_, plan_->where_clause_);
+    }
 } // namespace chronosdb
-

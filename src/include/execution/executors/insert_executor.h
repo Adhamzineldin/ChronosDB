@@ -11,6 +11,12 @@
 namespace chronosdb {
 
     class InsertExecutor : public AbstractExecutor {
+        
+        struct CachedConstraint {
+            uint32_t col_idx;
+            std::string op;
+            Value limit_value;
+        };
     public:
         InsertExecutor(ExecutorContext *exec_ctx, InsertStatement *plan, Transaction *txn = nullptr)
             : AbstractExecutor(exec_ctx), 
@@ -27,6 +33,8 @@ namespace chronosdb {
         TableMetadata *table_info_;
         bool is_finished_ = false;
         Transaction *txn_;
+        std::vector<IndexInfo *> table_indexes_;
+        std::vector<CachedConstraint> cached_constraints_;
     };
 
 } // namespace chronosdb
