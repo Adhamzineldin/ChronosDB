@@ -19,7 +19,12 @@ Catalog::Catalog(IBufferManager *bpm) : bpm_(bpm), next_table_oid_(0) {
 }
 
 Catalog::~Catalog() {
-    SaveCatalog();
+    // Best effort save - don't throw from destructor
+    try {
+        SaveCatalog();
+    } catch (...) {
+        // Ignore errors during destruction (e.g., database being dropped)
+    }
 }
 
 TableMetadata *Catalog::CreateTable(const std::string &table_name, const Schema &schema) {

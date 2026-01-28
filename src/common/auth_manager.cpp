@@ -336,9 +336,12 @@ namespace chronosdb {
 
     bool AuthManager::SetUserRole(const std::string &username, const std::string &db_name, UserRole role) {
         if (IsRootConfig(username)) return false;
-        
-        users_cache_[username].username = username; 
-        users_cache_[username].db_roles[db_name] = role;
+
+        // User must exist - don't create new users via SetUserRole
+        auto it = users_cache_.find(username);
+        if (it == users_cache_.end()) return false;
+
+        it->second.db_roles[db_name] = role;
         SaveUsers();
         return true;
     }

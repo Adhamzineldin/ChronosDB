@@ -30,7 +30,13 @@ namespace chronosdb {
 
     BufferPoolManager::~BufferPoolManager() {
         // Force write everything to disk before destroying RAM
-        FlushAllPages();
+        // Wrap in try-catch to prevent exceptions from propagating during destruction
+        try {
+            FlushAllPages();
+        } catch (...) {
+            // Best effort flush - ignore errors during destruction
+            // This can happen if the database is being dropped and files are being deleted
+        }
 
         delete[] pages_;
         delete replacer_;

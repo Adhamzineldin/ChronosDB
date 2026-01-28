@@ -173,20 +173,19 @@ ExecutionResult DatabaseExecutor::DropDatabase(DropDatabaseStatement* stmt, Sess
                 "Cannot drop currently active database. Switch to another database first.");
         }
 
-        // Flush and close the database if loaded
-        if (entry) {
-            if (entry->bpm) {
-                entry->bpm->FlushAllPages();
-            }
-            if (entry->catalog) {
-                entry->catalog->SaveCatalog();
-            }
+        // Close the WAL log file FIRST (before removing from registry)
+        // This releases the file handle on Windows, allowing directory deletion
+        if (log_manager_) {
+            log_manager_->DropDatabaseLog(stmt->db_name_);
+        }
 
-            // Remove from registry
+        // Remove from registry (this handles flushing internally)
+        if (entry) {
             db_registry_->Remove(stmt->db_name_);
         }
 
         // Delete the entire database directory (db_dir already defined above)
+        // This is a fallback in case DropDatabaseLog didn't fully clean up
         if (std::filesystem::exists(db_dir) && std::filesystem::is_directory(db_dir)) {
             std::filesystem::remove_all(db_dir);
         }

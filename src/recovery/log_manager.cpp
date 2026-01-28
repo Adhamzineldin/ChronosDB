@@ -595,10 +595,11 @@ namespace chronosdb {
 
     void LogManager::DropDatabaseLog(const std::string& db_name) {
         std::unique_lock<std::mutex> lock(latch_);
-        
+
         std::cout << "[LogManager] Dropping database log: " << db_name << std::endl;
 
         // If we're currently on this database, switch to system
+        // This closes the log file handle, allowing directory deletion
         if (current_db_ == db_name) {
             lock.unlock();
             SwitchDatabase("system");
@@ -612,18 +613,11 @@ namespace chronosdb {
         Flush(true);
         lock.lock();
 
-        // Delete the database directory
-        std::string db_dir = base_data_dir_ + "/" + db_name;
-        try {
-            std::filesystem::remove_all(db_dir);
-            std::cout << "[LogManager] Deleted directory: " << db_dir << std::endl;
-        } catch (const std::exception& e) {
-            std::cerr << "[LogManager] Failed to delete directory " << db_dir 
-                      << ": " << e.what() << std::endl;
-        }
-
-        // Remove from log streams map
+        // Remove from log streams map (releases any cached stream)
         log_streams_.erase(db_name);
+
+        // Note: Directory deletion is handled by database_executor after
+        // all file handles (including DiskManager) are closed
     }
 
     // ========================================================================

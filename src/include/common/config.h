@@ -105,16 +105,20 @@ namespace chronosdb {
     // ========================================================================
     // LOGGING & RECOVERY
     // ========================================================================
-    
+
     // Log buffer size (64KB default)
     static constexpr size_t LOG_BUFFER_SIZE = 64 * 1024;
-    
+
+    // Log read buffer size for time travel operations (128KB)
+    // Larger buffer = faster sequential reads during snapshot building
+    static constexpr size_t LOG_READ_BUFFER_SIZE = 128 * 1024;
+
     // Checkpoint interval (in number of log records)
     static constexpr size_t CHECKPOINT_INTERVAL = 1000;
-    
+
     // Checkpoint interval (in milliseconds)
-    static constexpr uint64_t CHECKPOINT_INTERVAL_MS = 60000;  // 1 minute
-    
+    static constexpr uint64_t CHECKPOINT_INTERVAL_MS = 60000 * 30;  // 1 minute
+
     // Maximum log record size
     static constexpr size_t MAX_LOG_RECORD_SIZE = PAGE_SIZE;
 

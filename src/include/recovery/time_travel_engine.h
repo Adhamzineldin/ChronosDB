@@ -16,6 +16,9 @@
 
 namespace chronosdb {
 
+// Forward declaration for page-cached log reader
+class LogPageReader;
+
 /**
  * Time Travel Engine - Reverse Delta Implementation
  *
@@ -287,15 +290,26 @@ private:
                       const TableMetadata* table_info) const;
 
     /**
-     * Read a single log record from file.
+     * Read a single log record from file (legacy).
      */
     bool ReadLogRecord(std::ifstream& log_file, LogRecord& record);
 
     /**
-     * Read helpers
+     * Read a single log record using page-cached reader.
+     */
+    bool ReadLogRecordFromReader(LogPageReader& reader, LogRecord& record);
+
+    /**
+     * Read helpers (legacy file-based)
      */
     static std::string ReadString(std::ifstream& in);
     static Value ReadValue(std::ifstream& in);
+
+    /**
+     * Read helpers (page-cached)
+     */
+    static std::string ReadStringFromReader(LogPageReader& reader);
+    static Value ReadValueFromReader(LogPageReader& reader);
 
     // ========================================================================
     // DATA MEMBERS

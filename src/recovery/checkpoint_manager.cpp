@@ -42,28 +42,28 @@ namespace chronosdb {
     void CheckpointManager::BeginCheckpoint() {
         std::unique_lock<std::mutex> lock(checkpoint_mutex_);
         
-        std::cout << "[CHECKPOINT] ========================================" << std::endl;
-        std::cout << "[CHECKPOINT] Starting checkpoint #" << (checkpoint_count_.load() + 1) << std::endl;
+        // std::cout << "[CHECKPOINT] ========================================" << std::endl;
+        // std::cout << "[CHECKPOINT] Starting checkpoint #" << (checkpoint_count_.load() + 1) << std::endl;
         
         auto start_time = std::chrono::high_resolution_clock::now();
 
         // 1. Write CHECKPOINT_BEGIN record
-        std::cout << "[CHECKPOINT] Phase 1: Writing CHECKPOINT_BEGIN..." << std::endl;
+        // std::cout << "[CHECKPOINT] Phase 1: Writing CHECKPOINT_BEGIN..." << std::endl;
         LogRecord begin_record(0, LogRecord::INVALID_LSN, LogRecordType::CHECKPOINT_BEGIN);
         log_manager_->AppendLogRecord(begin_record);
         
         // 2. Capture Active Transaction Table (ATT)
-        std::cout << "[CHECKPOINT] Phase 2: Capturing Active Transaction Table..." << std::endl;
+        // std::cout << "[CHECKPOINT] Phase 2: Capturing Active Transaction Table..." << std::endl;
         std::vector<ActiveTransactionEntry> active_txns = log_manager_->GetActiveTransactions();
-        std::cout << "[CHECKPOINT]   - Found " << active_txns.size() << " active transactions" << std::endl;
+        // std::cout << "[CHECKPOINT]   - Found " << active_txns.size() << " active transactions" << std::endl;
         
         // 3. Capture Dirty Page Table (DPT)
-        std::cout << "[CHECKPOINT] Phase 3: Capturing Dirty Page Table..." << std::endl;
+        // std::cout << "[CHECKPOINT] Phase 3: Capturing Dirty Page Table..." << std::endl;
         std::vector<DirtyPageEntry> dirty_pages = CollectDirtyPages();
-        std::cout << "[CHECKPOINT]   - Found " << dirty_pages.size() << " dirty pages" << std::endl;
+        // std::cout << "[CHECKPOINT]   - Found " << dirty_pages.size() << " dirty pages" << std::endl;
 
         // 4. Flush all dirty pages to disk
-        std::cout << "[CHECKPOINT] Phase 4: Flushing all dirty pages..." << std::endl;
+        // std::cout << "[CHECKPOINT] Phase 4: Flushing all dirty pages..." << std::endl;
         if (bpm_ != nullptr) {
             bpm_->FlushAllPages();
         }
@@ -72,13 +72,13 @@ namespace chronosdb {
         std::streampos offset = log_manager_->GetCurrentOffset();
 
         // 6. Write CHECKPOINT_END record with ATT and DPT
-        std::cout << "[CHECKPOINT] Phase 5: Writing CHECKPOINT_END..." << std::endl;
+        // std::cout << "[CHECKPOINT] Phase 5: Writing CHECKPOINT_END..." << std::endl;
         LogRecord end_record(LogRecordType::CHECKPOINT_END, active_txns, dirty_pages);
         LogRecord::lsn_t checkpoint_lsn = log_manager_->AppendLogRecord(end_record);
         LogRecord::timestamp_t checkpoint_timestamp = end_record.GetTimestamp();
 
         // 7. Force log to disk
-        std::cout << "[CHECKPOINT] Phase 6: Forcing log to disk..." << std::endl;
+        // std::cout << "[CHECKPOINT] Phase 6: Forcing log to disk..." << std::endl;
         log_manager_->Flush(true);
 
         // 8. Update checkpoint state
@@ -86,25 +86,25 @@ namespace chronosdb {
         last_checkpoint_timestamp_ = checkpoint_timestamp;
 
         // 9. Write master record (atomically)
-        std::cout << "[CHECKPOINT] Phase 7: Updating master record..." << std::endl;
+        // std::cout << "[CHECKPOINT] Phase 7: Updating master record..." << std::endl;
         WriteMasterRecord(checkpoint_lsn, offset, checkpoint_timestamp);
         
         // 10. Update checkpoint LSN on ALL tables (for O(delta) time travel - Bug #6 fix)
         if (catalog_ != nullptr) {
-            std::cout << "[CHECKPOINT] Phase 8: Updating table checkpoint LSNs..." << std::endl;
+            // std::cout << "[CHECKPOINT] Phase 8: Updating table checkpoint LSNs..." << std::endl;
             auto all_tables = catalog_->GetAllTables();
             for (auto* table : all_tables) {
                 if (table) {
                     table->SetCheckpointLSN(checkpoint_lsn);
-                    std::cout << "[CHECKPOINT]   - Table '" << table->name_ 
-                              << "' checkpoint LSN set to " << checkpoint_lsn << std::endl;
+                    // std::cout << "[CHECKPOINT]   - Table '" << table->name_ 
+                              // << "' checkpoint LSN set to " << checkpoint_lsn << std::endl;
                 }
             }
-            std::cout << "[CHECKPOINT]   - Updated " << all_tables.size() << " tables" << std::endl;
+            // std::cout << "[CHECKPOINT]   - Updated " << all_tables.size() << " tables" << std::endl;
             
             // CRITICAL: Save catalog to persist checkpoint LSNs
             catalog_->SaveCatalog();
-            std::cout << "[CHECKPOINT] Phase 9: Saved catalog with checkpoint LSNs" << std::endl;
+            // std::cout << "[CHECKPOINT] Phase 9: Saved catalog with checkpoint LSNs" << std::endl;
         } else {
             std::cout << "[CHECKPOINT] WARNING: No catalog set - table checkpoint LSNs NOT updated!" << std::endl;
         }
@@ -115,11 +115,11 @@ namespace chronosdb {
         auto end_time = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
 
-        std::cout << "[CHECKPOINT] Complete!" << std::endl;
-        std::cout << "[CHECKPOINT]   - Checkpoint LSN: " << checkpoint_lsn << std::endl;
-        std::cout << "[CHECKPOINT]   - File Offset: " << offset << std::endl;
-        std::cout << "[CHECKPOINT]   - Duration: " << duration.count() << "ms" << std::endl;
-        std::cout << "[CHECKPOINT] ========================================" << std::endl;
+        // std::cout << "[CHECKPOINT] Complete!" << std::endl;
+        // std::cout << "[CHECKPOINT]   - Checkpoint LSN: " << checkpoint_lsn << std::endl;
+        // std::cout << "[CHECKPOINT]   - File Offset: " << offset << std::endl;
+        // std::cout << "[CHECKPOINT]   - Duration: " << duration.count() << "ms" << std::endl;
+        // std::cout << "[CHECKPOINT] ========================================" << std::endl;
     }
 
     void CheckpointManager::FuzzyCheckpoint() {
@@ -139,7 +139,7 @@ namespace chronosdb {
             std::lock_guard<std::mutex> lock(checkpoint_mutex_);
             checkpoint_offset_ = record.checkpoint_offset;
             last_checkpoint_timestamp_ = record.timestamp;
-            std::cout << "[CHECKPOINT] Found last checkpoint at LSN: " << record.checkpoint_lsn << std::endl;
+            // std::cout << "[CHECKPOINT] Found last checkpoint at LSN: " << record.checkpoint_lsn << std::endl;
             return record.checkpoint_lsn;
         }
         return LogRecord::INVALID_LSN;
@@ -157,7 +157,7 @@ namespace chronosdb {
 
     void CheckpointManager::StartBackgroundCheckpointing(uint32_t interval_seconds) {
         if (background_checkpointing_enabled_.load()) {
-            std::cout << "[CHECKPOINT] Background checkpointing already running" << std::endl;
+            // std::cout << "[CHECKPOINT] Background checkpointing already running" << std::endl;
             return;
         }
 
@@ -167,8 +167,8 @@ namespace chronosdb {
         
         background_thread_ = std::thread(&CheckpointManager::BackgroundCheckpointThread, this);
         
-        std::cout << "[CHECKPOINT] Started background checkpointing (interval: " 
-                  << interval_seconds << "s)" << std::endl;
+        // std::cout << "[CHECKPOINT] Started background checkpointing (interval: " 
+                  // << interval_seconds << "s)" << std::endl;
     }
 
     void CheckpointManager::StopBackgroundCheckpointing() {
@@ -187,11 +187,11 @@ namespace chronosdb {
         }
 
         background_checkpointing_enabled_ = false;
-        std::cout << "[CHECKPOINT] Stopped background checkpointing" << std::endl;
+        // std::cout << "[CHECKPOINT] Stopped background checkpointing" << std::endl;
     }
 
     void CheckpointManager::BackgroundCheckpointThread() {
-        std::cout << "[CHECKPOINT] Background thread started" << std::endl;
+        // std::cout << "[CHECKPOINT] Background thread started" << std::endl;
         
         while (!stop_background_thread_.load()) {
             {
@@ -206,14 +206,14 @@ namespace chronosdb {
             }
 
             try {
-                std::cout << "[CHECKPOINT] Background checkpoint triggered" << std::endl;
+                // std::cout << "[CHECKPOINT] Background checkpoint triggered" << std::endl;
                 BeginCheckpoint();
             } catch (const std::exception& e) {
-                std::cerr << "[CHECKPOINT] Background checkpoint failed: " << e.what() << std::endl;
+                // std::cerr << "[CHECKPOINT] Background checkpoint failed: " << e.what() << std::endl;
             }
         }
 
-        std::cout << "[CHECKPOINT] Background thread stopped" << std::endl;
+        // std::cout << "[CHECKPOINT] Background thread stopped" << std::endl;
     }
 
     // ========================================================================
@@ -252,9 +252,9 @@ namespace chronosdb {
             // Atomic rename
             std::filesystem::rename(temp_path, master_record_path_);
 
-            std::cout << "[CHECKPOINT] Master record updated: LSN=" << checkpoint_lsn 
-                      << ", Offset=" << offset 
-                      << ", Timestamp=" << timestamp << std::endl;
+            // std::cout << "[CHECKPOINT] Master record updated: LSN=" << checkpoint_lsn 
+                      // << ", Offset=" << offset 
+                      // << ", Timestamp=" << timestamp << std::endl;
         } catch (const std::exception& e) {
             std::cerr << "[CHECKPOINT] Error writing master record: " << e.what() << std::endl;
         }

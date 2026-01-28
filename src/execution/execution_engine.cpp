@@ -158,15 +158,15 @@ namespace chronosdb {
 
         // ----- USER OPERATIONS -----
         dispatch_map_[StatementType::CREATE_USER] = [this](Statement *s, SessionContext *ctx, Transaction *t) {
-            return user_executor_->CreateUser(dynamic_cast<CreateUserStatement *>(s));
+            return user_executor_->CreateUser(dynamic_cast<CreateUserStatement *>(s), ctx);
         };
 
         dispatch_map_[StatementType::ALTER_USER_ROLE] = [this](Statement *s, SessionContext *ctx, Transaction *t) {
-            return user_executor_->AlterUserRole(dynamic_cast<AlterUserRoleStatement *>(s));
+            return user_executor_->AlterUserRole(dynamic_cast<AlterUserRoleStatement *>(s), ctx);
         };
 
         dispatch_map_[StatementType::DELETE_USER] = [this](Statement *s, SessionContext *ctx, Transaction *t) {
-            return user_executor_->DeleteUser(dynamic_cast<DeleteUserStatement *>(s));
+            return user_executor_->DeleteUser(dynamic_cast<DeleteUserStatement *>(s), ctx);
         };
 
         // ----- SYSTEM OPERATIONS -----

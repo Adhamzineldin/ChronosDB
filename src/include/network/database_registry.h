@@ -95,19 +95,32 @@ public:
     bool Remove(const std::string &name) {
         auto it = registry_.find(name);
         if (it == registry_.end()) return false;
-        
-        // Flush before removing
-        if (it->second->bpm) {
-            it->second->bpm->FlushAllPages();
+
+        // Try to flush before removing (best effort - don't fail if flush fails)
+        // This is important for DROP DATABASE which will delete the files anyway
+        try {
+            if (it->second->bpm) {
+                it->second->bpm->FlushAllPages();
+            }
+        } catch (...) {
+            // Ignore flush errors - we're removing this database anyway
         }
-        if (it->second->catalog) {
-            it->second->catalog->SaveCatalog();
+
+        try {
+            if (it->second->catalog) {
+                it->second->catalog->SaveCatalog();
+            }
+        } catch (...) {
+            // Ignore save errors - we're removing this database anyway
         }
+
         // Release file handles to allow directory deletion on Windows
+        // Order matters: catalog may use bpm, bpm uses dm
+        // Reset in correct dependency order
         it->second->catalog.reset();
         it->second->bpm.reset();
         it->second->dm.reset();
-        
+
         registry_.erase(it);
         external_bpm_.erase(name);
         external_catalog_.erase(name);

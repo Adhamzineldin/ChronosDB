@@ -162,6 +162,18 @@ namespace chronosdb
     void DiskManager::WritePage(uint32_t page_id, const char* page_data)
     {
         std::lock_guard<std::mutex> guard(io_mutex_);
+
+#ifdef _WIN32
+        // Check for invalid handle before attempting write
+        if (db_io_handle_ == INVALID_HANDLE_VALUE) {
+            throw std::runtime_error("Disk Write Failure: Database file handle is invalid");
+        }
+#else
+        if (db_io_fd_ == -1) {
+            throw std::runtime_error("Disk Write Failure: Database file descriptor is invalid");
+        }
+#endif
+
         char processed_data[PAGE_SIZE];
         std::memcpy(processed_data, page_data, PAGE_SIZE);
 
@@ -188,7 +200,8 @@ namespace chronosdb
         DWORD written;
         if (!WriteFile(db_io_handle_, processed_data, PAGE_SIZE, &written, &overlapped))
         {
-            throw std::runtime_error("Disk Write Failure");
+            DWORD error = GetLastError();
+            throw std::runtime_error("Disk Write Failure (error code: " + std::to_string(error) + ")");
         }
 #else
         pwrite(db_io_fd_, processed_data, PAGE_SIZE, offset);
