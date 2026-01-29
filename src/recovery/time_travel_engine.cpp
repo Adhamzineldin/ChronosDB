@@ -198,8 +198,14 @@ std::unique_ptr<InMemoryTableHeap> TimeTravelEngine::BuildSnapshotForwardReplayI
 
     const Schema& schema = table_info->schema_;
 
-    // Build in-memory table using ordered vector + hash index (preserves insertion order)
-    // This is important for correct ORDER BY behavior in queries
+    // =========================================================================
+    // ORDER-PRESERVING DATA STRUCTURE
+    // =========================================================================
+    // We use a vector + hash index instead of unordered_multimap to preserve
+    // insertion order. This is critical for correct query results (ORDER BY, etc.)
+    //
+    // ordered_rows: Stores all rows in insertion order (deleted rows marked, not removed)
+    // key_to_indices: Fast O(1) lookup by key for DELETE/UPDATE operations
     struct RowEntry {
         std::string key;
         std::vector<Value> values;
@@ -208,7 +214,7 @@ std::unique_ptr<InMemoryTableHeap> TimeTravelEngine::BuildSnapshotForwardReplayI
     std::vector<RowEntry> ordered_rows;
     ordered_rows.reserve(10000);
 
-    // Hash map for fast lookups (key -> indices in ordered_rows)
+    // Hash map: key -> indices in ordered_rows (for fast lookup)
     std::unordered_multimap<std::string, size_t> key_to_indices;
     key_to_indices.reserve(10000);
 
@@ -217,10 +223,9 @@ std::unique_ptr<InMemoryTableHeap> TimeTravelEngine::BuildSnapshotForwardReplayI
 
     LogPageReader reader(64);
     if (!reader.Open(log_path)) {
-        // BUG FIX: Don't return empty snapshot - log file is required for time travel!
         LOG_ERROR(LOG_COMPONENT, "Forward replay: CANNOT open log file '%s' - time travel requires WAL log!",
                   log_path.c_str());
-        return nullptr;  // Return nullptr to indicate failure
+        return nullptr;
     }
 
     auto scan_start = std::chrono::high_resolution_clock::now();
@@ -231,7 +236,6 @@ std::unique_ptr<InMemoryTableHeap> TimeTravelEngine::BuildSnapshotForwardReplayI
     while (ReadLogRecordFromReader(reader, record)) {
         records_processed++;
 
-        // Progress logging
         if (records_processed % PROGRESS_INTERVAL == 0) {
             LOG_INFO(LOG_COMPONENT, "Forward replay (in-memory): %zu records processed, %zu table ops",
                      records_processed, table_ops);
@@ -253,7 +257,9 @@ std::unique_ptr<InMemoryTableHeap> TimeTravelEngine::BuildSnapshotForwardReplayI
                 auto vals = ParseTupleString(record.new_value_.ToString(), table_info);
                 if (!vals.empty()) {
                     std::string key = MakeTupleKey(vals);
-                    in_memory_table.emplace(key, std::move(vals));
+                    size_t idx = ordered_rows.size();
+                    ordered_rows.push_back({key, std::move(vals), false});
+                    key_to_indices.emplace(key, idx);
                 }
                 break;
             }
@@ -262,9 +268,15 @@ std::unique_ptr<InMemoryTableHeap> TimeTravelEngine::BuildSnapshotForwardReplayI
                 auto vals = ParseTupleString(record.old_value_.ToString(), table_info);
                 if (!vals.empty()) {
                     std::string key = MakeTupleKey(vals);
-                    auto range = in_memory_table.equal_range(key);
-                    if (range.first != range.second) {
-                        in_memory_table.erase(range.first);
+                    // Find and mark as deleted (don't remove to preserve order)
+                    auto range = key_to_indices.equal_range(key);
+                    for (auto it = range.first; it != range.second; ++it) {
+                        size_t idx = it->second;
+                        if (idx < ordered_rows.size() && !ordered_rows[idx].deleted) {
+                            ordered_rows[idx].deleted = true;
+                            key_to_indices.erase(it);
+                            break;  // Delete first matching non-deleted row
+                        }
                     }
                 }
                 break;
@@ -272,16 +284,27 @@ std::unique_ptr<InMemoryTableHeap> TimeTravelEngine::BuildSnapshotForwardReplayI
             case LogRecordType::UPDATE: {
                 auto old_vals = ParseTupleString(record.old_value_.ToString(), table_info);
                 auto new_vals = ParseTupleString(record.new_value_.ToString(), table_info);
+
+                // Mark old row as deleted
                 if (!old_vals.empty()) {
                     std::string old_key = MakeTupleKey(old_vals);
-                    auto range = in_memory_table.equal_range(old_key);
-                    if (range.first != range.second) {
-                        in_memory_table.erase(range.first);
+                    auto range = key_to_indices.equal_range(old_key);
+                    for (auto it = range.first; it != range.second; ++it) {
+                        size_t idx = it->second;
+                        if (idx < ordered_rows.size() && !ordered_rows[idx].deleted) {
+                            ordered_rows[idx].deleted = true;
+                            key_to_indices.erase(it);
+                            break;
+                        }
                     }
                 }
+
+                // Insert new row (preserves order - UPDATE moves row to "end" logically)
                 if (!new_vals.empty()) {
                     std::string new_key = MakeTupleKey(new_vals);
-                    in_memory_table.emplace(new_key, std::move(new_vals));
+                    size_t idx = ordered_rows.size();
+                    ordered_rows.push_back({new_key, std::move(new_vals), false});
+                    key_to_indices.emplace(new_key, idx);
                 }
                 break;
             }
@@ -291,28 +314,38 @@ std::unique_ptr<InMemoryTableHeap> TimeTravelEngine::BuildSnapshotForwardReplayI
     }
     reader.Close();
 
+    // Count active (non-deleted) rows
+    size_t active_rows = 0;
+    for (const auto& row : ordered_rows) {
+        if (!row.deleted) active_rows++;
+    }
+
     auto scan_end = std::chrono::high_resolution_clock::now();
     auto scan_ms = std::chrono::duration_cast<std::chrono::milliseconds>(scan_end - scan_start).count();
 
     LOG_INFO(LOG_COMPONENT, "Forward replay: scanned %zu records (%zu table ops) in %lldms, result has %zu rows",
-             records_processed, table_ops, static_cast<long long>(scan_ms), in_memory_table.size());
+             records_processed, table_ops, static_cast<long long>(scan_ms), active_rows);
 
-    // Convert hash map to InMemoryTableHeap (simple vector copy - O(n))
+    // =========================================================================
+    // MATERIALIZE: Convert ordered_rows to InMemoryTableHeap (preserves order!)
+    // =========================================================================
     auto mat_start = std::chrono::high_resolution_clock::now();
     auto snapshot = std::make_unique<InMemoryTableHeap>();
-    snapshot->Reserve(in_memory_table.size());
+    snapshot->Reserve(active_rows);
 
     size_t materialized = 0;
-    for (const auto& [key, vals] : in_memory_table) {
-        if (vals.size() == schema.GetColumnCount()) {
-            Tuple tuple(vals, schema);
+    for (const auto& row : ordered_rows) {
+        if (row.deleted) continue;  // Skip deleted rows
+
+        if (row.values.size() == schema.GetColumnCount()) {
+            Tuple tuple(row.values, schema);
             RID rid;
             snapshot->InsertTuple(std::move(tuple), &rid, nullptr);
             materialized++;
 
             if (materialized % 100000 == 0) {
                 LOG_INFO(LOG_COMPONENT, "Forward replay: built %zu / %zu tuples",
-                         materialized, in_memory_table.size());
+                         materialized, active_rows);
             }
         }
     }
@@ -1434,15 +1467,18 @@ std::streampos TimeTravelEngine::FindClosestLogOffset(std::ifstream&, uint64_t) 
 /**
  * Choose the best strategy based on where target_time falls in the log.
  *
- * FAST ALGORITHM (O(1)):
- * 1. Read first and last timestamps from log (O(1) each)
- * 2. Use time interpolation to estimate file offset
- * 3. Compare offset to file size (proxy for operation count)
- * 4. If target is in first 40% of operations, use FORWARD_REPLAY
- * 5. If target is in last 60%, use REVERSE_DELTA
+ * STRATEGY SELECTION LOGIC:
+ * - FORWARD_REPLAY: Start from empty, replay all operations up to target
+ * - REVERSE_DELTA:  Start from current state, undo operations after target
  *
- * This handles burst patterns because we use time to find position,
- * then use that position (which reflects operation count) for strategy choice.
+ * IMPORTANT: We aggressively favor REVERSE_DELTA because:
+ * 1. Time-based interpolation is INACCURATE when using current_time as upper bound
+ *    (extends time range beyond actual log, making targets appear earlier than reality)
+ * 2. Recent time travel queries are FAR more common than ancient ones
+ * 3. REVERSE_DELTA only undoes operations AFTER target (usually fewer)
+ * 4. FORWARD_REPLAY must apply ALL operations up to target (usually more)
+ *
+ * Only use FORWARD_REPLAY if target is very early in the log (first 15%).
  */
 TimeTravelEngine::Strategy TimeTravelEngine::ChooseStrategy(uint64_t target_time, const std::string& db_name) {
     if (!log_manager_) {
@@ -1470,6 +1506,8 @@ TimeTravelEngine::Strategy TimeTravelEngine::ChooseStrategy(uint64_t target_time
     LOG_INFO(LOG_COMPONENT, "Strategy selection: analyzing log file (%zu bytes)", file_size);
 
     // Use FAST time interpolation to estimate file offset (O(1))
+    // NOTE: This uses current_time as upper bound, which makes targets appear
+    // earlier than they actually are if the log hasn't been written to recently.
     size_t target_offset = FindStartOffsetForTimestamp(reader, target_time);
     reader.Close();
 
@@ -1487,21 +1525,21 @@ TimeTravelEngine::Strategy TimeTravelEngine::ChooseStrategy(uint64_t target_time
     }
 
     // Calculate position in file (0.0 = beginning, 1.0 = end)
-    // This is proportional to operation count via time interpolation
+    // NOTE: Due to current_time upper bound, this position is UNDERESTIMATED
+    // (real position is likely higher), so we use a conservative threshold.
     double position = static_cast<double>(target_offset) / static_cast<double>(file_size);
 
-    LOG_INFO(LOG_COMPONENT, "Strategy selection: target_offset=%zu, position=%.2f",
+    LOG_INFO(LOG_COMPONENT, "Strategy selection: target_offset=%zu, position=%.2f (NOTE: likely underestimated)",
              target_offset, position);
 
-    // Use FORWARD_REPLAY if target is in first 40% of log operations
-    // Use REVERSE_DELTA if target is in last 60%
-    // (biased towards reverse since recent queries are more common and reverse
-    // only needs to undo operations after target, not replay from genesis)
-    if (position < 0.4) {
-        LOG_INFO(LOG_COMPONENT, "Choosing FORWARD_REPLAY (target in first 40%% of log)");
+    // Use FORWARD_REPLAY ONLY if target is in the very beginning of log (first 15%)
+    // This accounts for the underestimation caused by using current_time as upper bound.
+    // For most real-world queries (recent past), REVERSE_DELTA is faster.
+    if (position < 0.15) {
+        LOG_INFO(LOG_COMPONENT, "Choosing FORWARD_REPLAY (target in first 15%% of log)");
         return Strategy::FORWARD_REPLAY;
     } else {
-        LOG_INFO(LOG_COMPONENT, "Choosing REVERSE_DELTA (target in last 60%% of log)");
+        LOG_INFO(LOG_COMPONENT, "Choosing REVERSE_DELTA (target after first 15%% - favoring reverse for efficiency)");
         return Strategy::REVERSE_DELTA;
     }
 }

@@ -119,11 +119,12 @@ namespace chronosdb {
     }
 
     bool ChronosClient::ConnectFromString(const std::string &connection_string) {
+        // "chronos://" has 10 characters, not 8!
         if (connection_string.find("chronos://") != 0) {
             return false;
         }
-        
-        std::string rest = connection_string.substr(8);
+
+        std::string rest = connection_string.substr(10);  // Fixed: was 8, should be 10
         std::string username, password, host, database;
         int port = net::DEFAULT_PORT;
         

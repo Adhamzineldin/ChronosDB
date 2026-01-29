@@ -767,7 +767,13 @@ int main(int argc, char* argv[]) {
         // Execute the query
         std::string result = db_client.Query(input);
         std::cout << result << std::endl;
-        
+
+        // Check if connection was lost
+        if (!db_client.IsConnected()) {
+            std::cerr << "\n[DISCONNECTED] Server closed connection." << std::endl;
+            break;
+        }
+
         // Only update current_db if the USE command was successful
         if (!potential_new_db.empty()) {
             // Check if result indicates success (doesn't contain ERROR)
