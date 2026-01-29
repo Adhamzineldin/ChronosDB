@@ -7,6 +7,7 @@
 #include "catalog/table_metadata.h"
 #include "storage/storage_interface.h"
 #include "storage/table/table_heap.h"
+#include "storage/table/in_memory_table_heap.h"
 #include <memory>
 #include <vector>
 #include <map>
@@ -139,6 +140,29 @@ public:
         const std::string& db_name = "",
         Strategy strategy = Strategy::AUTO);
 
+    /**
+     * Build a read-only IN-MEMORY snapshot (FAST - bypasses buffer pool)
+     *
+     * This is the RECOMMENDED method for time travel queries. Returns an
+     * InMemoryTableHeap that stores tuples in RAM, avoiding the buffer pool
+     * entirely. This prevents the exponential slowdown seen with large
+     * snapshots when using the buffer pool.
+     *
+     * Performance characteristics:
+     * - Insert: O(1) amortized (vector append)
+     * - Total build time: O(log_records + result_rows)
+     * - Memory: O(result_rows)
+     *
+     * @param table_name Table to snapshot
+     * @param target_time Target timestamp in microseconds
+     * @param db_name Database name
+     * @return Unique pointer to in-memory snapshot, nullptr on error
+     */
+    std::unique_ptr<InMemoryTableHeap> BuildSnapshotInMemory(
+        const std::string& table_name,
+        uint64_t target_time,
+        const std::string& db_name = "");
+
     // ========================================================================
     // RECOVER TO (Persistent Rollback)
     // ========================================================================
@@ -211,6 +235,22 @@ private:
      * 5. Return resulting snapshot
      */
     std::unique_ptr<TableHeap> BuildSnapshotReverseDelta(
+        const std::string& table_name,
+        uint64_t target_time,
+        const std::string& db_name);
+
+    /**
+     * Build snapshot using forward replay - IN-MEMORY version (no buffer pool)
+     */
+    std::unique_ptr<InMemoryTableHeap> BuildSnapshotForwardReplayInMemory(
+        const std::string& table_name,
+        uint64_t target_time,
+        const std::string& db_name);
+
+    /**
+     * Build snapshot using reverse delta - IN-MEMORY version (no buffer pool)
+     */
+    std::unique_ptr<InMemoryTableHeap> BuildSnapshotReverseDeltaInMemory(
         const std::string& table_name,
         uint64_t target_time,
         const std::string& db_name);

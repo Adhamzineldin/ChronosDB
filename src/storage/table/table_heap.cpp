@@ -5,13 +5,13 @@
 namespace chronosdb {
     // Constructor 1: Open existing
     TableHeap::TableHeap(IBufferManager *bpm, page_id_t first_page_id)
-        : buffer_pool_manager_(bpm), first_page_id_(first_page_id) {
+        : buffer_pool_manager_(bpm), first_page_id_(first_page_id), last_page_hint_(INVALID_PAGE_ID) {
     }
 
     // Constructor 2: Create New
     // Note: Can't use PageGuard here since page doesn't exist yet
     // NewPage returns an already-pinned page that we must manually handle
-    TableHeap::TableHeap(IBufferManager *bpm, Transaction *txn) : buffer_pool_manager_(bpm) {
+    TableHeap::TableHeap(IBufferManager *bpm, Transaction *txn) : buffer_pool_manager_(bpm), last_page_hint_(INVALID_PAGE_ID) {
         (void) txn;
         page_id_t new_page_id;
         Page *page = bpm->NewPage(&new_page_id);
@@ -22,6 +22,7 @@ namespace chronosdb {
         auto *table_page = reinterpret_cast<TablePage *>(page->GetData());
         table_page->Init(new_page_id, INVALID_PAGE_ID, INVALID_PAGE_ID, txn);
         first_page_id_ = new_page_id;
+        last_page_hint_ = new_page_id;  // First page is the hint
         page->WUnlock();
 
         bpm->UnpinPage(new_page_id, true);
@@ -30,20 +31,31 @@ namespace chronosdb {
     // --- INSERT (Thread-Safe with RAII PageGuard) ---
     // Issue #1 Fix: Uses PageGuard for automatic pin/unpin on all paths
     // Issue #3 Fix: Releases latch before disk I/O (NewPage) to prevent latch convoy
+    // OPTIMIZATION: Uses last_page_hint_ to skip to the last known page with space
     bool TableHeap::InsertTuple(const Tuple &tuple, RID *rid, Transaction *txn) {
         if (first_page_id_ == INVALID_PAGE_ID) return false;
 
-        page_id_t curr_page_id = first_page_id_;
-        
+        // OPTIMIZATION: Start from last known page with space (O(1) instead of O(pages))
+        page_id_t curr_page_id = (last_page_hint_ != INVALID_PAGE_ID) ? last_page_hint_ : first_page_id_;
+
         while (true) {
             PageGuard guard(buffer_pool_manager_, curr_page_id, true);  // Write lock
-            if (!guard.IsValid()) return false;
-            
+            if (!guard.IsValid()) {
+                // If hint was invalid, fall back to first page
+                if (curr_page_id != first_page_id_) {
+                    last_page_hint_ = INVALID_PAGE_ID;
+                    curr_page_id = first_page_id_;
+                    continue;
+                }
+                return false;
+            }
+
             auto *table_page = guard.As<TablePage>();
 
             // Try to insert into current page
             if (table_page->InsertTuple(tuple, rid, txn)) {
                 guard.SetDirty();
+                last_page_hint_ = curr_page_id;  // Remember this page has space
                 return true;  // PageGuard auto-releases
             }
 
@@ -54,19 +66,19 @@ namespace chronosdb {
                 // Issue #3 Fix: Release current latch BEFORE I/O
                 page_id_t current_page = curr_page_id;
                 guard.Release();  // Explicitly release to avoid holding latch during I/O
-                
+
                 // Allocate new page without holding any latch
                 page_id_t new_page_id;
                 Page *new_page_raw = buffer_pool_manager_->NewPage(&new_page_id);
                 if (new_page_raw == nullptr) return false;
-                
+
                 // Re-acquire latches in order: current, then new
                 PageGuard curr_guard(buffer_pool_manager_, current_page, true);
                 if (!curr_guard.IsValid()) {
                     buffer_pool_manager_->UnpinPage(new_page_id, false);
                     return false;
                 }
-                
+
                 // Check if another thread already added a page
                 auto *curr_page_data = curr_guard.As<TablePage>();
                 if (curr_page_data->GetNextPageId() != INVALID_PAGE_ID) {
@@ -75,19 +87,20 @@ namespace chronosdb {
                     curr_page_id = curr_page_data->GetNextPageId();
                     continue;
                 }
-                
+
                 // Lock and initialize the new page
                 new_page_raw->WLock();
                 auto *new_page = reinterpret_cast<TablePage *>(new_page_raw->GetData());
                 new_page->Init(new_page_id, current_page, INVALID_PAGE_ID, txn);
-                
+
                 // Link pages and insert
                 curr_page_data->SetNextPageId(new_page_id);
                 new_page->InsertTuple(tuple, rid, txn);
-                
+
                 new_page_raw->WUnlock();
                 buffer_pool_manager_->UnpinPage(new_page_id, true);
                 curr_guard.SetDirty();
+                last_page_hint_ = new_page_id;  // New page is now the hint
                 return true;
             }
 

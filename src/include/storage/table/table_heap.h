@@ -106,6 +106,10 @@ namespace chronosdb {
     private:
         IBufferManager *buffer_pool_manager_;
         page_id_t first_page_id_;
+
+        // OPTIMIZATION: Cache last page with space to avoid O(pages) traversal on INSERT
+        // This gives O(1) inserts in the common case (last page still has space)
+        mutable page_id_t last_page_hint_ = INVALID_PAGE_ID;
     };
 
 } // namespace chronosdb

@@ -27,6 +27,7 @@
 #include "execution/executors/index_scan_executor.h"
 #include "execution/executors/join_executor.h"
 #include "recovery/snapshot_manager.h"
+#include "storage/table/in_memory_table_heap.h"
 #include "parser/statement.h"
 #include "catalog/catalog.h"
 #include "catalog/table_metadata.h"
@@ -108,13 +109,14 @@ ExecutionResult DMLExecutor::Select(SelectStatement* stmt, SessionContext* sessi
         ExecutorContext ctx(bpm_, catalog_, txn, log_manager_);
         AbstractExecutor* executor = nullptr;
         bool use_index = false;
-        
+
         // Get the target table heap (will be overridden for time travel)
         TableHeap* target_heap = table_info->table_heap_.get();
-        std::unique_ptr<TableHeap> snapshot_heap = nullptr;  // For time travel cleanup
-        
+        std::unique_ptr<TableHeap> snapshot_heap = nullptr;  // For legacy time travel
+        std::unique_ptr<InMemoryTableHeap> in_memory_snapshot = nullptr;  // For fast time travel
+
         // =================================================================
-        // TIME TRAVEL (AS OF) - Build Snapshot
+        // TIME TRAVEL (AS OF) - Build In-Memory Snapshot (FAST)
         // =================================================================
         if (stmt->as_of_timestamp_ > 0) {
             // Determine the database to use for time travel
@@ -128,117 +130,164 @@ ExecutionResult DMLExecutor::Select(SelectStatement* stmt, SessionContext* sessi
             if (db_name.empty()) {
                 db_name = "system";
             }
-            
-            std::cout << "[TIME TRAVEL] Building snapshot as of " << stmt->as_of_timestamp_ 
+
+            std::cout << "[TIME TRAVEL] Building in-memory snapshot as of " << stmt->as_of_timestamp_
                       << " for database '" << db_name << "'..." << std::endl;
-            
+
             // **CRITICAL**: Flush the log to ensure all records are on disk
             if (log_manager_) {
                 log_manager_->Flush(true);  // Force flush
             }
-            
-            snapshot_heap = SnapshotManager::BuildSnapshot(
+
+            // Use fast in-memory snapshot (bypasses buffer pool)
+            in_memory_snapshot = SnapshotManager::BuildSnapshotInMemory(
                 stmt->table_name_,
                 stmt->as_of_timestamp_,
-                bpm_,
                 log_manager_,
                 catalog_,
                 db_name
             );
-            
-            if (snapshot_heap) {
-                target_heap = snapshot_heap.get();
-                std::cout << "[TIME TRAVEL] Snapshot built successfully, target_heap=" 
-                          << (void*)target_heap << std::endl;
+
+            if (in_memory_snapshot) {
+                std::cout << "[TIME TRAVEL] In-memory snapshot built successfully ("
+                          << in_memory_snapshot->GetTupleCount() << " rows)" << std::endl;
+
+                // For in-memory snapshots, we'll iterate directly (skip executor)
+                // This is handled below in a special path
             } else {
-                // nullptr means "use live table directly" (zero-copy optimization)
-                // This happens when checkpoint is current and no delta to replay
-                target_heap = table_info->table_heap_.get();
-                std::cout << "[TIME TRAVEL] Using LIVE TABLE directly (zero-copy), target_heap=" 
-                          << (void*)target_heap << std::endl;
+                std::cout << "[TIME TRAVEL] Failed to build snapshot, using live table" << std::endl;
             }
-        }
-        
-        // =================================================================
-        // QUERY OPTIMIZER - Choose best execution path
-        // =================================================================
-        
-        // Check if we can use an index scan
-        if (!stmt->where_clause_.empty() && stmt->where_clause_[0].op == "=") {
-            const auto& cond = stmt->where_clause_[0];
-            auto indexes = catalog_->GetTableIndexes(stmt->table_name_);
-            
-            for (auto* idx : indexes) {
-                if (idx->col_name_ == cond.column && idx->b_plus_tree_) {
-                    try {
-                        // Create index lookup value
-                        Value lookup_val(TypeId::INTEGER, std::stoi(cond.value.ToString()));
-                        
-                        executor = new IndexScanExecutor(&ctx, stmt, idx, lookup_val, txn);
-                        use_index = true;
-                        break;
-                    } catch (...) {
-                        // Failed to parse as integer, fall back to seq scan
-                    }
-                }
-            }
-        }
-        
-        // Fall back to sequential scan if no index available
-        if (!use_index) {
-            executor = new SeqScanExecutor(&ctx, stmt, txn, target_heap);
-        }
-        
-        // Initialize the executor
-        try {
-            executor->Init();
-        } catch (...) {
-            delete executor;
-            return ExecutionResult::Error("[DML] Failed to initialize executor");
         }
         
         // =================================================================
         // RESULT SET BUILDING
         // =================================================================
-        
+
         auto rs = std::make_shared<ResultSet>();
-        const Schema* output_schema = executor->GetOutputSchema();
-        
-        // Determine which columns to output
+        const Schema& schema = table_info->schema_;
         std::vector<uint32_t> column_indices;
-        
+        std::vector<std::vector<std::string>> all_rows;
+
+        // Determine which columns to output
         if (stmt->select_all_) {
-            // SELECT * - return all columns
-            for (uint32_t i = 0; i < output_schema->GetColumnCount(); i++) {
-                rs->column_names.push_back(output_schema->GetColumn(i).GetName());
+            for (uint32_t i = 0; i < schema.GetColumnCount(); i++) {
+                rs->column_names.push_back(schema.GetColumn(i).GetName());
                 column_indices.push_back(i);
             }
         } else {
-            // SELECT col1, col2, ... - return specific columns
             for (const auto& col_name : stmt->columns_) {
-                int col_idx = output_schema->GetColIdx(col_name);
+                int col_idx = schema.GetColIdx(col_name);
                 if (col_idx < 0) {
-                    delete executor;
                     return ExecutionResult::Error("[DML] Column not found: " + col_name);
                 }
                 rs->column_names.push_back(col_name);
                 column_indices.push_back(static_cast<uint32_t>(col_idx));
             }
         }
-        
-        // Fetch all matching tuples
-        std::vector<std::vector<std::string>> all_rows;
-        Tuple tuple;
-        
-        while (executor->Next(&tuple)) {
-            std::vector<std::string> row_strings;
-            for (uint32_t col_idx : column_indices) {
-                row_strings.push_back(tuple.GetValue(*output_schema, col_idx).ToString());
+
+        // =================================================================
+        // FAST PATH: In-Memory Snapshot (Time Travel) - Bypass Executor
+        // =================================================================
+        if (in_memory_snapshot) {
+            // Direct iteration over in-memory snapshot (no buffer pool)
+            auto iter = in_memory_snapshot->Begin();
+            auto end = in_memory_snapshot->End();
+
+            while (iter != end) {
+                const Tuple& tuple = *iter;
+                bool matches = true;
+
+                // Apply WHERE clause filters
+                for (const auto& cond : stmt->where_clause_) {
+                    int col_idx = schema.GetColIdx(cond.column);
+                    if (col_idx < 0) continue;
+
+                    Value tuple_val = tuple.GetValue(schema, col_idx);
+                    std::string tuple_str = tuple_val.ToString();
+                    std::string cond_str = cond.value.ToString();
+
+                    if (cond.op == "=") {
+                        matches = (tuple_str == cond_str);
+                    } else if (cond.op == "!=" || cond.op == "<>") {
+                        matches = (tuple_str != cond_str);
+                    } else if (cond.op == "<") {
+                        try { matches = (std::stod(tuple_str) < std::stod(cond_str)); }
+                        catch (...) { matches = (tuple_str < cond_str); }
+                    } else if (cond.op == ">") {
+                        try { matches = (std::stod(tuple_str) > std::stod(cond_str)); }
+                        catch (...) { matches = (tuple_str > cond_str); }
+                    } else if (cond.op == "<=") {
+                        try { matches = (std::stod(tuple_str) <= std::stod(cond_str)); }
+                        catch (...) { matches = (tuple_str <= cond_str); }
+                    } else if (cond.op == ">=") {
+                        try { matches = (std::stod(tuple_str) >= std::stod(cond_str)); }
+                        catch (...) { matches = (tuple_str >= cond_str); }
+                    }
+
+                    if (!matches) break;
+                }
+
+                if (matches) {
+                    std::vector<std::string> row_strings;
+                    for (uint32_t col_idx : column_indices) {
+                        row_strings.push_back(tuple.GetValue(schema, col_idx).ToString());
+                    }
+                    all_rows.push_back(row_strings);
+                }
+
+                ++iter;
             }
-            all_rows.push_back(row_strings);
         }
-        
-        delete executor;
+        // =================================================================
+        // NORMAL PATH: Use Executor (Live Table or Index Scan)
+        // =================================================================
+        else {
+            // Check if we can use an index scan
+            if (!stmt->where_clause_.empty() && stmt->where_clause_[0].op == "=") {
+                const auto& cond = stmt->where_clause_[0];
+                auto indexes = catalog_->GetTableIndexes(stmt->table_name_);
+
+                for (auto* idx : indexes) {
+                    if (idx->col_name_ == cond.column && idx->b_plus_tree_) {
+                        try {
+                            Value lookup_val(TypeId::INTEGER, std::stoi(cond.value.ToString()));
+                            executor = new IndexScanExecutor(&ctx, stmt, idx, lookup_val, txn);
+                            use_index = true;
+                            break;
+                        } catch (...) {
+                            // Failed to parse as integer, fall back to seq scan
+                        }
+                    }
+                }
+            }
+
+            // Fall back to sequential scan if no index available
+            if (!use_index) {
+                executor = new SeqScanExecutor(&ctx, stmt, txn, target_heap);
+            }
+
+            // Initialize the executor
+            try {
+                executor->Init();
+            } catch (...) {
+                delete executor;
+                return ExecutionResult::Error("[DML] Failed to initialize executor");
+            }
+
+            // Fetch all matching tuples
+            Tuple tuple;
+            const Schema* output_schema = executor->GetOutputSchema();
+
+            while (executor->Next(&tuple)) {
+                std::vector<std::string> row_strings;
+                for (uint32_t col_idx : column_indices) {
+                    row_strings.push_back(tuple.GetValue(*output_schema, col_idx).ToString());
+                }
+                all_rows.push_back(row_strings);
+            }
+
+            delete executor;
+        }
         
         // =================================================================
         // POST-PROCESSING (ORDER BY, LIMIT, DISTINCT)

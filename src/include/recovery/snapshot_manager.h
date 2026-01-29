@@ -5,6 +5,7 @@
 #include "recovery/checkpoint_manager.h"
 #include "recovery/time_travel_engine.h"
 #include "storage/table/table_heap.h"
+#include "storage/table/in_memory_table_heap.h"
 #include "catalog/catalog.h"
 #include "catalog/table_metadata.h"
 #include "storage/storage_interface.h"
@@ -22,12 +23,66 @@ namespace chronosdb {
  * Snapshot Manager - Time Travel Interface
  *
  * Delegates to TimeTravelEngine for efficient snapshot building.
- * Uses reverse delta strategy for recent queries.
+ * Uses in-memory snapshots to bypass buffer pool for large results.
  */
 class SnapshotManager {
 public:
     /**
-     * Build a snapshot using the optimal strategy.
+     * Build an IN-MEMORY snapshot (FAST - bypasses buffer pool)
+     *
+     * This is the RECOMMENDED method for time travel queries.
+     * Returns an InMemoryTableHeap that stores tuples in RAM,
+     * avoiding buffer pool thrashing for large snapshots.
+     *
+     * Performance: O(n) time, O(n) memory where n = result rows
+     */
+    static std::unique_ptr<InMemoryTableHeap> BuildSnapshotInMemory(
+        const std::string& table_name,
+        uint64_t target_time,
+        LogManager* log_manager,
+        Catalog* catalog,
+        const std::string& db_name = "")
+    {
+        std::string target_db = db_name;
+        if (target_db.empty() && log_manager) {
+            target_db = log_manager->GetCurrentDatabase();
+        }
+
+        auto* table_info = catalog->GetTable(table_name);
+        if (!table_info) {
+            LOG_ERROR("SnapshotManager", "Table not found: %s", table_name.c_str());
+            return nullptr;
+        }
+
+        uint64_t current_time = LogRecord::GetCurrentTimestamp();
+
+        // Special case: current or future state - clone live table
+        if (target_time >= current_time) {
+            LOG_DEBUG("SnapshotManager", "Using live table for '%s' (in-memory copy)", table_name.c_str());
+            auto snapshot = std::make_unique<InMemoryTableHeap>();
+            auto live_heap = table_info->table_heap_.get();
+            if (live_heap) {
+                auto iter = live_heap->Begin(nullptr);
+                while (iter != live_heap->End()) {
+                    Tuple tuple = *iter;
+                    RID rid;
+                    snapshot->InsertTuple(tuple, &rid, nullptr);
+                    ++iter;
+                }
+            }
+            return snapshot;
+        }
+
+        // Use TimeTravelEngine for historical queries (returns InMemoryTableHeap)
+        TimeTravelEngine engine(log_manager, catalog, nullptr, nullptr);
+        return engine.BuildSnapshotInMemory(table_name, target_time, target_db);
+    }
+
+    /**
+     * Build a snapshot using the optimal strategy (LEGACY - uses buffer pool)
+     *
+     * WARNING: This method uses the buffer pool and can be very slow for
+     * large snapshots due to eviction overhead. Use BuildSnapshotInMemory instead.
      */
     static std::unique_ptr<TableHeap> BuildSnapshot(
         const std::string& table_name,
