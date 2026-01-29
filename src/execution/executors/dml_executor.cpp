@@ -151,11 +151,14 @@ ExecutionResult DMLExecutor::Select(SelectStatement* stmt, SessionContext* sessi
             if (in_memory_snapshot) {
                 std::cout << "[TIME TRAVEL] In-memory snapshot built successfully ("
                           << in_memory_snapshot->GetTupleCount() << " rows)" << std::endl;
-
-                // For in-memory snapshots, we'll iterate directly (skip executor)
-                // This is handled below in a special path
             } else {
-                std::cout << "[TIME TRAVEL] Failed to build snapshot, using live table" << std::endl;
+                // BUG FIX: Don't silently fall back to live table - this is a real error!
+                std::cout << "[TIME TRAVEL] ERROR: Failed to build historical snapshot!" << std::endl;
+                std::cout << "[TIME TRAVEL] Possible causes:" << std::endl;
+                std::cout << "  1. WAL log file not found for database '" << db_name << "'" << std::endl;
+                std::cout << "  2. Target timestamp is invalid or corrupted" << std::endl;
+                std::cout << "  3. Database was created after the target timestamp" << std::endl;
+                return ExecutionResult::Error("[TIME TRAVEL] Cannot build snapshot - WAL log required. Check server logs for details.");
             }
         }
         

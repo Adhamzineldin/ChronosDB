@@ -73,33 +73,79 @@ namespace chronosdb {
         LockManager *lock_mgr = exec_ctx_->GetLockManager();
         auto bpm = exec_ctx_->GetBufferPoolManager();
 
-        // 1. SCAN PHASE
-        page_id_t curr_page_id = table_info_->first_page_id_;
-        while (curr_page_id != INVALID_PAGE_ID) {
-            PageGuard guard(bpm, curr_page_id, false);
-            if (!guard.IsValid()) break;
-            auto *table_page = guard.As<TablePage>();
+        // OPTIMIZATION: Try to use index scan if WHERE clause has equality on indexed column
+        bool used_index = false;
+        if (!plan_->where_clause_.empty() && plan_->where_clause_[0].op == "=") {
+            const auto& cond = plan_->where_clause_[0];
+            auto indexes = exec_ctx_->GetCatalog()->GetTableIndexes(plan_->table_name_);
 
-            for (uint32_t i = 0; i < table_page->GetTupleCount(); ++i) {
-                RID rid(curr_page_id, i);
-                Tuple old_tuple;
-                if (table_page->GetTuple(rid, &old_tuple, txn_)) {
-                    if (EvaluatePredicate(old_tuple)) {
-                        if (lock_mgr && txn_) {
-                            if (!lock_mgr->LockRow(txn_->GetTransactionId(), rid, LockMode::EXCLUSIVE)) {
-                                throw Exception(ExceptionType::EXECUTION, "Lock failed");
+            for (auto* index : indexes) {
+                if (index->col_name_ == cond.column && index->b_plus_tree_) {
+                    // Found matching index - use index scan instead of full table scan
+                    try {
+                        Value lookup_val(TypeId::INTEGER, std::stoi(cond.value.ToString()));
+                        GenericKey<8> search_key;
+                        search_key.SetFromValue(lookup_val);
+
+                        std::vector<RID> result_rids;
+                        index->b_plus_tree_->GetValue(search_key, &result_rids, txn_);
+
+                        for (const RID& rid : result_rids) {
+                            Tuple old_tuple;
+                            if (table_info_->table_heap_->GetTuple(rid, &old_tuple, txn_)) {
+                                if (EvaluatePredicate(old_tuple)) {
+                                    if (lock_mgr && txn_) {
+                                        if (!lock_mgr->LockRow(txn_->GetTransactionId(), rid, LockMode::EXCLUSIVE)) {
+                                            throw Exception(ExceptionType::EXECUTION, "Lock failed");
+                                        }
+                                    }
+                                    Tuple locked_tuple;
+                                    if (!table_info_->table_heap_->GetTuple(rid, &locked_tuple, txn_)) continue;
+                                    if (!EvaluatePredicate(locked_tuple)) continue;
+
+                                    Tuple new_tuple = CreateUpdatedTuple(locked_tuple);
+                                    updates_to_apply.push_back({rid, locked_tuple, new_tuple});
+                                }
                             }
                         }
-                        Tuple locked_tuple;
-                        if (!table_page->GetTuple(rid, &locked_tuple, txn_)) continue;
-                        if (!EvaluatePredicate(locked_tuple)) continue;
-
-                        Tuple new_tuple = CreateUpdatedTuple(locked_tuple);
-                        updates_to_apply.push_back({rid, locked_tuple, new_tuple});
+                        used_index = true;
+                        break;
+                    } catch (...) {
+                        // Failed to use index, fall back to full scan
                     }
                 }
             }
-            curr_page_id = table_page->GetNextPageId();
+        }
+
+        // 1. SCAN PHASE (only if index scan not used)
+        if (!used_index) {
+            page_id_t curr_page_id = table_info_->first_page_id_;
+            while (curr_page_id != INVALID_PAGE_ID) {
+                PageGuard guard(bpm, curr_page_id, false);
+                if (!guard.IsValid()) break;
+                auto *table_page = guard.As<TablePage>();
+
+                for (uint32_t i = 0; i < table_page->GetTupleCount(); ++i) {
+                    RID rid(curr_page_id, i);
+                    Tuple old_tuple;
+                    if (table_page->GetTuple(rid, &old_tuple, txn_)) {
+                        if (EvaluatePredicate(old_tuple)) {
+                            if (lock_mgr && txn_) {
+                                if (!lock_mgr->LockRow(txn_->GetTransactionId(), rid, LockMode::EXCLUSIVE)) {
+                                    throw Exception(ExceptionType::EXECUTION, "Lock failed");
+                                }
+                            }
+                            Tuple locked_tuple;
+                            if (!table_page->GetTuple(rid, &locked_tuple, txn_)) continue;
+                            if (!EvaluatePredicate(locked_tuple)) continue;
+
+                            Tuple new_tuple = CreateUpdatedTuple(locked_tuple);
+                            updates_to_apply.push_back({rid, locked_tuple, new_tuple});
+                        }
+                    }
+                }
+                curr_page_id = table_page->GetNextPageId();
+            }
         }
 
         // 2. APPLY PHASE

@@ -198,14 +198,29 @@ std::unique_ptr<InMemoryTableHeap> TimeTravelEngine::BuildSnapshotForwardReplayI
 
     const Schema& schema = table_info->schema_;
 
-    // Build in-memory table using hash map (for fast updates/deletes)
-    std::unordered_multimap<std::string, std::vector<Value>> in_memory_table;
-    in_memory_table.reserve(10000);
+    // Build in-memory table using ordered vector + hash index (preserves insertion order)
+    // This is important for correct ORDER BY behavior in queries
+    struct RowEntry {
+        std::string key;
+        std::vector<Value> values;
+        bool deleted = false;
+    };
+    std::vector<RowEntry> ordered_rows;
+    ordered_rows.reserve(10000);
+
+    // Hash map for fast lookups (key -> indices in ordered_rows)
+    std::unordered_multimap<std::string, size_t> key_to_indices;
+    key_to_indices.reserve(10000);
 
     std::string log_path = log_manager_->GetLogFilePath(db_name);
+    LOG_INFO(LOG_COMPONENT, "Forward replay: opening log file '%s'", log_path.c_str());
+
     LogPageReader reader(64);
     if (!reader.Open(log_path)) {
-        return std::make_unique<InMemoryTableHeap>();
+        // BUG FIX: Don't return empty snapshot - log file is required for time travel!
+        LOG_ERROR(LOG_COMPONENT, "Forward replay: CANNOT open log file '%s' - time travel requires WAL log!",
+                  log_path.c_str());
+        return nullptr;  // Return nullptr to indicate failure
     }
 
     auto scan_start = std::chrono::high_resolution_clock::now();
@@ -366,16 +381,22 @@ std::unique_ptr<InMemoryTableHeap> TimeTravelEngine::BuildSnapshotReverseDeltaIn
 
     // PHASE 2: Read log and collect operations to undo
     std::string log_path = log_manager_->GetLogFilePath(db_name);
+    LOG_INFO(LOG_COMPONENT, "Reverse delta: opening log file '%s'", log_path.c_str());
+
     LogPageReader reader(64);
     if (!reader.Open(log_path)) {
-        goto build_result;
+        // BUG FIX: Don't silently return current state - log file is required for time travel!
+        LOG_ERROR(LOG_COMPONENT, "Reverse delta: CANNOT open log file '%s' - time travel requires WAL log!",
+                  log_path.c_str());
+        return nullptr;  // Return nullptr to indicate failure, not current state
     }
 
     {
-        size_t start_offset = FindStartOffsetForTimestamp(reader, target_time);
-        if (start_offset > 0) {
-            reader.Seek(start_offset);
-        }
+        // NOTE: We intentionally start from the BEGINNING of the log, not from estimated offset
+        // Reason: Seeking to estimated offset lands mid-record, causing "Invalid record size" errors
+        // The log must be read sequentially from a known record boundary (position 0)
+        // We simply skip records with timestamp <= target_time
+        reader.Seek(0);
 
         std::vector<InverseOperation> ops_to_undo;
         ops_to_undo.reserve(1000);
@@ -488,7 +509,6 @@ std::unique_ptr<InMemoryTableHeap> TimeTravelEngine::BuildSnapshotReverseDeltaIn
         }
     }
 
-build_result:
     // PHASE 4: Build InMemoryTableHeap directly (O(n), no buffer pool)
     size_t active_rows = 0;
     for (const auto& row : ordered_rows) {
@@ -591,18 +611,11 @@ std::unique_ptr<TableHeap> TimeTravelEngine::BuildSnapshotReverseDelta(
     }
 
     {
-        // =====================================================================
-        // OPTIMIZATION: Binary search to skip directly to relevant log section
-        // Instead of O(N) scan from beginning, use O(log N) binary search
-        // =====================================================================
-        size_t start_offset = FindStartOffsetForTimestamp(reader, target_time);
-        if (start_offset > 0) {
-            LOG_DEBUG(LOG_COMPONENT, "Binary search: starting scan at offset %zu (skipped %zu bytes)",
-                     start_offset, start_offset);
-            reader.Seek(start_offset);
-        } else {
-            reader.Seek(0); // Start from beginning if binary search failed
-        }
+        // NOTE: We intentionally start from the BEGINNING of the log
+        // Reason: Seeking to estimated offset lands mid-record, causing "Invalid record size" errors
+        // The log must be read sequentially from a known record boundary (position 0)
+        // We simply skip records with timestamp <= target_time during the scan
+        reader.Seek(0);
 
         std::vector<InverseOperation> ops_to_undo;
         ops_to_undo.reserve(1000);
@@ -1372,33 +1385,19 @@ size_t TimeTravelEngine::FindStartOffsetForTimestamp(LogPageReader& reader, uint
         return 0;
     }
 
-    // Step 2: Read LAST timestamp (O(1) - scan backwards from end for one record)
-    uint64_t last_timestamp = first_timestamp;
+    // Step 2: Get LAST timestamp
+    // PROBLEM: Seeking to arbitrary position lands mid-record, causing "Invalid record size"
+    // SOLUTION: Use current system time as upper bound (safe approximation)
+    // This works because: if target < current_time, we're in the past, interpolation works
+    uint64_t last_timestamp = LogRecord::GetCurrentTimestamp();
 
-    // Scan last 64KB of file to find a valid record near the end
-    size_t scan_start = (file_size > 65536) ? (file_size - 65536) : 0;
-    reader.Seek(scan_start);
-
-    LogRecord temp_record(0, 0, LogRecordType::INVALID);
-    uint64_t found_timestamp = 0;
-    size_t records_checked = 0;
-
-    while (!reader.Eof() && records_checked < 10000) {
-        if (ReadLogRecordFromReader(reader, temp_record)) {
-            // Sanity check timestamp
-            if (temp_record.timestamp_ > 946684800000000ULL &&
-                temp_record.timestamp_ < 4102444800000000ULL) {
-                found_timestamp = temp_record.timestamp_;
-            }
-            records_checked++;
-        } else {
-            break;
-        }
+    // Sanity check: last should be >= first
+    if (last_timestamp < first_timestamp) {
+        last_timestamp = first_timestamp + 1;  // Avoid division by zero
     }
 
-    if (found_timestamp > first_timestamp) {
-        last_timestamp = found_timestamp;
-    }
+    LOG_DEBUG(LOG_COMPONENT, "Using current time as last_timestamp upper bound: %llu",
+              static_cast<unsigned long long>(last_timestamp));
 
     LOG_DEBUG(LOG_COMPONENT, "Time range: first=%llu, last=%llu, target=%llu",
               static_cast<unsigned long long>(first_timestamp),
@@ -1446,12 +1445,20 @@ std::streampos TimeTravelEngine::FindClosestLogOffset(std::ifstream&, uint64_t) 
  * then use that position (which reflects operation count) for strategy choice.
  */
 TimeTravelEngine::Strategy TimeTravelEngine::ChooseStrategy(uint64_t target_time, const std::string& db_name) {
-    if (!log_manager_) return Strategy::REVERSE_DELTA;
+    if (!log_manager_) {
+        LOG_WARN(LOG_COMPONENT, "ChooseStrategy: no log_manager, defaulting to REVERSE_DELTA");
+        return Strategy::REVERSE_DELTA;
+    }
 
     std::string log_path = log_manager_->GetLogFilePath(db_name);
+    LOG_INFO(LOG_COMPONENT, "ChooseStrategy: checking log file '%s' for db '%s'",
+             log_path.c_str(), db_name.c_str());
+
     LogPageReader reader(16); // Small cache for probing
     if (!reader.Open(log_path)) {
-        return Strategy::REVERSE_DELTA; // No log = current state
+        LOG_ERROR(LOG_COMPONENT, "ChooseStrategy: CANNOT open log file '%s' - time travel will fail!",
+                  log_path.c_str());
+        return Strategy::FORWARD_REPLAY; // Return forward replay so the actual build will fail clearly
     }
 
     size_t file_size = reader.GetFileSize();
