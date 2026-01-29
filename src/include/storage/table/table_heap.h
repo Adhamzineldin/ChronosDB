@@ -98,10 +98,17 @@ namespace chronosdb {
 
         Iterator Begin(Transaction *txn = nullptr);
         Iterator End();
-        
+
         // Interface compliance - CreateIterator returns a polymorphic iterator
         // Note: For now, use Begin/End directly for best performance
         std::unique_ptr<ITableStorage::Iterator> CreateIterator(Transaction* txn) override;
+
+        // DIAGNOSTIC: Count all tuples by traversing the page chain
+        // Use this to verify SELECT is returning all rows
+        size_t CountAllTuples(Transaction* txn = nullptr) const;
+
+        // DIAGNOSTIC: Verify page chain integrity and count pages
+        size_t CountPages() const;
 
     private:
         IBufferManager *buffer_pool_manager_;

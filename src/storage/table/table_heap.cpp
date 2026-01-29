@@ -31,17 +31,52 @@ namespace chronosdb {
     // --- INSERT (Thread-Safe with RAII PageGuard) ---
     // Issue #1 Fix: Uses PageGuard for automatic pin/unpin on all paths
     // Issue #3 Fix: Releases latch before disk I/O (NewPage) to prevent latch convoy
-    // OPTIMIZATION: Uses last_page_hint_ to skip to the last known page with space
+    // OPTIMIZATION: Uses last_page_hint_ to skip to last known page with space
+    // NOTE: Verification uses SINGLE lock only to avoid deadlocks
     bool TableHeap::InsertTuple(const Tuple &tuple, RID *rid, Transaction *txn) {
         if (first_page_id_ == INVALID_PAGE_ID) return false;
 
-        // OPTIMIZATION: Start from last known page with space (O(1) instead of O(pages))
-        page_id_t curr_page_id = (last_page_hint_ != INVALID_PAGE_ID) ? last_page_hint_ : first_page_id_;
+        // =========================================================================
+        // SAFE OPTIMIZATION: Quick single-lock verification of hint
+        // IMPORTANT: Only acquire ONE lock to avoid deadlocks!
+        // =========================================================================
+        page_id_t start_page = first_page_id_;
+
+        if (last_page_hint_ != INVALID_PAGE_ID) {
+            if (last_page_hint_ == first_page_id_) {
+                // Hint is first page - always valid
+                start_page = first_page_id_;
+            } else {
+                // Quick check: verify hint page exists and has a prev pointer
+                // We only acquire ONE lock to avoid deadlocks with concurrent inserts
+                PageGuard hint_guard(buffer_pool_manager_, last_page_hint_, false);
+                if (hint_guard.IsValid()) {
+                    auto* hint_page = hint_guard.As<TablePage>();
+                    page_id_t hint_prev = hint_page->GetPrevPageId();
+
+                    if (hint_prev != INVALID_PAGE_ID) {
+                        // Hint has a prev pointer - likely valid, use it
+                        start_page = last_page_hint_;
+                    } else {
+                        // Hint has no prev but isn't first page - orphaned!
+                        last_page_hint_ = INVALID_PAGE_ID;
+                    }
+                } else {
+                    // Hint page doesn't exist
+                    last_page_hint_ = INVALID_PAGE_ID;
+                }
+            }
+        }
+
+        // =========================================================================
+        // MAIN INSERT LOOP
+        // =========================================================================
+        page_id_t curr_page_id = start_page;
 
         while (true) {
             PageGuard guard(buffer_pool_manager_, curr_page_id, true);  // Write lock
             if (!guard.IsValid()) {
-                // If hint was invalid, fall back to first page
+                // Page invalid - if we were using hint, fall back to first page
                 if (curr_page_id != first_page_id_) {
                     last_page_hint_ = INVALID_PAGE_ID;
                     curr_page_id = first_page_id_;
@@ -52,11 +87,11 @@ namespace chronosdb {
 
             auto *table_page = guard.As<TablePage>();
 
-            // Try to insert into current page
+            // Try to insert into current page (also reuses deleted slots)
             if (table_page->InsertTuple(tuple, rid, txn)) {
                 guard.SetDirty();
                 last_page_hint_ = curr_page_id;  // Remember this page has space
-                return true;  // PageGuard auto-releases
+                return true;
             }
 
             page_id_t next_page_id = table_page->GetNextPageId();
@@ -65,24 +100,24 @@ namespace chronosdb {
                 // Need to create a new page
                 // Issue #3 Fix: Release current latch BEFORE I/O
                 page_id_t current_page = curr_page_id;
-                guard.Release();  // Explicitly release to avoid holding latch during I/O
+                guard.Release();
 
                 // Allocate new page without holding any latch
                 page_id_t new_page_id;
                 Page *new_page_raw = buffer_pool_manager_->NewPage(&new_page_id);
                 if (new_page_raw == nullptr) return false;
 
-                // Re-acquire latches in order: current, then new
+                // Re-acquire latch on current page
                 PageGuard curr_guard(buffer_pool_manager_, current_page, true);
                 if (!curr_guard.IsValid()) {
                     buffer_pool_manager_->UnpinPage(new_page_id, false);
                     return false;
                 }
 
-                // Check if another thread already added a page
+                // Check if another thread already added a page (race condition)
                 auto *curr_page_data = curr_guard.As<TablePage>();
                 if (curr_page_data->GetNextPageId() != INVALID_PAGE_ID) {
-                    // Another thread beat us - release new page and retry
+                    // Another thread beat us - abandon our page and follow the link
                     buffer_pool_manager_->UnpinPage(new_page_id, false);
                     curr_page_id = curr_page_data->GetNextPageId();
                     continue;
@@ -104,7 +139,7 @@ namespace chronosdb {
                 return true;
             }
 
-            // Move to next page (latch crabbing - current guard releases at end of iteration)
+            // Move to next page
             curr_page_id = next_page_id;
         }
     }
@@ -297,5 +332,51 @@ namespace chronosdb {
     
     std::unique_ptr<ITableStorage::Iterator> TableHeap::CreateIterator(Transaction* txn) {
         return std::make_unique<TableHeapIteratorAdapter>(Begin(txn), End());
+    }
+
+    // ========================================================================
+    // DIAGNOSTIC METHODS
+    // ========================================================================
+
+    size_t TableHeap::CountAllTuples(Transaction* txn) const {
+        size_t total = 0;
+        page_id_t curr_page_id = first_page_id_;
+
+        while (curr_page_id != INVALID_PAGE_ID) {
+            PageGuard guard(buffer_pool_manager_, curr_page_id, false);
+            if (!guard.IsValid()) break;
+
+            auto* table_page = guard.As<TablePage>();
+            uint32_t tuple_count = table_page->GetTupleCount();
+
+            // Count non-deleted tuples
+            for (uint32_t i = 0; i < tuple_count; ++i) {
+                RID rid(curr_page_id, i);
+                Tuple temp;
+                if (table_page->GetTuple(rid, &temp, txn)) {
+                    total++;
+                }
+            }
+
+            curr_page_id = table_page->GetNextPageId();
+        }
+
+        return total;
+    }
+
+    size_t TableHeap::CountPages() const {
+        size_t count = 0;
+        page_id_t curr_page_id = first_page_id_;
+
+        while (curr_page_id != INVALID_PAGE_ID) {
+            PageGuard guard(buffer_pool_manager_, curr_page_id, false);
+            if (!guard.IsValid()) break;
+
+            count++;
+            auto* table_page = guard.As<TablePage>();
+            curr_page_id = table_page->GetNextPageId();
+        }
+
+        return count;
     }
 } // namespace chronosdb
