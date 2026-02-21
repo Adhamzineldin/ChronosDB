@@ -1,6 +1,7 @@
 #include "parser/parser.h"
 #include "parser/lexer.h"
 #include "parser/token.h"
+#include "parser/extended_statements.h"
 #include "common/exception.h"
 
 
@@ -19,6 +20,11 @@ namespace chronosdb {
     std::unique_ptr<Statement> Parser::ParseQuery() {
         // --- DISPATCHER ---
 
+        // 0. EXPLAIN ...
+        if (current_token_.type == TokenType::EXPLAIN) {
+            return ParseExplain();
+        }
+
         // 1. CREATE ...
         if (current_token_.type == TokenType::CREATE) {
             Advance(); // Eat '2E3MEL'
@@ -32,11 +38,20 @@ namespace chronosdb {
             } else if (current_token_.type == TokenType::DATABASE) {
                 Advance(); // Eat 'DATABASE'
                 return ParseCreateDatabase();
+            } else if (current_token_.type == TokenType::HASH) {
+                Advance(); // Eat HASH
+                if (current_token_.type != TokenType::INDEX)
+                    throw Exception(ExceptionType::PARSER, "Expected INDEX after HASH");
+                Advance(); // Eat INDEX
+                return ParseCreateHashIndex();
+            } else if (current_token_.type == TokenType::VIEW) {
+                Advance(); // Eat VIEW
+                return ParseCreateView();
             } else if (current_token_.type == TokenType::USER) {
                 Advance(); // Eat 'USER'
                 return ParseCreateUser();
             }
-            throw Exception(ExceptionType::PARSER, "Expected GADWAL, FEHRIS, DATABASE, or USER after 2E3MEL");
+            throw Exception(ExceptionType::PARSER, "Expected GADWAL, FEHRIS, HASH INDEX, VIEW, DATABASE, or USER after 2E3MEL");
         }
 
         // 2. INSERT
@@ -87,7 +102,11 @@ namespace chronosdb {
                 Advance(); // Eat 'INDEX'
                 return ParseDropIndex();
             }
-            throw Exception(ExceptionType::PARSER, "Expected TABLE, DATABASE, or INDEX after DROP");
+            if (current_token_.type == TokenType::VIEW) {
+                Advance(); // Eat VIEW
+                return ParseDropView();
+            }
+            throw Exception(ExceptionType::PARSER, "Expected TABLE, DATABASE, INDEX, or VIEW after DROP");
         }
         // 6. BEGIN TRANSACTION
         else if (current_token_.type == TokenType::BEGIN_TXN) {
@@ -886,13 +905,22 @@ namespace chronosdb {
             if (Match(TokenType::IN_OP)) {
                 cond.op = "IN";
                 if (!Match(TokenType::L_PAREN)) throw Exception(ExceptionType::PARSER, "Expected ( after FE");
-                while (current_token_.type != TokenType::R_PAREN) {
-                    cond.in_values.push_back(ParseValue());
-                    if (current_token_.type == TokenType::COMMA) Advance();
-                    else if (current_token_.type != TokenType::R_PAREN)
-                        throw Exception(ExceptionType::PARSER, "Expected , or ) in IN clause");
+
+                // Check for subquery: IN (SELECT ...)
+                if (current_token_.type == TokenType::SELECT) {
+                    cond.subquery = ParseSelectSubquery();
+                    if (!Match(TokenType::R_PAREN))
+                        throw Exception(ExceptionType::PARSER, "Expected ) after subquery");
+                } else {
+                    // Regular IN values list
+                    while (current_token_.type != TokenType::R_PAREN) {
+                        cond.in_values.push_back(ParseValue());
+                        if (current_token_.type == TokenType::COMMA) Advance();
+                        else if (current_token_.type != TokenType::R_PAREN)
+                            throw Exception(ExceptionType::PARSER, "Expected , or ) in IN clause");
+                    }
+                    Advance();
                 }
-                Advance();
             } else if (Match(TokenType::EQUALS)) {
                 cond.value = ParseValue();
                 cond.op = "=";
@@ -907,13 +935,13 @@ namespace chronosdb {
 
             if (Match(TokenType::AND)) {
                 cond.next_logic = LogicType::AND;
-                conditions.push_back(cond);
+                conditions.push_back(std::move(cond));
             } else if (Match(TokenType::OR)) {
                 cond.next_logic = LogicType::OR;
-                conditions.push_back(cond);
+                conditions.push_back(std::move(cond));
             } else {
                 cond.next_logic = LogicType::NONE;
-                conditions.push_back(cond);
+                conditions.push_back(std::move(cond));
                 break;
             }
         }
@@ -1237,6 +1265,168 @@ namespace chronosdb {
     }
     
     
+    // ============ SUBQUERY SELECT (no trailing semicolon) ============
+
+    std::unique_ptr<SelectStatement> Parser::ParseSelectSubquery() {
+        auto stmt = std::make_unique<SelectStatement>();
+        Advance(); // Consume SELECT token
+
+        // Check for DISTINCT
+        if (Match(TokenType::DISTINCT)) {
+            stmt->is_distinct_ = true;
+        }
+
+        // Parse SELECT columns
+        if (Match(TokenType::STAR)) {
+            stmt->select_all_ = true;
+        } else {
+            while (true) {
+                if (IsAggregateFunction()) {
+                    stmt->aggregates_.push_back(ParseAggregateFunction());
+                } else if (current_token_.type == TokenType::IDENTIFIER) {
+                    stmt->columns_.push_back(current_token_.text);
+                    Advance();
+                } else {
+                    break;
+                }
+                if (current_token_.type == TokenType::COMMA) {
+                    Advance();
+                } else {
+                    break;
+                }
+            }
+        }
+
+        // FROM clause
+        if (!Match(TokenType::FROM)) throw Exception(ExceptionType::PARSER, "Expected FROM in subquery");
+        stmt->table_name_ = current_token_.text;
+        Advance();
+
+        // WHERE clause (optional)
+        stmt->where_clause_ = ParseWhereClause();
+
+        // GROUP BY (optional)
+        if (Match(TokenType::GROUP)) {
+            if (!Match(TokenType::BY)) throw Exception(ExceptionType::PARSER, "Expected BY after GROUP");
+            stmt->group_by_columns_ = ParseGroupByColumns();
+        }
+
+        // ORDER BY (optional)
+        if (Match(TokenType::ORDER)) {
+            if (!Match(TokenType::BY)) throw Exception(ExceptionType::PARSER, "Expected BY after ORDER");
+            stmt->order_by_ = ParseOrderByClause();
+        }
+
+        // LIMIT (optional)
+        if (Match(TokenType::LIMIT)) {
+            stmt->limit_ = ParseNumber();
+        }
+
+        // No semicolon expected - subquery ends with )
+        return stmt;
+    }
+
+    // ============ HASH INDEX / VIEW / EXPLAIN PARSERS ============
+
+    // Pre-condition: 'CREATE', 'HASH', and 'INDEX' are already consumed.
+    // Expects: IndexName ON TableName ( Column ) ;
+    std::unique_ptr<CreateIndexStatement> Parser::ParseCreateHashIndex() {
+        auto stmt = std::make_unique<CreateIndexStatement>();
+        stmt->index_type_str_ = "HASH";
+
+        if (current_token_.type != TokenType::IDENTIFIER)
+            throw Exception(ExceptionType::PARSER, "Expected Index Name");
+        stmt->index_name_ = current_token_.text;
+        Advance();
+
+        if (!Match(TokenType::ON))
+            throw Exception(ExceptionType::PARSER, "Expected ON");
+
+        if (current_token_.type != TokenType::IDENTIFIER)
+            throw Exception(ExceptionType::PARSER, "Expected Table Name");
+        stmt->table_name_ = current_token_.text;
+        Advance();
+
+        if (!Match(TokenType::L_PAREN))
+            throw Exception(ExceptionType::PARSER, "Expected (");
+        if (current_token_.type != TokenType::IDENTIFIER)
+            throw Exception(ExceptionType::PARSER, "Expected Column Name");
+        stmt->column_name_ = current_token_.text;
+        Advance();
+
+        if (!Match(TokenType::R_PAREN))
+            throw Exception(ExceptionType::PARSER, "Expected )");
+        if (!Match(TokenType::SEMICOLON))
+            throw Exception(ExceptionType::PARSER, "Expected ;");
+
+        return stmt;
+    }
+
+    // Pre-condition: 'CREATE' and 'VIEW' are already consumed.
+    // Expects: ViewName AS SELECT ... ;
+    std::unique_ptr<Statement> Parser::ParseCreateView() {
+        auto stmt = std::make_unique<CreateViewStatement>();
+
+        if (current_token_.type != TokenType::IDENTIFIER)
+            throw Exception(ExceptionType::PARSER, "Expected View Name");
+        stmt->view_name_ = current_token_.text;
+        Advance();
+
+        if (!Match(TokenType::AS))
+            throw Exception(ExceptionType::PARSER, "Expected AS after View Name");
+
+        // Capture the rest of the query as the view's select statement
+        // We need to capture the raw text from this point forward until the semicolon
+        std::string select_query;
+        while (current_token_.type != TokenType::SEMICOLON &&
+               current_token_.type != TokenType::EOF_TOKEN) {
+            if (!select_query.empty()) select_query += " ";
+            select_query += current_token_.text;
+            Advance();
+        }
+
+        if (!Match(TokenType::SEMICOLON))
+            throw Exception(ExceptionType::PARSER, "Expected ;");
+
+        stmt->select_query_ = select_query;
+        return stmt;
+    }
+
+    // Pre-condition: 'DROP' and 'VIEW' are already consumed.
+    // Expects: ViewName ;
+    std::unique_ptr<Statement> Parser::ParseDropView() {
+        auto stmt = std::make_unique<DropViewStatement>();
+
+        if (current_token_.type != TokenType::IDENTIFIER)
+            throw Exception(ExceptionType::PARSER, "Expected View Name after DROP VIEW");
+        stmt->view_name_ = current_token_.text;
+        Advance();
+
+        if (!Match(TokenType::SEMICOLON))
+            throw Exception(ExceptionType::PARSER, "Expected ;");
+
+        return stmt;
+    }
+
+    // Pre-condition: 'EXPLAIN' is the current token (not yet consumed).
+    // Expects: EXPLAIN [ANALYZE] <query> ;
+    std::unique_ptr<Statement> Parser::ParseExplain() {
+        Advance(); // Eat EXPLAIN
+
+        auto stmt = std::make_unique<ExplainStatement>();
+
+        // Check for optional ANALYZE keyword
+        if (current_token_.type == TokenType::ANALYZE) {
+            stmt->analyze_ = true;
+            Advance(); // Eat ANALYZE
+        }
+
+        // Parse the inner query statement
+        stmt->query_statement_ = ParseQuery();
+
+        return stmt;
+    }
+
     uint64_t Parser::ParseHumanDateToMicros(const std::string& date_str) {
         int day = 0, month = 0, year = 0, hour = 0, minute = 0, second = 0;
         

@@ -292,16 +292,22 @@ ExecutionResult DDLExecutor::CreateIndex(CreateIndexStatement* stmt) {
         }
     }
     
-    // Create the index
-    auto* index = catalog_->CreateIndex(stmt->index_name_, stmt->table_name_, stmt->column_name_);
+    // Create the index with type
+    IndexInfo* index = nullptr;
+    if (!stmt->index_type_str_.empty() && stmt->index_type_str_ == "HASH") {
+        index = catalog_->CreateIndex(stmt->index_name_, stmt->table_name_, stmt->column_name_, "HASH");
+    } else {
+        index = catalog_->CreateIndex(stmt->index_name_, stmt->table_name_, stmt->column_name_);
+    }
     if (!index) {
         return ExecutionResult::Error("[DDL] Failed to create index: " + stmt->index_name_);
     }
-    
+
     // Persist catalog changes
     catalog_->SaveCatalog();
-    
-    return ExecutionResult::Message("CREATE INDEX SUCCESS");
+
+    std::string type_str = (index->index_type_ == IndexType::HASH) ? "HASH " : "";
+    return ExecutionResult::Message("CREATE " + type_str + "INDEX SUCCESS");
 }
 
 ExecutionResult DDLExecutor::DropIndex(const std::string& index_name) {
@@ -487,6 +493,46 @@ ExecutionResult DDLExecutor::ListTables() {
     }
     
     return ExecutionResult::Data(rs);
+}
+
+// ============================================================================
+// VIEW OPERATIONS
+// ============================================================================
+
+ExecutionResult DDLExecutor::CreateView(const std::string& view_name, const std::string& select_query) {
+    if (!catalog_) {
+        return ExecutionResult::Error("[DDL] Internal error: Catalog not initialized");
+    }
+
+    if (view_name.empty()) {
+        return ExecutionResult::Error("[DDL] View name cannot be empty");
+    }
+
+    if (select_query.empty()) {
+        return ExecutionResult::Error("[DDL] View query cannot be empty");
+    }
+
+    bool success = catalog_->CreateView(view_name, select_query);
+    if (!success) {
+        return ExecutionResult::Error("[DDL] View already exists: " + view_name);
+    }
+
+    catalog_->SaveCatalog();
+    return ExecutionResult::Message("CREATE VIEW SUCCESS");
+}
+
+ExecutionResult DDLExecutor::DropView(const std::string& view_name) {
+    if (!catalog_) {
+        return ExecutionResult::Error("[DDL] Internal error: Catalog not initialized");
+    }
+
+    bool success = catalog_->DropView(view_name);
+    if (!success) {
+        return ExecutionResult::Error("[DDL] View not found: " + view_name);
+    }
+
+    catalog_->SaveCatalog();
+    return ExecutionResult::Message("DROP VIEW SUCCESS");
 }
 
 // ============================================================================

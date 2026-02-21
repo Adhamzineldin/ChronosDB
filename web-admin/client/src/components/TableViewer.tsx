@@ -67,7 +67,8 @@ export default function TableViewer({ currentDb, selectedTable, onSelectTable }:
     try {
       const result = await api.getTables();
       if (result.data) {
-        setTables(result.data.rows.map(r => r[0]));
+        // Filter to only show TABLEs (not VIEWs)
+        setTables(result.data.rows.filter(r => r[1] !== 'VIEW').map(r => r[0]));
       }
     } catch {}
   }, []);

@@ -227,6 +227,44 @@ app.get('/api/tables/:name/data', requireAuth, async (req, res) => {
 });
 
 // ────────────────────────────────────────────
+// VIEW ROUTES
+// ────────────────────────────────────────────
+app.post('/api/views', requireAuth, async (req, res) => {
+  try {
+    const { name, query } = req.body;
+    if (!name || !query) {
+      res.status(400).json({ success: false, error: 'View name and query are required' });
+      return;
+    }
+    const client = await getClient(req);
+    const result = await client.query(`CREATE VIEW ${name} AS ${query}`);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.delete('/api/views/:name', requireAuth, async (req, res) => {
+  try {
+    const client = await getClient(req);
+    const result = await client.query(`DROP VIEW ${req.params.name}`);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/views/:name/data', requireAuth, async (req, res) => {
+  try {
+    const client = await getClient(req);
+    const result = await client.query(`SELECT * FROM ${req.params.name}`);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ────────────────────────────────────────────
 // QUERY ROUTE
 // ────────────────────────────────────────────
 app.post('/api/query', requireAuth, async (req, res) => {

@@ -18,6 +18,10 @@
 
 #include "execution/execution_engine.h"
 
+// Parser (for extended statement types)
+#include "parser/statement.h"
+#include "parser/extended_statements.h"
+
 // Specialized Executors (SOLID - SRP)
 #include "execution/ddl_executor.h"
 #include "execution/dml_executor.h"
@@ -33,6 +37,12 @@
 
 // AI Layer
 #include "ai/ai_manager.h"
+#include "ai/learning/learning_engine.h"
+#include "ai/learning/bandit.h"
+
+// Catalog
+#include "catalog/table_metadata.h"
+#include "catalog/index_info.h"
 
 // Common
 #include "common/exception.h"
@@ -40,6 +50,7 @@
 #include <sstream>
 #include <iostream>
 #include <chrono>
+#include <iomanip>
 #include <unordered_map>
 #include <functional>
 
@@ -223,6 +234,126 @@ namespace chronosdb {
 
         dispatch_map_[StatementType::SHOW_EXECUTION_STATS] = [this](Statement *s, SessionContext *ctx, Transaction *t) {
             return system_executor_->ShowExecutionStats(dynamic_cast<ShowExecutionStatsStatement *>(s));
+        };
+
+        // ----- VIEW OPERATIONS -----
+        dispatch_map_[StatementType::CREATE_VIEW] = [this](Statement *s, SessionContext *ctx, Transaction *t) {
+            auto* view_stmt = dynamic_cast<CreateViewStatement*>(s);
+            if (!view_stmt) return ExecutionResult::Error("[DDL] Invalid CREATE VIEW statement");
+            return ddl_executor_->CreateView(view_stmt->view_name_, view_stmt->select_query_);
+        };
+
+        dispatch_map_[StatementType::DROP_VIEW] = [this](Statement *s, SessionContext *ctx, Transaction *t) {
+            auto* view_stmt = dynamic_cast<DropViewStatement*>(s);
+            if (!view_stmt) return ExecutionResult::Error("[DDL] Invalid DROP VIEW statement");
+            return ddl_executor_->DropView(view_stmt->view_name_);
+        };
+
+        // ----- EXPLAIN / EXPLAIN ANALYZE -----
+        dispatch_map_[StatementType::EXPLAIN] = [this](Statement *s, SessionContext *ctx, Transaction *t) {
+            auto* explain = dynamic_cast<ExplainStatement*>(s);
+            if (!explain || !explain->query_statement_) return ExecutionResult::Error("[EXPLAIN] Invalid statement");
+
+            StatementType inner_type = explain->query_statement_->GetType();
+            auto rs = std::make_shared<ResultSet>();
+
+            if (inner_type == StatementType::SELECT) {
+                auto* select = dynamic_cast<SelectStatement*>(explain->query_statement_.get());
+                if (!select) return ExecutionResult::Error("[EXPLAIN] Invalid SELECT");
+
+                // Gather table metadata
+                TableMetadata* table_info = catalog_->GetTable(select->table_name_);
+                std::string est_rows = table_info ? "~?" : "?";
+
+                // Determine scan strategy
+                std::string scan_op = "SEQ SCAN";
+                std::string scan_detail = select->table_name_;
+                std::string ai_insight = "";
+
+                // Check for index
+                if (!select->where_clause_.empty() && select->where_clause_[0].op == "=") {
+                    auto indexes = catalog_->GetTableIndexes(select->table_name_);
+                    for (auto* idx : indexes) {
+                        if (idx->col_name_ == select->where_clause_[0].column) {
+                            std::string idx_type_str = (idx->index_type_ == IndexType::HASH) ? "Hash" : "B+ Tree";
+                            scan_op = (idx->index_type_ == IndexType::HASH) ? "HASH SCAN" : "INDEX SCAN";
+                            scan_detail = idx->name_ + " (" + idx_type_str + ")";
+                            est_rows = "~1";
+                            break;
+                        }
+                    }
+                }
+
+                // AI insights from UCB1 bandit
+                {
+                    auto& ai_mgr = ai::AIManager::Instance();
+                    if (ai_mgr.IsInitialized() && ai_mgr.GetLearningEngine()) {
+                        auto arm_stats = ai_mgr.GetLearningEngine()->GetArmStats();
+                        for (const auto& arm : arm_stats) {
+                            if (arm.strategy == ai::ScanStrategy::INDEX_SCAN && scan_op != "SEQ SCAN") {
+                                std::ostringstream oss;
+                                oss << std::fixed << std::setprecision(0)
+                                    << "UCB1: " << (arm.average_reward * 100) << "% confidence";
+                                ai_insight = oss.str();
+                                break;
+                            } else if (arm.strategy == ai::ScanStrategy::SEQUENTIAL_SCAN && scan_op == "SEQ SCAN") {
+                                std::ostringstream oss;
+                                oss << std::fixed << std::setprecision(0)
+                                    << "UCB1: " << (arm.average_reward * 100) << "% confidence";
+                                ai_insight = oss.str();
+                                break;
+                            }
+                        }
+                        if (ai_insight.empty()) ai_insight = "No AI data yet";
+                    } else {
+                        ai_insight = "AI inactive";
+                    }
+                }
+
+                if (explain->analyze_) {
+                    // EXPLAIN ANALYZE: actually run the query and measure timing
+                    rs->column_names = {"Step", "Operation", "Est. Rows", "Act. Rows", "Time (ms)", "AI Insight"};
+
+                    auto start = std::chrono::high_resolution_clock::now();
+                    auto result = dml_executor_->Select(select, ctx, t);
+                    auto end = std::chrono::high_resolution_clock::now();
+                    double elapsed_ms = std::chrono::duration<double, std::milli>(end - start).count();
+
+                    std::string actual_rows = "0";
+                    if (result.success && result.result_set) {
+                        actual_rows = std::to_string(result.result_set->rows.size());
+                    }
+
+                    std::ostringstream time_oss;
+                    time_oss << std::fixed << std::setprecision(2) << elapsed_ms;
+
+                    rs->AddRow({"1", scan_op, est_rows, actual_rows, time_oss.str(), ai_insight});
+
+                    if (!select->where_clause_.empty()) {
+                        std::string filter_detail = select->where_clause_[0].column + " "
+                                                    + select->where_clause_[0].op + " ?";
+                        rs->AddRow({"2", "FILTER", est_rows, actual_rows, "0.00", "Selectivity: " + actual_rows + "/" + est_rows});
+                    }
+
+                    // Total row
+                    rs->AddRow({"Total", "", "", actual_rows, time_oss.str() + "ms", ""});
+                } else {
+                    // EXPLAIN: just show the plan
+                    rs->column_names = {"Step", "Operation", "Details", "Est. Rows", "AI Insight"};
+                    rs->AddRow({"1", scan_op, scan_detail, est_rows, ai_insight});
+
+                    if (!select->where_clause_.empty()) {
+                        std::string filter_detail = select->where_clause_[0].column + " "
+                                                    + select->where_clause_[0].op + " ?";
+                        rs->AddRow({"2", "FILTER", filter_detail, est_rows, ""});
+                    }
+                }
+            } else {
+                rs->column_names = {"Step", "Operation", "Details"};
+                rs->AddRow({"1", "EXECUTE", "Statement type " + std::to_string(static_cast<int>(inner_type))});
+            }
+
+            return ExecutionResult::Data(rs);
         };
 
         // ----- SERVER CONTROL -----

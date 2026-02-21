@@ -67,6 +67,16 @@ public:
      * Drop an index.
      */
     ExecutionResult DropIndex(const std::string& index_name);
+
+    /**
+     * Create a view.
+     */
+    ExecutionResult CreateView(const std::string& view_name, const std::string& select_query);
+
+    /**
+     * Drop a view.
+     */
+    ExecutionResult DropView(const std::string& view_name);
     
     // ========================================================================
     // SCHEMA INSPECTION

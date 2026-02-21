@@ -384,6 +384,25 @@ namespace chronosdb {
         {"E7SA2EYAT",  TokenType::STATS},        // Franco: "e7sa2eyat" = statistics
 
         // =====================================================================
+        // HASH INDEX
+        // =====================================================================
+        {"HASH",       TokenType::HASH},
+
+        // =====================================================================
+        // VIEWS
+        // =====================================================================
+        {"VIEW",       TokenType::VIEW},
+        {"MANZAR",     TokenType::VIEW},
+
+        // =====================================================================
+        // EXPLAIN / ANALYZE
+        // =====================================================================
+        {"EXPLAIN",    TokenType::EXPLAIN},
+        {"SHAREH",     TokenType::EXPLAIN},
+        {"ANALYZE",    TokenType::ANALYZE},
+        {"7ALLEL",     TokenType::ANALYZE},
+
+        // =====================================================================
         // SERVER CONTROL
         // =====================================================================
         {"STOP",       TokenType::STOP},
@@ -603,6 +622,12 @@ namespace chronosdb {
             case TokenType::OF:         return "OF";
             case TokenType::STOP:       return "STOP";
             case TokenType::SHUTDOWN:   return "SHUTDOWN";
+
+            // Hash Index / Views / Explain / Analyze
+            case TokenType::HASH:       return "HASH";
+            case TokenType::VIEW:       return "VIEW";
+            case TokenType::EXPLAIN:    return "EXPLAIN";
+            case TokenType::ANALYZE:    return "ANALYZE";
 
             // AI Layer
             case TokenType::AI:         return "AI";

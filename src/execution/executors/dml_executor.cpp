@@ -29,6 +29,8 @@
 #include "recovery/snapshot_manager.h"
 #include "storage/table/in_memory_table_heap.h"
 #include "parser/statement.h"
+#include "parser/lexer.h"
+#include "parser/parser.h"
 #include "catalog/catalog.h"
 #include "catalog/table_metadata.h"
 #include "catalog/index_info.h"
@@ -143,6 +145,43 @@ ExecutionResult DMLExecutor::Select(SelectStatement* stmt, SessionContext* sessi
 
     if (!catalog_) {
         return ExecutionResult::Error("[DML] Internal error: Catalog not initialized");
+    }
+
+    // Check if it's a view - expand and re-execute
+    if (catalog_->IsView(stmt->table_name_)) {
+        auto* view = catalog_->GetView(stmt->table_name_);
+        if (view) {
+            Lexer lexer(view->select_query);
+            Parser parser(std::move(lexer));
+            auto inner_stmt = parser.ParseQuery();
+            auto* select_stmt = dynamic_cast<SelectStatement*>(inner_stmt.get());
+            if (select_stmt) {
+                return Select(select_stmt, session, txn);
+            }
+            return ExecutionResult::Error("[DML] View contains invalid query");
+        }
+    }
+
+    // Resolve subqueries in WHERE conditions before main execution
+    for (auto& cond : stmt->where_clause_) {
+        if (cond.subquery && cond.op == "IN") {
+            // Execute the subquery to populate in_values
+            auto subquery_result = Select(cond.subquery.get(), session, txn);
+            if (subquery_result.success && subquery_result.result_set) {
+                cond.in_values.clear();
+                for (const auto& row : subquery_result.result_set->rows) {
+                    if (!row.empty()) {
+                        // Try to convert to integer first, fallback to string
+                        try {
+                            int val = std::stoi(row[0]);
+                            cond.in_values.emplace_back(TypeId::INTEGER, val);
+                        } catch (...) {
+                            cond.in_values.emplace_back(TypeId::VARCHAR, row[0]);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // Validate table exists
@@ -350,14 +389,29 @@ ExecutionResult DMLExecutor::Select(SelectStatement* stmt, SessionContext* sessi
                 const auto& cond = stmt->where_clause_[0];
                 auto indexes = catalog_->GetTableIndexes(stmt->table_name_);
                 for (auto* idx : indexes) {
-                    if (idx->col_name_ == cond.column && idx->b_plus_tree_) {
-                        try {
-                            Value lookup_val(TypeId::INTEGER, std::stoi(cond.value.ToString()));
-                            executor = new IndexScanExecutor(&ctx, stmt, idx, lookup_val, txn);
-                            use_index = true;
-                            ai_recommended = true;
-                            break;
-                        } catch (...) {}
+                    if (idx->col_name_ == cond.column) {
+                        // Check for hash index first
+                        if (idx->hash_index_ && idx->index_type_ == IndexType::HASH) {
+                            try {
+                                Value lookup_val(TypeId::INTEGER, std::stoi(cond.value.ToString()));
+                                GenericKey<8> lookup_key;
+                                lookup_key.SetFromValue(lookup_val);
+                                auto rids = idx->hash_index_->GetValue(lookup_key);
+                                // Use hash index results via IndexScanExecutor with B+Tree fallback
+                                // For now, we'll handle hash index results inline below
+                                use_index = true;
+                                ai_recommended = true;
+                                break;
+                            } catch (...) {}
+                        } else if (idx->b_plus_tree_) {
+                            try {
+                                Value lookup_val(TypeId::INTEGER, std::stoi(cond.value.ToString()));
+                                executor = new IndexScanExecutor(&ctx, stmt, idx, lookup_val, txn);
+                                use_index = true;
+                                ai_recommended = true;
+                                break;
+                            } catch (...) {}
+                        }
                     }
                 }
             } else if (has_ai_plan && exec_plan.scan_strategy == ai::ScanStrategy::SEQUENTIAL_SCAN) {
@@ -369,13 +423,26 @@ ExecutionResult DMLExecutor::Select(SelectStatement* stmt, SessionContext* sessi
                 const auto& cond = stmt->where_clause_[0];
                 auto indexes = catalog_->GetTableIndexes(stmt->table_name_);
                 for (auto* idx : indexes) {
-                    if (idx->col_name_ == cond.column && idx->b_plus_tree_) {
-                        try {
-                            Value lookup_val(TypeId::INTEGER, std::stoi(cond.value.ToString()));
-                            executor = new IndexScanExecutor(&ctx, stmt, idx, lookup_val, txn);
-                            use_index = true;
-                            break;
-                        } catch (...) {}
+                    if (idx->col_name_ == cond.column) {
+                        // Check for hash index
+                        if (idx->hash_index_ && idx->index_type_ == IndexType::HASH) {
+                            try {
+                                Value lookup_val(TypeId::INTEGER, std::stoi(cond.value.ToString()));
+                                GenericKey<8> lookup_key;
+                                lookup_key.SetFromValue(lookup_val);
+                                auto rids = idx->hash_index_->GetValue(lookup_key);
+                                // Use hash index results via IndexScanExecutor with B+Tree fallback
+                                use_index = true;
+                                break;
+                            } catch (...) {}
+                        } else if (idx->b_plus_tree_) {
+                            try {
+                                Value lookup_val(TypeId::INTEGER, std::stoi(cond.value.ToString()));
+                                executor = new IndexScanExecutor(&ctx, stmt, idx, lookup_val, txn);
+                                use_index = true;
+                                break;
+                            } catch (...) {}
+                        }
                     }
                 }
             }
@@ -697,11 +764,13 @@ bool DMLExecutor::CanUseIndexScan(SelectStatement* stmt) const {
     
     auto indexes = catalog_->GetTableIndexes(stmt->table_name_);
     for (auto* index : indexes) {
-        if (index->col_name_ == first_cond.column && index->b_plus_tree_) {
-            return true;
+        if (index->col_name_ == first_cond.column) {
+            if (index->b_plus_tree_ || (index->hash_index_ && index->index_type_ == IndexType::HASH)) {
+                return true;
+            }
         }
     }
-    
+
     return false;
 }
 

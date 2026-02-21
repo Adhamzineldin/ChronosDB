@@ -110,6 +110,8 @@ export default function SQLEditor({ currentDb }: SQLEditorProps) {
               <button className="btn-link" onClick={() => loadExample('SHOW STATUS')}>SHOW STATUS</button>
               <button className="btn-link" onClick={() => loadExample('SHOW AI STATUS')}>AI STATUS</button>
               <button className="btn-link" onClick={() => loadExample('SHOW ANOMALIES')}>ANOMALIES</button>
+              <button className="btn-link" onClick={() => loadExample('EXPLAIN SELECT * FROM ')}>EXPLAIN</button>
+              <button className="btn-link" onClick={() => loadExample('EXPLAIN ANALYZE SELECT * FROM ')}>EXPLAIN ANALYZE</button>
             </div>
           </div>
         </div>

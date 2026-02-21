@@ -34,7 +34,8 @@ export default function DatabaseBrowser({ currentDb, onUseDatabase, onViewTable 
     try {
       const result = await api.getTables();
       if (result.data) {
-        setTables(result.data.rows.map(r => r[0]));
+        // Filter to only show TABLEs (not VIEWs) - views have their own page
+        setTables(result.data.rows.filter(r => r[1] !== 'VIEW').map(r => r[0]));
       }
     } catch {
       setTables([]);

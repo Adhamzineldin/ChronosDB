@@ -17,6 +17,7 @@ const NAV_ITEMS: { id: Page; label: string; icon: string }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: '⊞' },
   { id: 'databases', label: 'Databases', icon: '⛁' },
   { id: 'tables', label: 'Tables', icon: '☰' },
+  { id: 'views', label: 'Views', icon: '◇' },
   { id: 'query', label: 'SQL Editor', icon: '⟩_' },
   { id: 'testing', label: 'Testing', icon: '🧪' },
   { id: 'users', label: 'Users', icon: '⊕' },

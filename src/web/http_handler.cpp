@@ -299,6 +299,8 @@ HttpResponse HttpHandler::Route(const HttpRequest& req) {
     if (p == "/api/databases/use" && req.method == HttpMethod::POST) return HandleUseDatabase(req);
     if (p == "/api/databases/create" && req.method == HttpMethod::POST) return HandleCreateDatabase(req);
     if (p == "/api/tables" && req.method == HttpMethod::GET) return HandleGetTables(req);
+    if (p == "/api/views" && req.method == HttpMethod::GET) return HandleGetViews(req);
+    if (p == "/api/views" && req.method == HttpMethod::POST) return HandleCreateView(req);
     if (p == "/api/query" && req.method == HttpMethod::POST) return HandleQuery(req);
     if (p == "/api/query/batch" && req.method == HttpMethod::POST) return HandleBatchQuery(req);
     if (p == "/api/users" && req.method == HttpMethod::GET) return HandleGetUsers(req);
@@ -320,6 +322,20 @@ HttpResponse HttpHandler::Route(const HttpRequest& req) {
                 return HandleGetTableSchema(req, table_name);
             if (action == "data" && req.method == HttpMethod::GET)
                 return HandleGetTableData(req, table_name);
+        }
+    }
+
+    // Pattern routes: /api/views/:name (DELETE), /api/views/:name/data (GET)
+    if (p.rfind("/api/views/", 0) == 0 && p.size() > 11) {
+        std::string rest = p.substr(11);
+        size_t slash = rest.find('/');
+        if (slash != std::string::npos) {
+            std::string view_name = rest.substr(0, slash);
+            std::string action = rest.substr(slash + 1);
+            if (action == "data" && req.method == HttpMethod::GET)
+                return HandleGetViewData(req, view_name);
+        } else if (req.method == HttpMethod::DELETE_METHOD) {
+            return HandleDropView(req, rest);
         }
     }
 
@@ -529,6 +545,106 @@ HttpResponse HttpHandler::HandleGetTableData(const HttpRequest& req, const std::
                 extra += ",\n  \"truncated\": true";
             }
             json.insert(close, extra);
+        }
+    }
+    resp.SetJson(json);
+    return resp;
+}
+
+HttpResponse HttpHandler::HandleGetViews(const HttpRequest& req) {
+    auto* session = GetSession(req);
+    HttpResponse resp;
+    if (!session) { resp.SetError(401, "Not authenticated"); return resp; }
+
+    // Resolve catalog for the current database to get view names
+    Catalog* cat = nullptr;
+    if (registry_ && !session->context->current_db.empty()) {
+        if (auto entry = registry_->Get(session->context->current_db)) {
+            cat = entry->catalog.get();
+        }
+        if (!cat) {
+            cat = registry_->ExternalCatalog(session->context->current_db);
+        }
+    }
+    if (!cat) cat = catalog_;
+
+    if (!cat) {
+        resp.SetError(400, "No database selected");
+        return resp;
+    }
+
+    auto view_names = cat->GetAllViewNames();
+    std::sort(view_names.begin(), view_names.end());
+
+    auto rs = std::make_shared<ResultSet>();
+    rs->column_names = {"View_Name", "Type"};
+    for (const auto& name : view_names) {
+        rs->AddRow({name, "VIEW"});
+    }
+
+    ExecutionResult result;
+    result.success = true;
+    result.result_set = rs;
+    resp.SetJson(ResultToJson(result));
+    return resp;
+}
+
+HttpResponse HttpHandler::HandleCreateView(const HttpRequest& req) {
+    auto* session = GetSession(req);
+    HttpResponse resp;
+    if (!session) { resp.SetError(401, "Not authenticated"); return resp; }
+
+    std::string name = ParseJsonField(req.body, "name");
+    std::string query = ParseJsonField(req.body, "query");
+
+    if (name.empty() || query.empty()) {
+        resp.SetError(400, "View name and query are required");
+        return resp;
+    }
+
+    std::string sql = "CREATE VIEW " + name + " AS " + query;
+    if (sql.back() != ';') sql += ';';
+    auto result = ExecuteSQL(sql, session);
+    resp.SetJson(ResultToJson(result));
+    return resp;
+}
+
+HttpResponse HttpHandler::HandleDropView(const HttpRequest& req, const std::string& view_name) {
+    auto* session = GetSession(req);
+    HttpResponse resp;
+    if (!session) { resp.SetError(401, "Not authenticated"); return resp; }
+
+    auto result = ExecuteSQL("DROP VIEW " + view_name + ";", session);
+    resp.SetJson(ResultToJson(result));
+    return resp;
+}
+
+HttpResponse HttpHandler::HandleGetViewData(const HttpRequest& req, const std::string& view_name) {
+    auto* session = GetSession(req);
+    HttpResponse resp;
+    if (!session) { resp.SetError(401, "Not authenticated"); return resp; }
+
+    auto result = ExecuteSQL("SELECT * FROM " + view_name + ";", session);
+
+    static constexpr size_t MAX_VIEW_ROWS = 1000;
+    bool truncated = false;
+    size_t total_rows = 0;
+    if (result.success && result.result_set) {
+        total_rows = result.result_set->rows.size();
+        if (total_rows > MAX_VIEW_ROWS) {
+            result.result_set->rows.resize(MAX_VIEW_ROWS);
+            truncated = true;
+        }
+    }
+
+    std::string json = ResultToJson(result);
+    if (truncated && json.size() > 2) {
+        size_t close = json.rfind('}');
+        if (close != std::string::npos) {
+            json.insert(close,
+                ",\n  \"truncated\": true,\n  \"total_rows\": " +
+                std::to_string(total_rows) +
+                ",\n  \"max_rows\": " + std::to_string(MAX_VIEW_ROWS));
         }
     }
     resp.SetJson(json);

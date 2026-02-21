@@ -3,49 +3,11 @@
 #include <string>
 #include <vector>
 #include "parser/statement.h"
-#include "storage/table/column.h"
-#include "catalog/foreign_key.h"
 
 namespace chronosdb {
 
-/**
- * ALTER TABLE Statement: Modify table structure
- * 
- * Supports:
- * - ADD COLUMN
- * - DROP COLUMN
- * - ADD FOREIGN KEY
- * - DROP FOREIGN KEY
- * - RENAME COLUMN
- * - RENAME TABLE
- */
-class AlterTableStatement : public Statement {
-public:
-    enum class AlterType {
-        ADD_COLUMN,
-        DROP_COLUMN,
-        ADD_FOREIGN_KEY,
-        DROP_FOREIGN_KEY,
-        ADD_CONSTRAINT,
-        DROP_CONSTRAINT,
-        RENAME_TABLE,
-        RENAME_COLUMN
-    };
-
-    StatementType GetType() const override { return StatementType::CREATE; }
-
-    std::string table_name_;
-    std::string new_table_name_;           // For RENAME TABLE
-    
-    AlterType operation_;
-    
-    Column new_column_;                    // For ADD COLUMN
-    std::string column_to_drop_;           // For DROP COLUMN
-    std::string old_column_name_;          // For RENAME COLUMN
-    std::string new_column_name_;
-    
-    ForeignKeyConstraint fk_constraint_;   // For ADD/DROP FK
-};
+// NOTE: AlterTableStatement is defined in statement.h (the primary definition used by the engine).
+// The extended version with FK support was merged into that definition.
 
 /**
  * TRUNCATE Statement: Delete all rows from table
@@ -89,7 +51,7 @@ public:
  */
 class CreateViewStatement : public Statement {
 public:
-    StatementType GetType() const override { return StatementType::CREATE; }
+    StatementType GetType() const override { return StatementType::CREATE_VIEW; }
 
     std::string view_name_;
     std::string select_query_;             // The underlying SELECT
@@ -116,10 +78,10 @@ public:
  */
 class ExplainStatement : public Statement {
 public:
-    StatementType GetType() const override { return StatementType::SHOW_STATUS; }
+    StatementType GetType() const override { return StatementType::EXPLAIN; }
 
     std::unique_ptr<Statement> query_statement_;
-    bool detailed_ = false;  // EXPLAIN DETAIL
+    bool analyze_ = false;  // EXPLAIN ANALYZE
 };
 
 /**

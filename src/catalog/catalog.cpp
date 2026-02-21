@@ -8,6 +8,7 @@
 #include "storage/table/tuple.h"
 #include "common/value.h"
 #include "storage/index/index_key.h"
+#include "storage/index/hash_index.h"
 #include "recovery/log_record.h"
 #include <iostream>
 #include <sstream>
@@ -98,6 +99,51 @@ IndexInfo *Catalog::CreateIndex(const std::string &index_name, const std::string
     return ptr;
 }
 
+IndexInfo *Catalog::CreateIndex(const std::string &index_name, const std::string &table_name,
+                                 const std::string &col_name, const std::string &index_type) {
+    std::lock_guard<std::mutex> lock(latch_);
+    if (names_to_oid_.find(table_name) == names_to_oid_.end()) return nullptr;
+    if (index_names_.find(index_name) != index_names_.end()) return nullptr;
+
+    auto *table = tables_[names_to_oid_[table_name]].get();
+    int col_idx = table->schema_.GetColIdx(col_name);
+    if (col_idx == -1) return nullptr;
+    TypeId type = table->schema_.GetColumn(col_idx).GetType();
+
+    IndexType idx_type = (index_type == "HASH") ? IndexType::HASH : IndexType::BTREE;
+    auto index_info = std::make_unique<IndexInfo>(index_name, table_name, col_name, type, bpm_, idx_type);
+    IndexInfo *ptr = index_info.get();
+
+    // Populate with existing data
+    page_id_t curr_page_id = table->first_page_id_;
+    while (curr_page_id != INVALID_PAGE_ID) {
+        Page *page = bpm_->FetchPage(curr_page_id);
+        if (!page) break;
+        auto *table_page = reinterpret_cast<TablePage *>(page->GetData());
+        for (uint32_t slot = 0; slot < table_page->GetTupleCount(); slot++) {
+            RID rid(curr_page_id, slot);
+            Tuple tuple;
+            if (table_page->GetTuple(rid, &tuple, nullptr)) {
+                Value key_val = tuple.GetValue(table->schema_, col_idx);
+                GenericKey<8> key;
+                key.SetFromValue(key_val);
+                if (idx_type == IndexType::HASH) {
+                    ptr->hash_index_->Insert(key, rid);
+                } else {
+                    ptr->b_plus_tree_->Insert(key, rid, nullptr);
+                }
+            }
+        }
+        page_id_t next_page = table_page->GetNextPageId();
+        bpm_->UnpinPage(curr_page_id, false);
+        curr_page_id = next_page;
+    }
+
+    indexes_[index_name] = std::move(index_info);
+    index_names_[index_name] = ptr;
+    return ptr;
+}
+
 std::vector<IndexInfo*> Catalog::GetTableIndexes(const std::string &table_name) {
      std::lock_guard<std::mutex> lock(latch_);
      std::vector<IndexInfo*> result;
@@ -150,10 +196,30 @@ void Catalog::SaveCatalog() {
         ss << "\n";
     }
 
-    // Serialize Indexes
+    // Serialize Indexes (with index type support)
     for (auto &pair : indexes_) {
         IndexInfo *idx = pair.second.get();
-        ss << "INDEX " << idx->name_ << " " << idx->table_name_ << " " << idx->col_name_ << " " << idx->b_plus_tree_->GetRootPageId() << "\n";
+        page_id_t root_page;
+        if (idx->index_type_ == IndexType::HASH && idx->hash_index_) {
+            root_page = idx->hash_index_->GetDirectoryPageId();
+        } else if (idx->b_plus_tree_) {
+            root_page = idx->b_plus_tree_->GetRootPageId();
+        } else {
+            root_page = INVALID_PAGE_ID;
+        }
+        ss << "INDEX " << idx->name_ << " " << idx->table_name_ << " " << idx->col_name_
+           << " " << root_page << " " << static_cast<int>(idx->index_type_) << "\n";
+    }
+
+    // Serialize Views
+    for (auto &pair : views_) {
+        ViewInfo *view = pair.second.get();
+        // Encode the query: replace spaces with \x20 for single-line storage
+        std::string encoded_query = view->select_query;
+        for (auto &ch : encoded_query) {
+            if (ch == ' ') ch = '\x01'; // Use SOH as space placeholder
+        }
+        ss << "VIEW " << view->name << " " << encoded_query << "\n";
     }
 
     // 2. Handover string to DiskManager for Secure Write
@@ -238,33 +304,108 @@ void Catalog::LoadCatalog() {
             page_id_t root_page;
             in >> name >> table >> col >> root_page;
 
+            // Try to read optional index type field (new format)
+            int idx_type_int = 0; // Default to BTREE
+            std::streampos pos_before_type = in.tellg();
+            if (in.peek() != EOF && in.peek() != '\n') {
+                if (!(in >> idx_type_int)) {
+                    in.clear();
+                    in.seekg(pos_before_type);
+                    idx_type_int = 0; // Default to BTREE
+                }
+            }
+
             if (names_to_oid_.find(table) != names_to_oid_.end()) {
                  try {
                      TableMetadata *t = tables_[names_to_oid_[table]].get();
                      if (t == nullptr) continue;  // Skip if table is null
-                     
+
                      int col_idx = t->schema_.GetColIdx(col);
                      if (col_idx == -1) continue;  // Skip if column doesn't exist
-                     
+
                      TypeId key_type = t->schema_.GetColumn(col_idx).GetType();
 
-                     auto index_info = std::make_unique<IndexInfo>(name, table, col, key_type, bpm_);
-                     // CRITICAL: Restore the B+Tree Root
-                     if (index_info && index_info->b_plus_tree_) {
-                         index_info->b_plus_tree_->SetRootPageId(root_page);
+                     IndexType idx_type = static_cast<IndexType>(idx_type_int);
+                     if (idx_type == IndexType::HASH) {
+                         auto index_info = std::make_unique<IndexInfo>(name, table, col, key_type, bpm_, IndexType::HASH);
+                         // Reconstruct hash index from existing directory page
+                         index_info->hash_index_ = std::make_unique<HashIndex>(name, bpm_, root_page, 64);
+
+                         IndexInfo *ptr = index_info.get();
+                         indexes_[name] = std::move(index_info);
+                         index_names_[name] = ptr;
+                     } else {
+                         auto index_info = std::make_unique<IndexInfo>(name, table, col, key_type, bpm_);
+                         // CRITICAL: Restore the B+Tree Root
+                         if (index_info && index_info->b_plus_tree_) {
+                             index_info->b_plus_tree_->SetRootPageId(root_page);
+                         }
+
+                         IndexInfo *ptr = index_info.get();
+                         indexes_[name] = std::move(index_info);
+                         index_names_[name] = ptr;
                      }
-                     
-                     IndexInfo *ptr = index_info.get();
-                     indexes_[name] = std::move(index_info);
-                     index_names_[name] = ptr;
                  } catch (const std::exception &e) {
                      // Skip corrupted index entries
                      std::cerr << "[WARNING] Failed to restore index " << name << ": " << e.what() << std::endl;
                  }
             }
+        } else if (type == "VIEW") {
+            std::string view_name, encoded_query;
+            in >> view_name >> encoded_query;
+
+            // Decode the query: replace SOH back to spaces
+            for (auto &ch : encoded_query) {
+                if (ch == '\x01') ch = ' ';
+            }
+
+            auto view = std::make_unique<ViewInfo>();
+            view->name = view_name;
+            view->select_query = encoded_query;
+            views_[view_name] = std::move(view);
         }
     }
     std::cout << "[SYSTEM] Database restored from disk." << std::endl;
+}
+
+// ============================================================================
+// VIEW OPERATIONS
+// ============================================================================
+
+bool Catalog::CreateView(const std::string &view_name, const std::string &select_query) {
+    std::lock_guard<std::mutex> lock(latch_);
+    if (views_.find(view_name) != views_.end()) return false;
+    auto view = std::make_unique<ViewInfo>();
+    view->name = view_name;
+    view->select_query = select_query;
+    views_[view_name] = std::move(view);
+    return true;
+}
+
+ViewInfo* Catalog::GetView(const std::string &view_name) {
+    std::lock_guard<std::mutex> lock(latch_);
+    auto it = views_.find(view_name);
+    if (it == views_.end()) return nullptr;
+    return it->second.get();
+}
+
+bool Catalog::DropView(const std::string &view_name) {
+    std::lock_guard<std::mutex> lock(latch_);
+    return views_.erase(view_name) > 0;
+}
+
+bool Catalog::IsView(const std::string &name) {
+    std::lock_guard<std::mutex> lock(latch_);
+    return views_.find(name) != views_.end();
+}
+
+std::vector<std::string> Catalog::GetAllViewNames() {
+    std::lock_guard<std::mutex> lock(latch_);
+    std::vector<std::string> names;
+    for (const auto& [name, view] : views_) {
+        names.push_back(name);
+    }
+    return names;
 }
 
 IndexInfo *Catalog::GetIndex(const std::string &index_name) {

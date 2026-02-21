@@ -153,6 +153,16 @@ namespace chronosdb {
         EXECUTION,  // "EXECUTION" / "TANFEEZ" - for SHOW EXECUTION STATS
         STATS,      // "STATS" / "E7SA2EYAT" - for SHOW EXECUTION STATS
 
+        // --- HASH INDEX ---
+        HASH,       // "HASH" - for hash indexes
+
+        // --- VIEWS ---
+        VIEW,       // "VIEW" / "MANZAR" - for views
+
+        // --- EXPLAIN / ANALYZE ---
+        EXPLAIN,    // "EXPLAIN" / "SHAREH" - for explain
+        ANALYZE,    // "ANALYZE" / "7ALLEL" - for analyze
+
         // --- SERVER CONTROL ---
         STOP,       // "STOP" / "WA2AF" - stop server
         SHUTDOWN    // "SHUTDOWN" - shutdown server

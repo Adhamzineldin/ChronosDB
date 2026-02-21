@@ -13,7 +13,8 @@ namespace chronosdb {
         DROP_DB, CREATE_TABLE,
         DESCRIBE_TABLE, ALTER_TABLE, SHOW_CREATE_TABLE,
         CHECKPOINT, RECOVER, STOP_SERVER,
-        SHOW_AI_STATUS, SHOW_ANOMALIES, SHOW_EXECUTION_STATS
+        SHOW_AI_STATUS, SHOW_ANOMALIES, SHOW_EXECUTION_STATS,
+        CREATE_VIEW, DROP_VIEW, EXPLAIN
     };
 
     enum class LogicType { NONE, AND, OR };
@@ -25,6 +26,8 @@ namespace chronosdb {
         virtual StatementType GetType() const = 0;
     };
 
+    // Forward declaration for subquery support in WhereCondition
+    class SelectStatement;
 
     struct WhereCondition {
         std::string column;
@@ -32,6 +35,7 @@ namespace chronosdb {
         Value value; // For =, >, <, >=, <= operators
         std::vector<Value> in_values; // For "IN" operator
         LogicType next_logic; // Does "WE" or "AW" come after this?
+        std::unique_ptr<SelectStatement> subquery; // For IN (SELECT ...)
     };
 
     // --- TABLE LEVEL OPS ---
@@ -166,6 +170,7 @@ namespace chronosdb {
         std::string index_name_;
         std::string table_name_;
         std::string column_name_; // Single column index for simplicity
+        std::string index_type_str_; // "BTREE" or "HASH" - defaults to "BTREE"
     };
 
     /** BED2 (BEGIN TRANSACTION) */
@@ -328,6 +333,12 @@ namespace chronosdb {
     class ShowExecutionStatsStatement : public Statement {
     public:
         StatementType GetType() const override { return StatementType::SHOW_EXECUTION_STATS; }
+    };
+
+    class DropViewStatement : public Statement {
+    public:
+        StatementType GetType() const override { return StatementType::DROP_VIEW; }
+        std::string view_name_;
     };
 
 } // namespace chronosdb

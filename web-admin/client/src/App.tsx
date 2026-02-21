@@ -10,6 +10,7 @@ import SQLEditor from './components/SQLEditor';
 import UserManagement from './components/UserManagement';
 import AIStatus from './components/AIStatus';
 import TestingPage from './components/TestingPage';
+import ViewsManager from './components/ViewsManager';
 
 export default function App() {
   const [user, setUser] = useState<UserInfo | null>(null);
@@ -91,6 +92,9 @@ export default function App() {
           onSelectTable={setSelectedTable}
         />
       );
+      break;
+    case 'views':
+      content = <ViewsManager currentDb={currentDb} />;
       break;
     case 'query':
       content = <SQLEditor currentDb={currentDb} />;

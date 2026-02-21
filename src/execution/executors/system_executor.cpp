@@ -78,7 +78,7 @@ ExecutionResult SystemExecutor::ShowDatabases(ShowDatabasesStatement* stmt, Sess
 // ============================================================================
 ExecutionResult SystemExecutor::ShowTables(ShowTablesStatement* stmt, SessionContext* session) {
     auto rs = std::make_shared<ResultSet>();
-    rs->column_names = {"Tables_in_" + session->current_db};
+    rs->column_names = {"Name", "Type"};
 
     // Resolve catalog for the currently selected database
     Catalog* cat = nullptr;
@@ -99,11 +99,18 @@ ExecutionResult SystemExecutor::ShowTables(ShowTablesStatement* stmt, SessionCon
     }
 
     try {
+        // Add tables
         std::vector<std::string> table_names = cat->GetAllTableNames();
         std::sort(table_names.begin(), table_names.end());
-
         for (const auto& name : table_names) {
-            rs->AddRow({name});
+            rs->AddRow({name, "TABLE"});
+        }
+
+        // Add views
+        std::vector<std::string> view_names = cat->GetAllViewNames();
+        std::sort(view_names.begin(), view_names.end());
+        for (const auto& name : view_names) {
+            rs->AddRow({name, "VIEW"});
         }
 
         return ExecutionResult::Data(rs);

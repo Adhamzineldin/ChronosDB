@@ -112,6 +112,7 @@ export type Page =
   | 'dashboard'
   | 'databases'
   | 'tables'
+  | 'views'
   | 'query'
   | 'users'
   | 'ai-status'

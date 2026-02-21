@@ -106,6 +106,10 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
               <span className="action-icon">☰</span>
               <span>View Tables</span>
             </button>
+            <button className="action-card" onClick={() => onNavigate('views')}>
+              <span className="action-icon">◇</span>
+              <span>Manage Views</span>
+            </button>
             <button className="action-card" onClick={() => onNavigate('users')}>
               <span className="action-icon">⊕</span>
               <span>Manage Users</span>

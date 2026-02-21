@@ -7,6 +7,7 @@
 
 #include "parser/lexer.h"
 #include "parser/statement.h"
+#include "parser/extended_statements.h"
 
 namespace chronosdb {
 
@@ -76,6 +77,15 @@ namespace chronosdb {
         std::unique_ptr<DropDatabaseStatement> ParseDropDatabase();
         std::unique_ptr<DropStatement> ParseDropTable();
         std::unique_ptr<DropIndexStatement> ParseDropIndex();
+
+        // Hash Index / Views / Explain
+        std::unique_ptr<CreateIndexStatement> ParseCreateHashIndex();
+        std::unique_ptr<Statement> ParseCreateView();
+        std::unique_ptr<Statement> ParseDropView();
+        std::unique_ptr<Statement> ParseExplain();
+
+        // Subquery (no trailing semicolon)
+        std::unique_ptr<SelectStatement> ParseSelectSubquery();
 
         Lexer lexer_;
         Token current_token_;

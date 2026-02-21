@@ -80,6 +80,21 @@ export const api = {
   getTableData: (name: string) =>
     request(`/tables/${name}/data`),
 
+  // Views
+  getViews: () => request('/views'),
+
+  createView: (name: string, query: string) =>
+    request('/views', {
+      method: 'POST',
+      body: JSON.stringify({ name, query }),
+    }),
+
+  dropView: (name: string) =>
+    request(`/views/${name}`, { method: 'DELETE' }),
+
+  getViewData: (name: string) =>
+    request(`/views/${name}/data`),
+
   // Query
   executeQuery: (sql: string) =>
     request('/query', {

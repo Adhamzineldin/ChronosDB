@@ -73,6 +73,20 @@ if(WIN32 AND EXISTS "${SERVICE_SRC}")
 endif()
 
 # =========================================================
+# 4b. BENCHMARK EXECUTABLE
+# =========================================================
+set(BENCH_SRC "${SRC_DIR}/cmd/benchmark/benchmark.cpp")
+if(EXISTS "${BENCH_SRC}")
+    add_executable(chronosdb_benchmark "${BENCH_SRC}")
+    target_link_libraries(chronosdb_benchmark chronosdb_lib)
+    if(WIN32)
+        target_link_libraries(chronosdb_benchmark ws2_32)
+    else()
+        target_link_libraries(chronosdb_benchmark pthread)
+    endif()
+endif()
+
+# =========================================================
 # 5. TESTS (Delegate to test/ folder)
 # =========================================================
 option(BUILD_TESTING "Build the testing tree." ON)

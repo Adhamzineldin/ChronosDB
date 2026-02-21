@@ -97,6 +97,10 @@ private:
     HttpResponse HandleGetTables(const HttpRequest& req);
     HttpResponse HandleGetTableSchema(const HttpRequest& req, const std::string& table);
     HttpResponse HandleGetTableData(const HttpRequest& req, const std::string& table);
+    HttpResponse HandleGetViews(const HttpRequest& req);
+    HttpResponse HandleCreateView(const HttpRequest& req);
+    HttpResponse HandleDropView(const HttpRequest& req, const std::string& view_name);
+    HttpResponse HandleGetViewData(const HttpRequest& req, const std::string& view_name);
     HttpResponse HandleQuery(const HttpRequest& req);
     HttpResponse HandleBatchQuery(const HttpRequest& req);
     HttpResponse HandleGetUsers(const HttpRequest& req);
