@@ -49,6 +49,9 @@ namespace chronosdb {
 
         if (!stmt) return SerializeError("Failed to parse query");
 
+        // Store original SQL text for query history
+        stmt->sql_text_ = sql;
+
         // --- LOGIN HANDLING (Keep this here - it's auth, not execution) ---
         if (stmt->GetType() == StatementType::LOGIN) {
             auto *login = dynamic_cast<LoginStatement *>(stmt.get());

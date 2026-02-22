@@ -408,7 +408,143 @@ namespace chronosdb {
         {"STOP",       TokenType::STOP},
         {"WA2AF",      TokenType::STOP},        // Franco: "wa2af" = stop
         {"SHUTDOWN",   TokenType::SHUTDOWN},
-        {"2AFOL",      TokenType::SHUTDOWN}     // Franco: "2afol" = close/shutdown
+        {"2AFOL",      TokenType::SHUTDOWN},    // Franco: "2afol" = close/shutdown
+
+        // =====================================================================
+        // CTEs (Common Table Expressions)
+        // =====================================================================
+        {"WITH",       TokenType::WITH},
+        {"MA3",        TokenType::WITH},        // Franco: "ma3" = with
+
+        // =====================================================================
+        // WINDOW FUNCTIONS
+        // =====================================================================
+        {"OVER",       TokenType::OVER},
+        {"FAWK",       TokenType::OVER},        // Franco: "fawk" = over/above
+        {"PARTITION",  TokenType::PARTITION},
+        {"TAQSEEM",    TokenType::PARTITION},    // Franco: "taqseem" = division
+        {"ROW_NUMBER", TokenType::ROW_NUMBER},
+        {"RAQAM_SAFF", TokenType::ROW_NUMBER},   // Franco: "raqam saff" = row number
+        {"RANK",       TokenType::RANK},
+        {"MARTABA",    TokenType::RANK},         // Franco: "martaba" = rank
+        {"DENSE_RANK", TokenType::DENSE_RANK},
+        {"LAG",        TokenType::LAG},
+        {"SABE2",      TokenType::LAG},          // Franco: "sabe2" = previous
+        {"LEAD",       TokenType::LEAD},
+        {"TALE",       TokenType::LEAD},         // Franco: "tale" = next
+
+        // =====================================================================
+        // TABLE PARTITIONING
+        // =====================================================================
+        {"RANGE",      TokenType::RANGE_KW},
+        {"MADAA",      TokenType::RANGE_KW},     // Franco: "madaa" = range
+        {"LESS",       TokenType::LESS},
+        {"A2AL",       TokenType::LESS},         // Franco: "a2al" = less
+        {"THAN",       TokenType::THAN},
+        {"MAXVALUE",   TokenType::MAXVALUE},
+        {"PARTITIONS", TokenType::PARTITIONS},
+
+        // =====================================================================
+        // EXPORT / IMPORT
+        // =====================================================================
+        {"EXPORT",     TokenType::EXPORT},
+        {"SADDR",      TokenType::EXPORT},       // Franco: "saddr" = export
+        {"IMPORT",     TokenType::IMPORT},
+        {"ESTRAD",     TokenType::IMPORT},        // Franco: "estrad" = import
+
+        // =====================================================================
+        // BACKUP / RESTORE
+        // =====================================================================
+        {"BACKUP",     TokenType::BACKUP},
+        {"N5A_E7TYATY", TokenType::BACKUP},      // Franco: backup copy
+        {"RESTORE",    TokenType::RESTORE},
+        {"ESTER3A3",   TokenType::RESTORE},      // Franco: "ester3a3" = restore
+
+        // =====================================================================
+        // STORED PROCEDURES
+        // =====================================================================
+        {"PROCEDURE",  TokenType::PROCEDURE},
+        {"PROC",       TokenType::PROCEDURE},
+        {"EGRA2",      TokenType::PROCEDURE},    // Franco: "egra2" = procedure
+        {"CALL",       TokenType::CALL},
+        {"NADY",       TokenType::CALL},         // Franco: "nady" = call
+        {"DECLARE",    TokenType::DECLARE},
+        {"3ARREF",     TokenType::DECLARE},      // Franco: "3arref" = define
+        {"WHILE",      TokenType::WHILE_KW},
+        {"TALAMA",     TokenType::WHILE_KW},     // Franco: "talama" = as long as
+        {"THEN",       TokenType::THEN},
+        {"YEB2A",      TokenType::THEN},         // Franco: "yeb2a" = then
+        {"ELSE",       TokenType::ELSE_KW},
+        {"WELLA",      TokenType::ELSE_KW},      // Franco: "wella" = or else
+        {"END",        TokenType::END_KW},
+        {"5ALAS",      TokenType::END_KW},       // Franco: "5alas" = done
+        {"RETURN",     TokenType::RETURN_KW},
+        {"ARGA3",      TokenType::RETURN_KW},    // Franco: "arga3" = return
+
+        // =====================================================================
+        // TRIGGERS
+        // =====================================================================
+        {"TRIGGER",    TokenType::TRIGGER},
+        {"MESHAGHAL",  TokenType::TRIGGER},      // Franco: "meshaghal" = trigger
+        {"BEFORE",     TokenType::BEFORE},
+        {"QABL",       TokenType::BEFORE},       // Franco: "qabl" = before
+        {"AFTER",      TokenType::AFTER},
+        {"BA3D",       TokenType::AFTER},        // Franco: "ba3d" = after
+        {"EACH",       TokenType::EACH},
+        {"ROW",        TokenType::ROW_KW},
+        {"SAFF",       TokenType::ROW_KW},       // Franco: "saff" = row
+        {"FOR",        TokenType::FOR_KW},
+        {"LEKOL",      TokenType::FOR_KW},       // Franco: "lekol" = for each
+        {"NEW",        TokenType::NEW_KW},
+        {"GEDEED",     TokenType::NEW_KW},       // Franco: "gedeed" = new
+        {"OLD",        TokenType::OLD_KW},
+        {"2ADEEM",     TokenType::OLD_KW},       // Franco: "2adeem" = old
+
+        // =====================================================================
+        // QUERY HISTORY
+        // =====================================================================
+        {"HISTORY",    TokenType::HISTORY},
+        {"TARE5_ESTE3LAMAT", TokenType::HISTORY}, // Franco: query history
+
+        // =====================================================================
+        // SCHEDULED JOBS
+        // =====================================================================
+        {"SCHEDULE",   TokenType::SCHEDULE},
+        {"GADWAL_ZAMANY", TokenType::SCHEDULE},  // Franco: scheduled
+        {"EVERY",      TokenType::EVERY},
+        {"SECONDS",    TokenType::SECONDS_KW},
+        {"SAWANY",     TokenType::SECONDS_KW},   // Franco: "sawany" = seconds
+        {"MINUTES",    TokenType::MINUTES_KW},
+        {"DA2AYE2",    TokenType::MINUTES_KW},   // Franco: "da2aye2" = minutes
+        {"HOURS",      TokenType::HOURS_KW},
+        {"SA3AT",      TokenType::HOURS_KW},     // Franco: "sa3at" = hours
+        {"DO",         TokenType::DO_KW},
+        {"NAFFEZ",     TokenType::DO_KW},        // Franco: "naffez" = execute
+
+        // =====================================================================
+        // REPLICATION
+        // =====================================================================
+        {"REPLICATION", TokenType::REPLICATION},
+        {"NASAKHA",    TokenType::REPLICATION},  // Franco: "nasakha" = replication
+        {"REPLICA",    TokenType::REPLICA},
+        {"SOORAH",     TokenType::REPLICA},      // Franco: "soorah" = copy
+        {"PROMOTE",    TokenType::PROMOTE},
+
+        // =====================================================================
+        // INDEX ADVISOR
+        // =====================================================================
+        {"SUGGESTIONS", TokenType::SUGGESTIONS},
+        {"EQTERA7AT",  TokenType::SUGGESTIONS},  // Franco: "eqtera7at" = suggestions
+
+        // =====================================================================
+        // QUERY FIREWALL
+        // =====================================================================
+        {"BLOCKED",    TokenType::BLOCKED},
+        {"MAHMEY",     TokenType::BLOCKED},      // Franco: "mahmey" = blocked
+        {"APPROVE",    TokenType::APPROVE},
+        {"WAFE2",      TokenType::APPROVE},      // Franco: "wafe2" = approve
+        {"QUERY",      TokenType::QUERY_KW},
+        {"ESTE3LAM",   TokenType::QUERY_KW}      // Franco: "este3lam" = query
     };
 
     Token Lexer::NextToken() {
@@ -684,6 +820,56 @@ namespace chronosdb {
             case TokenType::CHECK: return "CHECK";
             case TokenType::AUTO_INCREMENT: return "AUTO_INCREMENT";
             
+            // New feature tokens
+            case TokenType::WITH: return "WITH";
+            case TokenType::OVER: return "OVER";
+            case TokenType::PARTITION: return "PARTITION";
+            case TokenType::ROW_NUMBER: return "ROW_NUMBER";
+            case TokenType::RANK: return "RANK";
+            case TokenType::DENSE_RANK: return "DENSE_RANK";
+            case TokenType::LAG: return "LAG";
+            case TokenType::LEAD: return "LEAD";
+            case TokenType::RANGE_KW: return "RANGE";
+            case TokenType::LESS: return "LESS";
+            case TokenType::THAN: return "THAN";
+            case TokenType::MAXVALUE: return "MAXVALUE";
+            case TokenType::PARTITIONS: return "PARTITIONS";
+            case TokenType::EXPORT: return "EXPORT";
+            case TokenType::IMPORT: return "IMPORT";
+            case TokenType::BACKUP: return "BACKUP";
+            case TokenType::RESTORE: return "RESTORE";
+            case TokenType::PROCEDURE: return "PROCEDURE";
+            case TokenType::CALL: return "CALL";
+            case TokenType::DECLARE: return "DECLARE";
+            case TokenType::WHILE_KW: return "WHILE";
+            case TokenType::THEN: return "THEN";
+            case TokenType::ELSE_KW: return "ELSE";
+            case TokenType::END_KW: return "END";
+            case TokenType::RETURN_KW: return "RETURN";
+            case TokenType::TRIGGER: return "TRIGGER";
+            case TokenType::BEFORE: return "BEFORE";
+            case TokenType::AFTER: return "AFTER";
+            case TokenType::EACH: return "EACH";
+            case TokenType::ROW_KW: return "ROW";
+            case TokenType::FOR_KW: return "FOR";
+            case TokenType::NEW_KW: return "NEW";
+            case TokenType::OLD_KW: return "OLD";
+            case TokenType::HISTORY: return "HISTORY";
+            case TokenType::SCHEDULE: return "SCHEDULE";
+            case TokenType::EVERY: return "EVERY";
+            case TokenType::SECONDS_KW: return "SECONDS";
+            case TokenType::MINUTES_KW: return "MINUTES";
+            case TokenType::HOURS_KW: return "HOURS";
+            case TokenType::DO_KW: return "DO";
+            case TokenType::REPLICATION: return "REPLICATION";
+            case TokenType::PRIMARY_SRV: return "PRIMARY";
+            case TokenType::REPLICA: return "REPLICA";
+            case TokenType::PROMOTE: return "PROMOTE";
+            case TokenType::SUGGESTIONS: return "SUGGESTIONS";
+            case TokenType::BLOCKED: return "BLOCKED";
+            case TokenType::APPROVE: return "APPROVE";
+            case TokenType::QUERY_KW: return "QUERY";
+
             default: return "UNKNOWN";
         }
     }

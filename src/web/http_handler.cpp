@@ -18,6 +18,11 @@
 #include "ai/learning/query_plan_optimizer.h"
 #include "ai/immune/immune_system.h"
 #include "ai/temporal/temporal_index_manager.h"
+#include "common/query_history.h"
+#include "common/scheduler.h"
+#include "network/replication.h"
+#include "ai/index_advisor.h"
+#include "ai/query_firewall.h"
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -310,6 +315,14 @@ HttpResponse HttpHandler::Route(const HttpRequest& req) {
     if (p == "/api/ai/anomalies" && req.method == HttpMethod::GET) return HandleGetAnomalies(req);
     if (p == "/api/ai/stats" && req.method == HttpMethod::GET) return HandleGetExecStats(req);
     if (p == "/api/ai/detailed" && req.method == HttpMethod::GET) return HandleGetAIDetailed(req);
+    if (p == "/api/history" && req.method == HttpMethod::GET) return HandleGetHistory(req);
+    if (p == "/api/schedules" && req.method == HttpMethod::GET) return HandleGetSchedules(req);
+    if (p == "/api/schedules" && req.method == HttpMethod::POST) return HandleCreateSchedule(req);
+    if (p == "/api/ai/blocked-queries" && req.method == HttpMethod::GET) return HandleGetBlockedQueries(req);
+    if (p == "/api/ai/index-suggestions" && req.method == HttpMethod::GET) return HandleGetIndexSuggestions(req);
+    if (p == "/api/replication/status" && req.method == HttpMethod::GET) return HandleGetReplicationStatus(req);
+    if (p == "/api/buffer-stats" && req.method == HttpMethod::GET) return HandleGetBufferStats(req);
+    if (p == "/api/schema/full" && req.method == HttpMethod::GET) return HandleGetFullSchema(req);
 
     // Pattern routes: /api/tables/:name/schema, /api/tables/:name/data
     if (p.rfind("/api/tables/", 0) == 0 && p.size() > 12) {
@@ -322,6 +335,10 @@ HttpResponse HttpHandler::Route(const HttpRequest& req) {
                 return HandleGetTableSchema(req, table_name);
             if (action == "data" && req.method == HttpMethod::GET)
                 return HandleGetTableData(req, table_name);
+            if (action == "export" && req.method == HttpMethod::POST)
+                return HandleExportTable(req, table_name);
+            if (action == "import" && req.method == HttpMethod::POST)
+                return HandleImportTable(req, table_name);
         }
     }
 
@@ -358,6 +375,16 @@ HttpResponse HttpHandler::Route(const HttpRequest& req) {
         } else if (req.method == HttpMethod::DELETE_METHOD) {
             return HandleDeleteUser(req, rest);
         }
+    }
+
+    // Pattern routes: /api/schedules/:name (DELETE)
+    if (p.rfind("/api/schedules/", 0) == 0 && p.size() > 15 && req.method == HttpMethod::DELETE_METHOD) {
+        return HandleDeleteSchedule(req, p.substr(15));
+    }
+
+    // Pattern routes: /api/ai/approve/:id (POST)
+    if (p.rfind("/api/ai/approve/", 0) == 0 && p.size() > 16 && req.method == HttpMethod::POST) {
+        return HandleApproveQuery(req, p.substr(16));
     }
 
     // ── Static File Serving ──
@@ -1072,6 +1099,272 @@ HttpResponse HttpHandler::HandleGetAIDetailed(const HttpRequest& req) {
 
     json << "\n}";
     resp.SetJson(json.str());
+    return resp;
+}
+
+HttpResponse HttpHandler::HandleGetHistory(const HttpRequest& req) {
+    auto* session = GetSession(req);
+    HttpResponse resp;
+    if (!session) { resp.SetError(401, "Not authenticated"); return resp; }
+
+    int limit = 50;
+    // Parse limit from query string
+    if (!req.query_string.empty()) {
+        size_t pos = req.query_string.find("limit=");
+        if (pos != std::string::npos) {
+            try { limit = std::stoi(req.query_string.substr(pos + 6)); } catch (...) {}
+        }
+    }
+
+    auto records = QueryHistory::Instance().GetRecent(limit);
+    std::ostringstream json;
+    json << std::fixed;
+    json << "{\"success\":true,\"records\":[";
+    for (size_t i = 0; i < records.size(); i++) {
+        if (i > 0) json << ",";
+        json << "{\"sql\":\"" << JsonEscape(records[i].sql)
+             << "\",\"user\":\"" << JsonEscape(records[i].user)
+             << "\",\"database\":\"" << JsonEscape(records[i].database)
+             << "\",\"success\":" << (records[i].success ? "true" : "false")
+             << ",\"elapsed_ms\":" << std::setprecision(2) << records[i].elapsed_ms
+             << ",\"timestamp_us\":" << records[i].timestamp_us << "}";
+    }
+    json << "],\"qps\":" << std::setprecision(2) << QueryHistory::Instance().GetQueriesPerSecond() << "}";
+    resp.SetJson(json.str());
+    return resp;
+}
+
+HttpResponse HttpHandler::HandleGetSchedules(const HttpRequest& req) {
+    auto* session = GetSession(req);
+    HttpResponse resp;
+    if (!session) { resp.SetError(401, "Not authenticated"); return resp; }
+    auto result = ExecuteSQL("SHOW SCHEDULES;", session);
+    resp.SetJson(ResultToJson(result));
+    return resp;
+}
+
+HttpResponse HttpHandler::HandleCreateSchedule(const HttpRequest& req) {
+    auto* session = GetSession(req);
+    HttpResponse resp;
+    if (!session) { resp.SetError(401, "Not authenticated"); return resp; }
+
+    std::string name = ParseJsonField(req.body, "name");
+    std::string interval = ParseJsonField(req.body, "interval");
+    std::string sql = ParseJsonField(req.body, "sql");
+
+    if (name.empty() || interval.empty() || sql.empty()) {
+        resp.SetError(400, "Name, interval, and sql are required");
+        return resp;
+    }
+
+    auto result = ExecuteSQL("CREATE SCHEDULE " + name + " EVERY " + interval + " SECONDS DO '" + sql + "';", session);
+    resp.SetJson(ResultToJson(result));
+    return resp;
+}
+
+HttpResponse HttpHandler::HandleDeleteSchedule(const HttpRequest& req, const std::string& name) {
+    auto* session = GetSession(req);
+    HttpResponse resp;
+    if (!session) { resp.SetError(401, "Not authenticated"); return resp; }
+    auto result = ExecuteSQL("DROP SCHEDULE " + name + ";", session);
+    resp.SetJson(ResultToJson(result));
+    return resp;
+}
+
+HttpResponse HttpHandler::HandleGetBlockedQueries(const HttpRequest& req) {
+    auto* session = GetSession(req);
+    HttpResponse resp;
+    if (!session) { resp.SetError(401, "Not authenticated"); return resp; }
+    auto result = ExecuteSQL("SHOW BLOCKED QUERIES;", session);
+    resp.SetJson(ResultToJson(result));
+    return resp;
+}
+
+HttpResponse HttpHandler::HandleApproveQuery(const HttpRequest& req, const std::string& id) {
+    auto* session = GetSession(req);
+    HttpResponse resp;
+    if (!session) { resp.SetError(401, "Not authenticated"); return resp; }
+    auto result = ExecuteSQL("APPROVE QUERY " + id + ";", session);
+    resp.SetJson(ResultToJson(result));
+    return resp;
+}
+
+HttpResponse HttpHandler::HandleGetIndexSuggestions(const HttpRequest& req) {
+    auto* session = GetSession(req);
+    HttpResponse resp;
+    if (!session) { resp.SetError(401, "Not authenticated"); return resp; }
+    auto result = ExecuteSQL("SHOW INDEX SUGGESTIONS;", session);
+    resp.SetJson(ResultToJson(result));
+    return resp;
+}
+
+HttpResponse HttpHandler::HandleGetReplicationStatus(const HttpRequest& req) {
+    auto* session = GetSession(req);
+    HttpResponse resp;
+    if (!session) { resp.SetError(401, "Not authenticated"); return resp; }
+    auto result = ExecuteSQL("SHOW REPLICATION STATUS;", session);
+    resp.SetJson(ResultToJson(result));
+    return resp;
+}
+
+HttpResponse HttpHandler::HandleGetBufferStats(const HttpRequest& req) {
+    auto* session = GetSession(req);
+    HttpResponse resp;
+    if (!session) { resp.SetError(401, "Not authenticated"); return resp; }
+
+    std::ostringstream json;
+    json << "{\"success\":true";
+    json << ",\"buffer_pool_size\":" << bpm_->GetPoolSize();
+    json << ",\"pages_in_use\":" << bpm_->GetPagesInUse();
+    json << "}";
+    resp.SetJson(json.str());
+    return resp;
+}
+
+HttpResponse HttpHandler::HandleGetFullSchema(const HttpRequest& req) {
+    auto* session = GetSession(req);
+    HttpResponse resp;
+    if (!session) { resp.SetError(401, "Not authenticated"); return resp; }
+
+    // Resolve catalog for the current database
+    Catalog* cat = nullptr;
+    if (registry_ && !session->context->current_db.empty()) {
+        if (auto entry = registry_->Get(session->context->current_db)) {
+            cat = entry->catalog.get();
+        }
+        if (!cat) cat = registry_->ExternalCatalog(session->context->current_db);
+    }
+    if (!cat) cat = catalog_;
+    if (!cat) { resp.SetError(400, "No database selected"); return resp; }
+
+    auto schema = cat->GetFullSchema();
+    std::ostringstream json;
+    json << "{\"success\":true,\"tables\":[";
+    for (size_t t = 0; t < schema.tables.size(); t++) {
+        if (t > 0) json << ",";
+        auto& table = schema.tables[t];
+        json << "{\"name\":\"" << JsonEscape(table.name) << "\",\"columns\":[";
+        for (size_t c = 0; c < table.columns.size(); c++) {
+            if (c > 0) json << ",";
+            json << "{\"name\":\"" << JsonEscape(table.columns[c].first)
+                 << "\",\"type\":\"" << JsonEscape(table.columns[c].second) << "\"}";
+        }
+        json << "],\"primary_keys\":[";
+        for (size_t p = 0; p < table.primary_keys.size(); p++) {
+            if (p > 0) json << ",";
+            json << "\"" << JsonEscape(table.primary_keys[p]) << "\"";
+        }
+        json << "],\"foreign_keys\":[";
+        for (size_t f = 0; f < table.foreign_keys.size(); f++) {
+            if (f > 0) json << ",";
+            json << "{\"column\":\"" << JsonEscape(table.foreign_keys[f].column)
+                 << "\",\"ref_table\":\"" << JsonEscape(table.foreign_keys[f].ref_table)
+                 << "\",\"ref_column\":\"" << JsonEscape(table.foreign_keys[f].ref_column) << "\"}";
+        }
+        json << "]}";
+    }
+    json << "]}";
+    resp.SetJson(json.str());
+    return resp;
+}
+
+HttpResponse HttpHandler::HandleExportTable(const HttpRequest& req, const std::string& table) {
+    auto* session = GetSession(req);
+    HttpResponse resp;
+    if (!session) { resp.SetError(401, "Not authenticated"); return resp; }
+
+    // Execute SELECT * and return as CSV
+    auto result = ExecuteSQL("SELECT * FROM " + table + ";", session);
+    if (!result.success || !result.result_set) {
+        resp.SetError(400, "Failed to export: " + result.message);
+        return resp;
+    }
+
+    std::ostringstream csv;
+    // Header
+    for (size_t i = 0; i < result.result_set->column_names.size(); i++) {
+        if (i > 0) csv << ",";
+        csv << result.result_set->column_names[i];
+    }
+    csv << "\n";
+    // Rows
+    for (auto& row : result.result_set->rows) {
+        for (size_t i = 0; i < row.size(); i++) {
+            if (i > 0) csv << ",";
+            if (row[i].find(',') != std::string::npos || row[i].find('"') != std::string::npos) {
+                std::string escaped;
+                for (char c : row[i]) {
+                    if (c == '"') escaped += "\"\"";
+                    else escaped += c;
+                }
+                csv << "\"" << escaped << "\"";
+            } else {
+                csv << row[i];
+            }
+        }
+        csv << "\n";
+    }
+
+    resp.SetFile(csv.str(), "text/csv");
+    resp.headers["Content-Disposition"] = "attachment; filename=\"" + table + ".csv\"";
+    return resp;
+}
+
+HttpResponse HttpHandler::HandleImportTable(const HttpRequest& req, const std::string& table) {
+    auto* session = GetSession(req);
+    HttpResponse resp;
+    if (!session) { resp.SetError(401, "Not authenticated"); return resp; }
+
+    std::string csv_data = ParseJsonField(req.body, "csv");
+    if (csv_data.empty()) {
+        resp.SetError(400, "CSV data required in 'csv' field");
+        return resp;
+    }
+
+    // Parse CSV and insert rows
+    std::istringstream stream(csv_data);
+    std::string line;
+    std::getline(stream, line); // Skip header
+
+    int imported = 0;
+    int failed = 0;
+    while (std::getline(stream, line)) {
+        if (line.empty()) continue;
+        // Build INSERT from CSV line
+        std::vector<std::string> values;
+        std::string current;
+        bool in_quotes = false;
+        for (size_t i = 0; i < line.size(); i++) {
+            if (line[i] == '"') {
+                if (in_quotes && i + 1 < line.size() && line[i+1] == '"') {
+                    current += '"';
+                    i++;
+                } else {
+                    in_quotes = !in_quotes;
+                }
+            } else if (line[i] == ',' && !in_quotes) {
+                values.push_back(current);
+                current.clear();
+            } else {
+                current += line[i];
+            }
+        }
+        values.push_back(current);
+
+        std::string sql = "INSERT INTO " + table + " VALUES (";
+        for (size_t i = 0; i < values.size(); i++) {
+            if (i > 0) sql += ", ";
+            sql += "'" + values[i] + "'";
+        }
+        sql += ");";
+
+        auto result = ExecuteSQL(sql, session);
+        if (result.success) imported++;
+        else failed++;
+    }
+
+    resp.SetJson("{\"success\":true,\"imported\":" + std::to_string(imported) +
+                 ",\"failed\":" + std::to_string(failed) + "}");
     return resp;
 }
 

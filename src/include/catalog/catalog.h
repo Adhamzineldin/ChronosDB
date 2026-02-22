@@ -24,6 +24,29 @@ namespace chronosdb {
         std::string select_query;
     };
 
+    // Procedure metadata
+    struct ProcedureInfo {
+        std::string name;
+        std::vector<std::pair<std::string, std::string>> parameters; // name, type
+        std::string body; // raw SQL between BEGIN...END
+    };
+
+    // Trigger metadata
+    struct TriggerInfo {
+        std::string name;
+        std::string table_name;
+        std::string timing;  // "BEFORE" or "AFTER"
+        std::string event;   // "INSERT", "UPDATE", "DELETE"
+        std::string body;    // raw SQL between BEGIN...END
+    };
+
+    // Schedule metadata
+    struct ScheduleInfo {
+        std::string name;
+        int interval_seconds;
+        std::string sql;
+    };
+
     class Catalog {
     public:
         // Accept IBufferManager interface for polymorphic buffer pool usage
@@ -51,6 +74,42 @@ namespace chronosdb {
         bool IsView(const std::string &name);
         std::vector<std::string> GetAllViewNames();
 
+        // Procedures
+        bool CreateProcedure(const std::string &name, const ProcedureInfo &proc);
+        ProcedureInfo* GetProcedure(const std::string &name);
+        bool DropProcedure(const std::string &name);
+        std::vector<std::string> GetAllProcedureNames();
+
+        // Triggers
+        bool CreateTrigger(const std::string &name, const TriggerInfo &trigger);
+        std::vector<TriggerInfo*> GetTableTriggers(const std::string &table_name,
+                                                    const std::string &timing,
+                                                    const std::string &event);
+        bool DropTrigger(const std::string &name);
+        std::vector<std::string> GetAllTriggerNames();
+
+        // Schedules
+        bool CreateSchedule(const std::string &name, const ScheduleInfo &schedule);
+        bool DropSchedule(const std::string &name);
+        std::vector<ScheduleInfo> GetAllSchedules();
+
+        // Schema info for ER diagram
+        struct FullSchemaInfo {
+            struct TableInfo {
+                std::string name;
+                std::vector<std::pair<std::string, std::string>> columns; // name, type
+                std::vector<std::string> primary_keys;
+                struct FKInfo {
+                    std::string column;
+                    std::string ref_table;
+                    std::string ref_column;
+                };
+                std::vector<FKInfo> foreign_keys;
+            };
+            std::vector<TableInfo> tables;
+        };
+        FullSchemaInfo GetFullSchema();
+
     private:
         IBufferManager *bpm_;
         std::mutex latch_;
@@ -61,5 +120,8 @@ namespace chronosdb {
         std::unordered_map<std::string, std::unique_ptr<IndexInfo>> indexes_;
         std::unordered_map<std::string, IndexInfo*> index_names_;
         std::unordered_map<std::string, std::unique_ptr<ViewInfo>> views_;
+        std::unordered_map<std::string, std::unique_ptr<ProcedureInfo>> procedures_;
+        std::unordered_map<std::string, std::unique_ptr<TriggerInfo>> triggers_;
+        std::unordered_map<std::string, std::unique_ptr<ScheduleInfo>> schedules_;
     };
 }

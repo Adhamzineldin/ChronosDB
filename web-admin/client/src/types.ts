@@ -108,12 +108,58 @@ export interface AIDetailedResponse {
   };
 }
 
+export interface QueryHistoryRecord {
+  sql: string;
+  user: string;
+  database: string;
+  success: boolean;
+  elapsed_ms: number;
+  timestamp_us: number;
+}
+
+export interface ScheduleJob {
+  name: string;
+  sql: string;
+  interval: number;
+  enabled: boolean;
+  runCount: number;
+  lastRun: number;
+}
+
+export interface BlockedQuery {
+  id: number;
+  sql: string;
+  user: string;
+  reason: string;
+  timestamp: number;
+  approved: boolean;
+}
+
+export interface IndexSuggestion {
+  table: string;
+  column: string;
+  type: string;
+  reason: string;
+  queryCount: number;
+  suggestedSql: string;
+}
+
+export interface ERTable {
+  name: string;
+  columns: { name: string; type: string }[];
+  primary_keys: string[];
+  foreign_keys: { column: string; ref_table: string; ref_column: string }[];
+}
+
 export type Page =
   | 'dashboard'
   | 'databases'
   | 'tables'
   | 'views'
   | 'query'
+  | 'query-builder'
+  | 'realtime'
+  | 'er-diagram'
   | 'users'
   | 'ai-status'
   | 'testing';

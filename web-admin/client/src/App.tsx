@@ -11,6 +11,9 @@ import UserManagement from './components/UserManagement';
 import AIStatus from './components/AIStatus';
 import TestingPage from './components/TestingPage';
 import ViewsManager from './components/ViewsManager';
+import QueryBuilder from './components/QueryBuilder';
+import RealtimeDashboard from './components/RealtimeDashboard';
+import ERDiagram from './components/ERDiagram';
 
 export default function App() {
   const [user, setUser] = useState<UserInfo | null>(null);
@@ -104,6 +107,15 @@ export default function App() {
       break;
     case 'ai-status':
       content = <AIStatus />;
+      break;
+    case 'query-builder':
+      content = <QueryBuilder currentDb={currentDb} />;
+      break;
+    case 'realtime':
+      content = <RealtimeDashboard />;
+      break;
+    case 'er-diagram':
+      content = <ERDiagram />;
       break;
     case 'testing':
       content = <TestingPage currentDb={currentDb} onUseDatabase={handleUseDatabase} />;

@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { api } from '../api';
 import type { ChronosResult } from '../types';
+import NLQueryInput from './NLQueryInput';
+import QueryPlanVisualizer from './QueryPlanVisualizer';
 
 interface SQLEditorProps {
   currentDb: string;
@@ -78,6 +80,9 @@ export default function SQLEditor({ currentDb }: SQLEditorProps) {
 
   return (
     <div className="sql-editor">
+      {/* Natural Language Input */}
+      <NLQueryInput onGenerated={(generatedSql) => { setSql(generatedSql); textareaRef.current?.focus(); }} />
+
       {/* Editor */}
       <div className="panel">
         <div className="panel-header">
@@ -112,6 +117,9 @@ export default function SQLEditor({ currentDb }: SQLEditorProps) {
               <button className="btn-link" onClick={() => loadExample('SHOW ANOMALIES')}>ANOMALIES</button>
               <button className="btn-link" onClick={() => loadExample('EXPLAIN SELECT * FROM ')}>EXPLAIN</button>
               <button className="btn-link" onClick={() => loadExample('EXPLAIN ANALYZE SELECT * FROM ')}>EXPLAIN ANALYZE</button>
+              <button className="btn-link" onClick={() => loadExample('SHOW HISTORY')}>HISTORY</button>
+              <button className="btn-link" onClick={() => loadExample('SHOW INDEX SUGGESTIONS')}>INDEX HINTS</button>
+              <button className="btn-link" onClick={() => loadExample('SHOW BLOCKED QUERIES')}>BLOCKED</button>
             </div>
           </div>
         </div>
@@ -181,6 +189,11 @@ export default function SQLEditor({ currentDb }: SQLEditorProps) {
                     : `${(entry.result.row_count ?? entry.result.data.rows.length).toLocaleString()} row(s)`}
                 </div>
               </div>
+            )}
+            {/* Show query plan visualizer for EXPLAIN results */}
+            {entry.result.success && entry.result.data &&
+              entry.sql.toUpperCase().trimStart().startsWith('EXPLAIN') && (
+              <QueryPlanVisualizer result={entry.result} />
             )}
           </div>
         </div>

@@ -87,6 +87,39 @@ namespace chronosdb {
         // Subquery (no trailing semicolon)
         std::unique_ptr<SelectStatement> ParseSelectSubquery();
 
+        // ============ NEW FEATURES ============
+        // CTEs
+        std::unique_ptr<Statement> ParseCTE();
+
+        // Window Functions
+        bool IsWindowFunction();
+        SelectStatement::WindowFunction ParseWindowFunction();
+
+        // Table Partitioning
+        void ParsePartitionClause(CreateStatement* stmt);
+
+        // Export/Import
+        std::unique_ptr<Statement> ParseExport();
+        std::unique_ptr<Statement> ParseImport();
+
+        // Backup/Restore
+        std::unique_ptr<Statement> ParseBackup();
+        std::unique_ptr<Statement> ParseRestore();
+
+        // Stored Procedures
+        std::unique_ptr<Statement> ParseCreateProcedure();
+        std::unique_ptr<Statement> ParseCall();
+        std::string CaptureBodyUntilEnd();
+
+        // Triggers
+        std::unique_ptr<Statement> ParseCreateTrigger();
+
+        // Scheduled Jobs
+        std::unique_ptr<Statement> ParseCreateSchedule();
+
+        // Replication
+        std::unique_ptr<Statement> ParseSetReplication();
+
         Lexer lexer_;
         Token current_token_;
     };

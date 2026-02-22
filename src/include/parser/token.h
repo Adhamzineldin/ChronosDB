@@ -165,7 +165,79 @@ namespace chronosdb {
 
         // --- SERVER CONTROL ---
         STOP,       // "STOP" / "WA2AF" - stop server
-        SHUTDOWN    // "SHUTDOWN" - shutdown server
+        SHUTDOWN,   // "SHUTDOWN" - shutdown server
+
+        // --- CTEs ---
+        WITH,       // "WITH" / "MA3" - Common Table Expressions
+
+        // --- WINDOW FUNCTIONS ---
+        OVER,       // "OVER" / "FAWK" - window frame
+        PARTITION,  // "PARTITION" / "TAQSEEM" - partition by
+        ROW_NUMBER, // "ROW_NUMBER" / "RAQAM_SAFF"
+        RANK,       // "RANK" / "MARTABA"
+        DENSE_RANK, // "DENSE_RANK"
+        LAG,        // "LAG" / "SABE2"
+        LEAD,       // "LEAD" / "TALE"
+
+        // --- TABLE PARTITIONING ---
+        RANGE_KW,   // "RANGE" / "MADAA" - range partition
+        LESS,       // "LESS" / "A2AL"
+        THAN,       // "THAN" / "MEN_KW"
+        MAXVALUE,   // "MAXVALUE"
+        PARTITIONS, // "PARTITIONS"
+
+        // --- EXPORT / IMPORT ---
+        EXPORT,     // "EXPORT" / "SADDR" - export data
+        IMPORT,     // "IMPORT" / "ESTRAD" - import data
+
+        // --- BACKUP / RESTORE ---
+        BACKUP,     // "BACKUP" / "N5A_E7TYATY"
+        RESTORE,    // "RESTORE" / "ESTER3A3"
+
+        // --- STORED PROCEDURES ---
+        PROCEDURE,  // "PROCEDURE" / "EGRA2"
+        CALL,       // "CALL" / "NADY"
+        DECLARE,    // "DECLARE" / "3ARREF"
+        WHILE_KW,   // "WHILE" / "TALAMA"
+        THEN,       // "THEN" / "YEB2A"
+        ELSE_KW,    // "ELSE" / "WELLA"
+        END_KW,     // "END" / "5ALAS"
+        RETURN_KW,  // "RETURN" / "ARGA3"
+
+        // --- TRIGGERS ---
+        TRIGGER,    // "TRIGGER" / "MESHAGHAL"
+        BEFORE,     // "BEFORE" / "QABL"
+        AFTER,      // "AFTER" / "BA3D"
+        EACH,       // "EACH" / "KOL_WAHD"
+        ROW_KW,     // "ROW" / "SAFF"
+        FOR_KW,     // "FOR" / "LEKOL"
+        NEW_KW,     // "NEW" / "GEDEED"
+        OLD_KW,     // "OLD" / "2ADEEM"
+
+        // --- QUERY HISTORY ---
+        HISTORY,    // "HISTORY" / "TARE5_ESTE3LAMAT"
+
+        // --- SCHEDULED JOBS ---
+        SCHEDULE,   // "SCHEDULE" / "GADWAL_ZAMANY"
+        EVERY,      // "EVERY" / "KOL_MARRA"
+        SECONDS_KW, // "SECONDS" / "SAWANY"
+        MINUTES_KW, // "MINUTES" / "DA2AYE2"
+        HOURS_KW,   // "HOURS" / "SA3AT"
+        DO_KW,      // "DO" / "NAFFEZ"
+
+        // --- REPLICATION ---
+        REPLICATION, // "REPLICATION" / "NASAKHA"
+        PRIMARY_SRV, // "PRIMARY" (server context)
+        REPLICA,     // "REPLICA" / "SOORAH"
+        PROMOTE,     // "PROMOTE"
+
+        // --- INDEX ADVISOR ---
+        SUGGESTIONS, // "SUGGESTIONS" / "EQTERA7AT"
+
+        // --- QUERY FIREWALL ---
+        BLOCKED,    // "BLOCKED" / "MAHMEY"
+        APPROVE,    // "APPROVE" / "WAFE2"
+        QUERY_KW    // "QUERY" / "ESTE3LAM"
     };
 
     struct Token {

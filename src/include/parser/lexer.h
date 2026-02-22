@@ -20,10 +20,12 @@ namespace chronosdb {
         // Helper to get English name for a token type
         static std::string GetTokenTypeName(TokenType type);
 
+        const std::string& GetInput() const { return input_; }
+
     private:
         void SkipWhitespace();
         // Combined logic to handle Franco keywords starting with digits (e.g., 2E5TAR)
-        Token ReadIdentifierOrNumber(); 
+        Token ReadIdentifierOrNumber();
         Token ReadString();
 
         std::string input_;

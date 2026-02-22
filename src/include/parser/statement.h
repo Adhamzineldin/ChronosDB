@@ -14,7 +14,17 @@ namespace chronosdb {
         DESCRIBE_TABLE, ALTER_TABLE, SHOW_CREATE_TABLE,
         CHECKPOINT, RECOVER, STOP_SERVER,
         SHOW_AI_STATUS, SHOW_ANOMALIES, SHOW_EXECUTION_STATS,
-        CREATE_VIEW, DROP_VIEW, EXPLAIN
+        CREATE_VIEW, DROP_VIEW, EXPLAIN,
+        // New features
+        EXPORT_TABLE, IMPORT_TABLE,
+        BACKUP_DB, RESTORE_DB,
+        CREATE_PROCEDURE, CALL_PROCEDURE, DROP_PROCEDURE,
+        CREATE_TRIGGER, DROP_TRIGGER,
+        SHOW_HISTORY,
+        CREATE_SCHEDULE, DROP_SCHEDULE, SHOW_SCHEDULES,
+        SET_REPLICATION, SHOW_REPLICATION_STATUS,
+        SHOW_INDEX_SUGGESTIONS,
+        SHOW_BLOCKED_QUERIES, APPROVE_QUERY
     };
 
     enum class LogicType { NONE, AND, OR };
@@ -24,6 +34,9 @@ namespace chronosdb {
         virtual ~Statement() = default;
 
         virtual StatementType GetType() const = 0;
+
+        // Original SQL text (set by parser for query history tracking)
+        std::string sql_text_;
     };
 
     // Forward declaration for subquery support in WhereCondition
@@ -66,6 +79,17 @@ namespace chronosdb {
         };
 
         std::vector<CheckConstraint> check_constraints_;
+
+        // ============ TABLE PARTITIONING ============
+        struct PartitionDef {
+            std::string name;
+            int upper_bound = INT32_MAX; // INT32_MAX for MAXVALUE
+        };
+        bool is_partitioned_ = false;
+        std::string partition_column_;
+        std::string partition_type_; // "RANGE" or "HASH"
+        std::vector<PartitionDef> partitions_;
+        int hash_partition_count_ = 0;
     };
 
     /** EREMY GADWAL <name> (DROP TABLE) */
@@ -144,6 +168,24 @@ namespace chronosdb {
         int limit_ = -1; // -1 means no limit
         int offset_ = 0; // Start from beginning by default
         uint64_t as_of_timestamp_ = 0;
+
+        // ============ CTE SUPPORT ============
+        struct CTEDefinition {
+            std::string name;
+            std::unique_ptr<SelectStatement> query;
+        };
+        std::vector<CTEDefinition> cte_definitions_;
+
+        // ============ WINDOW FUNCTIONS ============
+        struct WindowFunction {
+            std::string function_name; // ROW_NUMBER, RANK, DENSE_RANK, LAG, LEAD
+            std::string argument;      // column arg for LAG/LEAD
+            int offset = 1;            // offset for LAG/LEAD
+            std::vector<std::string> partition_by;
+            std::vector<OrderByClause> order_by;
+            std::string alias;
+        };
+        std::vector<WindowFunction> window_functions_;
     };
 
     class UpdateStatement : public Statement {
@@ -339,6 +381,148 @@ namespace chronosdb {
     public:
         StatementType GetType() const override { return StatementType::DROP_VIEW; }
         std::string view_name_;
+    };
+
+    // ============ EXPORT / IMPORT ============
+
+    class ExportStatement : public Statement {
+    public:
+        StatementType GetType() const override { return StatementType::EXPORT_TABLE; }
+        std::string table_name_;
+        std::string file_path_;
+        std::string format_ = "CSV";
+    };
+
+    class ImportStatement : public Statement {
+    public:
+        StatementType GetType() const override { return StatementType::IMPORT_TABLE; }
+        std::string file_path_;
+        std::string table_name_;
+        std::string format_ = "CSV";
+    };
+
+    // ============ BACKUP / RESTORE ============
+
+    class BackupStatement : public Statement {
+    public:
+        StatementType GetType() const override { return StatementType::BACKUP_DB; }
+        std::string file_path_;
+    };
+
+    class RestoreStatement : public Statement {
+    public:
+        StatementType GetType() const override { return StatementType::RESTORE_DB; }
+        std::string file_path_;
+    };
+
+    // ============ STORED PROCEDURES ============
+
+    struct ProcedureParam {
+        std::string name;
+        TypeId type;
+    };
+
+    class CreateProcedureStatement : public Statement {
+    public:
+        StatementType GetType() const override { return StatementType::CREATE_PROCEDURE; }
+        std::string name_;
+        std::vector<ProcedureParam> params_;
+        std::string body_; // Raw SQL body between BEGIN...END
+    };
+
+    class CallProcedureStatement : public Statement {
+    public:
+        StatementType GetType() const override { return StatementType::CALL_PROCEDURE; }
+        std::string name_;
+        std::vector<Value> arguments_;
+    };
+
+    class DropProcedureStatement : public Statement {
+    public:
+        StatementType GetType() const override { return StatementType::DROP_PROCEDURE; }
+        std::string name_;
+    };
+
+    // ============ TRIGGERS ============
+
+    class CreateTriggerStatement : public Statement {
+    public:
+        StatementType GetType() const override { return StatementType::CREATE_TRIGGER; }
+        std::string name_;
+        std::string timing_;     // "BEFORE" or "AFTER"
+        std::string event_;      // "INSERT", "UPDATE", "DELETE"
+        std::string table_name_;
+        std::string body_;       // Raw SQL between BEGIN...END
+    };
+
+    class DropTriggerStatement : public Statement {
+    public:
+        StatementType GetType() const override { return StatementType::DROP_TRIGGER; }
+        std::string name_;
+    };
+
+    // ============ QUERY HISTORY ============
+
+    class ShowHistoryStatement : public Statement {
+    public:
+        StatementType GetType() const override { return StatementType::SHOW_HISTORY; }
+        int limit_ = 100;
+    };
+
+    // ============ SCHEDULED JOBS ============
+
+    class CreateScheduleStatement : public Statement {
+    public:
+        StatementType GetType() const override { return StatementType::CREATE_SCHEDULE; }
+        std::string name_;
+        int interval_seconds_ = 0;
+        std::string sql_body_;
+    };
+
+    class DropScheduleStatement : public Statement {
+    public:
+        StatementType GetType() const override { return StatementType::DROP_SCHEDULE; }
+        std::string name_;
+    };
+
+    class ShowSchedulesStatement : public Statement {
+    public:
+        StatementType GetType() const override { return StatementType::SHOW_SCHEDULES; }
+    };
+
+    // ============ REPLICATION ============
+
+    class SetReplicationStatement : public Statement {
+    public:
+        StatementType GetType() const override { return StatementType::SET_REPLICATION; }
+        std::string role_;        // "PRIMARY", "REPLICA", "STANDALONE"
+        std::string primary_host_;
+        int primary_port_ = 2501;
+    };
+
+    class ShowReplicationStatusStatement : public Statement {
+    public:
+        StatementType GetType() const override { return StatementType::SHOW_REPLICATION_STATUS; }
+    };
+
+    // ============ INDEX ADVISOR ============
+
+    class ShowIndexSuggestionsStatement : public Statement {
+    public:
+        StatementType GetType() const override { return StatementType::SHOW_INDEX_SUGGESTIONS; }
+    };
+
+    // ============ QUERY FIREWALL ============
+
+    class ShowBlockedQueriesStatement : public Statement {
+    public:
+        StatementType GetType() const override { return StatementType::SHOW_BLOCKED_QUERIES; }
+    };
+
+    class ApproveQueryStatement : public Statement {
+    public:
+        StatementType GetType() const override { return StatementType::APPROVE_QUERY; }
+        int query_id_ = 0;
     };
 
 } // namespace chronosdb

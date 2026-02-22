@@ -46,6 +46,16 @@
 
 // Common
 #include "common/exception.h"
+#include "common/query_history.h"
+#include "common/scheduler.h"
+#include "common/chronos_net_config.h"
+#include "network/replication.h"
+#include "ai/index_advisor.h"
+#include "ai/query_firewall.h"
+
+// Parser (for inline SQL parsing in EXPORT/IMPORT/CALL)
+#include "parser/lexer.h"
+#include "parser/parser.h"
 
 #include <sstream>
 #include <iostream>
@@ -53,6 +63,8 @@
 #include <iomanip>
 #include <unordered_map>
 #include <functional>
+#include <fstream>
+#include <filesystem>
 
 namespace chronosdb {
     std::shared_mutex ExecutionEngine::global_lock_;
@@ -356,6 +368,442 @@ namespace chronosdb {
             return ExecutionResult::Data(rs);
         };
 
+        // ----- EXPORT/IMPORT -----
+        dispatch_map_[StatementType::EXPORT_TABLE] = [this](Statement *s, SessionContext *ctx, Transaction *t) {
+            auto* stmt = dynamic_cast<ExportStatement*>(s);
+            if (!stmt) return ExecutionResult::Error("Invalid EXPORT statement");
+            // Export table to CSV
+            TableMetadata* table_info = catalog_->GetTable(stmt->table_name_);
+            if (!table_info) return ExecutionResult::Error("Table not found: " + stmt->table_name_);
+
+            std::ofstream file(stmt->file_path_);
+            if (!file.is_open()) return ExecutionResult::Error("Cannot open file: " + stmt->file_path_);
+
+            // Write header
+            auto cols = table_info->schema_.GetColumns();
+            for (size_t i = 0; i < cols.size(); i++) {
+                if (i > 0) file << ",";
+                file << cols[i].GetName();
+            }
+            file << "\n";
+
+            // Write data using sequential scan
+            auto select_sql = "SELECT * FROM " + stmt->table_name_ + ";";
+            Lexer lex(select_sql);
+            Parser parser(std::move(lex));
+            auto select_stmt = parser.ParseQuery();
+            if (select_stmt) {
+                auto result = dml_executor_->Select(dynamic_cast<SelectStatement*>(select_stmt.get()), ctx, t);
+                if (result.success && result.result_set) {
+                    for (auto& row : result.result_set->rows) {
+                        for (size_t i = 0; i < row.size(); i++) {
+                            if (i > 0) file << ",";
+                            // CSV escape: quote fields containing commas or quotes
+                            std::string val = row[i];
+                            if (val.find(',') != std::string::npos || val.find('"') != std::string::npos) {
+                                std::string escaped;
+                                for (char c : val) {
+                                    if (c == '"') escaped += "\"\"";
+                                    else escaped += c;
+                                }
+                                file << "\"" << escaped << "\"";
+                            } else {
+                                file << val;
+                            }
+                        }
+                        file << "\n";
+                    }
+                }
+            }
+            file.close();
+            return ExecutionResult::Message("Table '" + stmt->table_name_ + "' exported to " + stmt->file_path_);
+        };
+
+        dispatch_map_[StatementType::IMPORT_TABLE] = [this](Statement *s, SessionContext *ctx, Transaction *t) {
+            auto* stmt = dynamic_cast<ImportStatement*>(s);
+            if (!stmt) return ExecutionResult::Error("Invalid IMPORT statement");
+
+            TableMetadata* table_info = catalog_->GetTable(stmt->table_name_);
+            if (!table_info) return ExecutionResult::Error("Table not found: " + stmt->table_name_);
+
+            std::ifstream file(stmt->file_path_);
+            if (!file.is_open()) return ExecutionResult::Error("Cannot open file: " + stmt->file_path_);
+
+            // Skip header line
+            std::string header_line;
+            std::getline(file, header_line);
+
+            int imported = 0;
+            std::string line;
+            while (std::getline(file, line)) {
+                if (line.empty()) continue;
+                // Parse CSV line into values
+                std::vector<std::string> values;
+                std::string current;
+                bool in_quotes = false;
+                for (size_t i = 0; i < line.size(); i++) {
+                    if (line[i] == '"') {
+                        if (in_quotes && i + 1 < line.size() && line[i+1] == '"') {
+                            current += '"';
+                            i++;
+                        } else {
+                            in_quotes = !in_quotes;
+                        }
+                    } else if (line[i] == ',' && !in_quotes) {
+                        values.push_back(current);
+                        current.clear();
+                    } else {
+                        current += line[i];
+                    }
+                }
+                values.push_back(current);
+
+                // Build INSERT SQL
+                std::string sql = "INSERT INTO " + stmt->table_name_ + " VALUES (";
+                auto cols = table_info->schema_.GetColumns();
+                for (size_t i = 0; i < values.size() && i < cols.size(); i++) {
+                    if (i > 0) sql += ", ";
+                    if (cols[i].GetType() == TypeId::VARCHAR) {
+                        sql += "'" + values[i] + "'";
+                    } else {
+                        sql += values[i];
+                    }
+                }
+                sql += ");";
+
+                Lexer lex(sql);
+                Parser parser(std::move(lex));
+                auto insert_stmt = parser.ParseQuery();
+                if (insert_stmt) {
+                    dml_executor_->Insert(dynamic_cast<InsertStatement*>(insert_stmt.get()), t);
+                    imported++;
+                }
+            }
+            return ExecutionResult::Message("Imported " + std::to_string(imported) + " rows into " + stmt->table_name_);
+        };
+
+        // ----- BACKUP/RESTORE -----
+        dispatch_map_[StatementType::BACKUP_DB] = [this](Statement *s, SessionContext *ctx, Transaction *t) {
+            auto* stmt = dynamic_cast<BackupStatement*>(s);
+            if (!stmt) return ExecutionResult::Error("Invalid BACKUP statement");
+
+            namespace fs = std::filesystem;
+            try {
+                // Flush everything first
+                bpm_->FlushAllPages();
+                if (catalog_) catalog_->SaveCatalog();
+                if (log_manager_) log_manager_->Flush(true);
+
+                fs::create_directories(stmt->file_path_);
+
+                // Copy database files
+                std::string db_name = ctx ? ctx->current_db : "chronosdb";
+                auto& config = ConfigManager::GetInstance();
+                fs::path src_dir = fs::path(config.GetDataDirectory()) / db_name;
+
+                if (fs::exists(src_dir)) {
+                    for (auto& entry : fs::recursive_directory_iterator(src_dir)) {
+                        fs::path rel = fs::relative(entry.path(), src_dir);
+                        fs::path dest = fs::path(stmt->file_path_) / rel;
+                        if (entry.is_directory()) {
+                            fs::create_directories(dest);
+                        } else {
+                            fs::copy_file(entry.path(), dest, fs::copy_options::overwrite_existing);
+                        }
+                    }
+                }
+                return ExecutionResult::Message("Database backed up to: " + stmt->file_path_);
+            } catch (const std::exception& e) {
+                return ExecutionResult::Error("Backup failed: " + std::string(e.what()));
+            }
+        };
+
+        dispatch_map_[StatementType::RESTORE_DB] = [this](Statement *s, SessionContext *ctx, Transaction *t) {
+            auto* stmt = dynamic_cast<RestoreStatement*>(s);
+            if (!stmt) return ExecutionResult::Error("Invalid RESTORE statement");
+
+            namespace fs = std::filesystem;
+            try {
+                std::string db_name = ctx ? ctx->current_db : "chronosdb";
+                auto& config = ConfigManager::GetInstance();
+                fs::path dest_dir = fs::path(config.GetDataDirectory()) / db_name;
+                fs::path src_dir = fs::path(stmt->file_path_);
+
+                if (!fs::exists(src_dir)) {
+                    return ExecutionResult::Error("Backup path not found: " + stmt->file_path_);
+                }
+
+                for (auto& entry : fs::recursive_directory_iterator(src_dir)) {
+                    fs::path rel = fs::relative(entry.path(), src_dir);
+                    fs::path dest = dest_dir / rel;
+                    if (entry.is_directory()) {
+                        fs::create_directories(dest);
+                    } else {
+                        fs::copy_file(entry.path(), dest, fs::copy_options::overwrite_existing);
+                    }
+                }
+
+                // Reload catalog
+                if (catalog_) catalog_->LoadCatalog();
+
+                return ExecutionResult::Message("Database restored from: " + stmt->file_path_);
+            } catch (const std::exception& e) {
+                return ExecutionResult::Error("Restore failed: " + std::string(e.what()));
+            }
+        };
+
+        // ----- STORED PROCEDURES -----
+        dispatch_map_[StatementType::CREATE_PROCEDURE] = [this](Statement *s, SessionContext *ctx, Transaction *t) {
+            auto* stmt = dynamic_cast<CreateProcedureStatement*>(s);
+            if (!stmt) return ExecutionResult::Error("Invalid CREATE PROCEDURE statement");
+
+            ProcedureInfo proc;
+            proc.name = stmt->name_;
+            for (auto& p : stmt->params_) {
+                std::string type_str;
+                switch (p.type) {
+                    case TypeId::INTEGER: type_str = "INT"; break;
+                    case TypeId::DECIMAL: type_str = "FLOAT"; break;
+                    case TypeId::VARCHAR: type_str = "VARCHAR"; break;
+                    case TypeId::BOOLEAN: type_str = "BOOLEAN"; break;
+                    default: type_str = "VARCHAR"; break;
+                }
+                proc.parameters.emplace_back(p.name, type_str);
+            }
+            proc.body = stmt->body_;
+
+            if (!catalog_->CreateProcedure(stmt->name_, proc)) {
+                return ExecutionResult::Error("Procedure '" + stmt->name_ + "' already exists");
+            }
+            catalog_->SaveCatalog();
+            return ExecutionResult::Message("Procedure '" + stmt->name_ + "' created");
+        };
+
+        dispatch_map_[StatementType::CALL_PROCEDURE] = [this](Statement *s, SessionContext *ctx, Transaction *t) {
+            auto* stmt = dynamic_cast<CallProcedureStatement*>(s);
+            if (!stmt) return ExecutionResult::Error("Invalid CALL statement");
+
+            ProcedureInfo* proc = catalog_->GetProcedure(stmt->name_);
+            if (!proc) return ExecutionResult::Error("Procedure not found: " + stmt->name_);
+
+            // Execute the procedure body as a sequence of SQL statements
+            // Split by semicolons and execute each
+            std::string body = proc->body;
+            std::istringstream stream(body);
+            std::string line;
+            ExecutionResult last_result = ExecutionResult::Message("OK");
+
+            while (std::getline(stream, line, ';')) {
+                // Trim whitespace
+                size_t start = line.find_first_not_of(" \t\n\r");
+                if (start == std::string::npos) continue;
+                line = line.substr(start);
+                if (line.empty()) continue;
+
+                line += ";";
+                try {
+                    Lexer lex(line);
+                    Parser parser(std::move(lex));
+                    auto inner_stmt = parser.ParseQuery();
+                    if (inner_stmt) {
+                        last_result = this->Execute(inner_stmt.get(), ctx);
+                    }
+                } catch (...) {
+                    // Continue executing remaining statements
+                }
+            }
+            return last_result;
+        };
+
+        dispatch_map_[StatementType::DROP_PROCEDURE] = [this](Statement *s, SessionContext *ctx, Transaction *t) {
+            auto* stmt = dynamic_cast<DropProcedureStatement*>(s);
+            if (!stmt) return ExecutionResult::Error("Invalid DROP PROCEDURE statement");
+            if (!catalog_->DropProcedure(stmt->name_)) {
+                return ExecutionResult::Error("Procedure not found: " + stmt->name_);
+            }
+            catalog_->SaveCatalog();
+            return ExecutionResult::Message("Procedure '" + stmt->name_ + "' dropped");
+        };
+
+        // ----- TRIGGERS -----
+        dispatch_map_[StatementType::CREATE_TRIGGER] = [this](Statement *s, SessionContext *ctx, Transaction *t) {
+            auto* stmt = dynamic_cast<CreateTriggerStatement*>(s);
+            if (!stmt) return ExecutionResult::Error("Invalid CREATE TRIGGER statement");
+
+            TriggerInfo trig;
+            trig.name = stmt->name_;
+            trig.table_name = stmt->table_name_;
+            trig.timing = stmt->timing_;
+            trig.event = stmt->event_;
+            trig.body = stmt->body_;
+
+            if (!catalog_->CreateTrigger(stmt->name_, trig)) {
+                return ExecutionResult::Error("Trigger '" + stmt->name_ + "' already exists");
+            }
+            catalog_->SaveCatalog();
+            return ExecutionResult::Message("Trigger '" + stmt->name_ + "' created");
+        };
+
+        dispatch_map_[StatementType::DROP_TRIGGER] = [this](Statement *s, SessionContext *ctx, Transaction *t) {
+            auto* stmt = dynamic_cast<DropTriggerStatement*>(s);
+            if (!stmt) return ExecutionResult::Error("Invalid DROP TRIGGER statement");
+            if (!catalog_->DropTrigger(stmt->name_)) {
+                return ExecutionResult::Error("Trigger not found: " + stmt->name_);
+            }
+            catalog_->SaveCatalog();
+            return ExecutionResult::Message("Trigger '" + stmt->name_ + "' dropped");
+        };
+
+        // ----- QUERY HISTORY -----
+        dispatch_map_[StatementType::SHOW_HISTORY] = [this](Statement *s, SessionContext *ctx, Transaction *t) {
+            auto* stmt = dynamic_cast<ShowHistoryStatement*>(s);
+            int limit = (stmt && stmt->limit_ > 0) ? stmt->limit_ : 50;
+
+            auto records = QueryHistory::Instance().GetRecent(limit);
+            auto rs = std::make_shared<ResultSet>();
+            rs->column_names = {"SQL", "User", "Database", "Success", "Time (ms)", "Timestamp"};
+
+            for (auto& r : records) {
+                std::ostringstream time_oss;
+                time_oss << std::fixed << std::setprecision(2) << r.execution_time_ms;
+                rs->AddRow({r.query, r.user, r.database,
+                           r.success ? "YES" : "NO",
+                           time_oss.str(),
+                           std::to_string(r.timestamp_us)});
+            }
+            return ExecutionResult::Data(rs);
+        };
+
+        // ----- SCHEDULED JOBS -----
+        dispatch_map_[StatementType::CREATE_SCHEDULE] = [this](Statement *s, SessionContext *ctx, Transaction *t) {
+            auto* stmt = dynamic_cast<CreateScheduleStatement*>(s);
+            if (!stmt) return ExecutionResult::Error("Invalid CREATE SCHEDULE statement");
+
+            ScheduledJob job;
+            job.name = stmt->name_;
+            job.sql = stmt->sql_body_;
+            job.interval_seconds = stmt->interval_seconds_;
+            job.enabled = true;
+            Scheduler::Instance().AddJob(job);
+
+            // Also persist in catalog
+            ScheduleInfo sched;
+            sched.name = stmt->name_;
+            sched.interval_seconds = stmt->interval_seconds_;
+            sched.sql = stmt->sql_body_;
+            catalog_->CreateSchedule(stmt->name_, sched);
+            catalog_->SaveCatalog();
+
+            return ExecutionResult::Message("Schedule '" + stmt->name_ + "' created (every " +
+                                           std::to_string(stmt->interval_seconds_) + "s)");
+        };
+
+        dispatch_map_[StatementType::DROP_SCHEDULE] = [this](Statement *s, SessionContext *ctx, Transaction *t) {
+            auto* stmt = dynamic_cast<DropScheduleStatement*>(s);
+            if (!stmt) return ExecutionResult::Error("Invalid DROP SCHEDULE statement");
+            Scheduler::Instance().RemoveJob(stmt->name_);
+            catalog_->DropSchedule(stmt->name_);
+            catalog_->SaveCatalog();
+            return ExecutionResult::Message("Schedule '" + stmt->name_ + "' dropped");
+        };
+
+        dispatch_map_[StatementType::SHOW_SCHEDULES] = [this](Statement *s, SessionContext *ctx, Transaction *t) {
+            auto jobs = Scheduler::Instance().GetJobs();
+            auto rs = std::make_shared<ResultSet>();
+            rs->column_names = {"Name", "SQL", "Interval (s)", "Enabled", "Run Count", "Last Run"};
+            for (auto& job : jobs) {
+                rs->AddRow({job.name, job.sql, std::to_string(job.interval_seconds),
+                           job.enabled ? "YES" : "NO", std::to_string(job.run_count),
+                           std::to_string(job.last_run)});
+            }
+            return ExecutionResult::Data(rs);
+        };
+
+        // ----- REPLICATION -----
+        dispatch_map_[StatementType::SET_REPLICATION] = [this](Statement *s, SessionContext *ctx, Transaction *t) {
+            auto* stmt = dynamic_cast<SetReplicationStatement*>(s);
+            if (!stmt) return ExecutionResult::Error("Invalid replication statement");
+
+            auto& repl = ReplicationManager::Instance();
+
+            if (stmt->role_ == "PRIMARY") {
+                repl.SetRole(ReplicationManager::Role::PRIMARY);
+                return ExecutionResult::Message("Replication role set to PRIMARY");
+            } else if (stmt->role_ == "REPLICA") {
+                repl.SetRole(ReplicationManager::Role::REPLICA);
+                if (!stmt->primary_host_.empty()) {
+                    repl.ConnectToPrimary(stmt->primary_host_, stmt->primary_port_);
+                }
+                return ExecutionResult::Message("Replication role set to REPLICA");
+            } else if (stmt->role_ == "STANDALONE") {
+                repl.SetRole(ReplicationManager::Role::STANDALONE);
+                return ExecutionResult::Message("Replication role set to STANDALONE");
+            }
+            return ExecutionResult::Error("Unknown replication role: " + stmt->role_);
+        };
+
+        dispatch_map_[StatementType::SHOW_REPLICATION_STATUS] = [this](Statement *s, SessionContext *ctx, Transaction *t) {
+            auto status = ReplicationManager::Instance().GetStatus();
+            auto rs = std::make_shared<ResultSet>();
+            rs->column_names = {"Property", "Value"};
+
+            std::string role_str;
+            switch (status.role) {
+                case ReplicationManager::Role::STANDALONE: role_str = "STANDALONE"; break;
+                case ReplicationManager::Role::PRIMARY: role_str = "PRIMARY"; break;
+                case ReplicationManager::Role::REPLICA: role_str = "REPLICA"; break;
+            }
+            rs->AddRow({"Role", role_str});
+            rs->AddRow({"Replica Count", std::to_string(status.replica_count)});
+            rs->AddRow({"Last WAL LSN", std::to_string(status.last_wal_lsn)});
+            rs->AddRow({"Primary Alive", status.primary_alive ? "YES" : "NO"});
+            rs->AddRow({"Primary Host", status.primary_host});
+
+            for (auto& host : status.replica_hosts) {
+                rs->AddRow({"Replica", host});
+            }
+            return ExecutionResult::Data(rs);
+        };
+
+        // ----- AI: INDEX ADVISOR -----
+        dispatch_map_[StatementType::SHOW_INDEX_SUGGESTIONS] = [this](Statement *s, SessionContext *ctx, Transaction *t) {
+            auto suggestions = ai::IndexAdvisor::Instance().GetSuggestions(catalog_);
+            auto rs = std::make_shared<ResultSet>();
+            rs->column_names = {"Table", "Column", "Type", "Reason", "Query Count", "Suggested SQL"};
+            for (auto& sug : suggestions) {
+                rs->AddRow({sug.table, sug.column, sug.index_type, sug.reason,
+                           std::to_string(sug.query_count), sug.suggested_sql});
+            }
+            if (suggestions.empty()) {
+                rs->AddRow({"(none)", "", "", "Not enough query data yet", "0", ""});
+            }
+            return ExecutionResult::Data(rs);
+        };
+
+        // ----- AI: QUERY FIREWALL -----
+        dispatch_map_[StatementType::SHOW_BLOCKED_QUERIES] = [this](Statement *s, SessionContext *ctx, Transaction *t) {
+            auto blocked = ai::QueryFirewall::Instance().GetBlocked();
+            auto rs = std::make_shared<ResultSet>();
+            rs->column_names = {"ID", "SQL", "User", "Reason", "Timestamp", "Approved"};
+            for (auto& bq : blocked) {
+                rs->AddRow({std::to_string(bq.id), bq.sql, bq.user, bq.reason,
+                           std::to_string(bq.timestamp), bq.approved ? "YES" : "NO"});
+            }
+            if (blocked.empty()) {
+                rs->AddRow({"0", "(none)", "", "No blocked queries", "0", ""});
+            }
+            return ExecutionResult::Data(rs);
+        };
+
+        dispatch_map_[StatementType::APPROVE_QUERY] = [this](Statement *s, SessionContext *ctx, Transaction *t) {
+            auto* stmt = dynamic_cast<ApproveQueryStatement*>(s);
+            if (!stmt) return ExecutionResult::Error("Invalid APPROVE QUERY statement");
+            if (ai::QueryFirewall::Instance().Approve(stmt->query_id_)) {
+                return ExecutionResult::Message("Query " + std::to_string(stmt->query_id_) + " approved");
+            }
+            return ExecutionResult::Error("Query ID " + std::to_string(stmt->query_id_) + " not found");
+        };
+
         // ----- SERVER CONTROL -----
         dispatch_map_[StatementType::STOP_SERVER] = [this](Statement *s, SessionContext *ctx, Transaction *t) {
             return ExecuteStopServer(ctx);
@@ -423,8 +871,26 @@ namespace chronosdb {
                 return ExecutionResult::Error("Unknown Statement Type");
             }
 
-            // Execute the handler
+            // Execute the handler with timing for query history
+            auto start_time = std::chrono::high_resolution_clock::now();
             ExecutionResult res = it->second(stmt, session, txn);
+            auto end_time = std::chrono::high_resolution_clock::now();
+            double elapsed_ms = std::chrono::duration<double, std::milli>(end_time - start_time).count();
+
+            // Record in query history
+            {
+                QueryRecord record;
+                record.query = stmt->sql_text_.empty() ?
+                    ("stmt_type:" + std::to_string(static_cast<int>(type))) : stmt->sql_text_;
+                record.user = session ? session->current_user : "system";
+                record.database = session ? session->current_db : "chronosdb";
+                record.success = res.success;
+                record.execution_time_ms = elapsed_ms;
+                record.timestamp_us = static_cast<uint64_t>(
+                    std::chrono::duration_cast<std::chrono::microseconds>(
+                        std::chrono::system_clock::now().time_since_epoch()).count());
+                QueryHistory::Instance().Record(record);
+            }
 
             // Auto-commit for single DML statements
             if (type == StatementType::INSERT ||

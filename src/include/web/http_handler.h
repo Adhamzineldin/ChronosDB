@@ -112,6 +112,18 @@ private:
     HttpResponse HandleGetAnomalies(const HttpRequest& req);
     HttpResponse HandleGetExecStats(const HttpRequest& req);
     HttpResponse HandleGetAIDetailed(const HttpRequest& req);
+    HttpResponse HandleGetHistory(const HttpRequest& req);
+    HttpResponse HandleGetSchedules(const HttpRequest& req);
+    HttpResponse HandleCreateSchedule(const HttpRequest& req);
+    HttpResponse HandleDeleteSchedule(const HttpRequest& req, const std::string& name);
+    HttpResponse HandleGetBlockedQueries(const HttpRequest& req);
+    HttpResponse HandleApproveQuery(const HttpRequest& req, const std::string& id);
+    HttpResponse HandleGetIndexSuggestions(const HttpRequest& req);
+    HttpResponse HandleGetReplicationStatus(const HttpRequest& req);
+    HttpResponse HandleGetBufferStats(const HttpRequest& req);
+    HttpResponse HandleGetFullSchema(const HttpRequest& req);
+    HttpResponse HandleExportTable(const HttpRequest& req, const std::string& table);
+    HttpResponse HandleImportTable(const HttpRequest& req, const std::string& table);
 
     // ── Static file serving ──
     HttpResponse ServeStaticFile(const std::string& path);

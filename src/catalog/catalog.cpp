@@ -222,6 +222,44 @@ void Catalog::SaveCatalog() {
         ss << "VIEW " << view->name << " " << encoded_query << "\n";
     }
 
+    // Serialize Procedures
+    for (auto &pair : procedures_) {
+        ProcedureInfo *proc = pair.second.get();
+        ss << "PROCEDURE " << proc->name << " " << proc->parameters.size() << " ";
+        for (auto &p : proc->parameters) {
+            ss << p.first << " " << p.second << " ";
+        }
+        // Encode body
+        std::string encoded_body = proc->body;
+        for (auto &ch : encoded_body) {
+            if (ch == ' ') ch = '\x01';
+            if (ch == '\n') ch = '\x02';
+        }
+        ss << encoded_body << "\n";
+    }
+
+    // Serialize Triggers
+    for (auto &pair : triggers_) {
+        TriggerInfo *trig = pair.second.get();
+        std::string encoded_body = trig->body;
+        for (auto &ch : encoded_body) {
+            if (ch == ' ') ch = '\x01';
+            if (ch == '\n') ch = '\x02';
+        }
+        ss << "TRIGGER " << trig->name << " " << trig->table_name << " "
+           << trig->timing << " " << trig->event << " " << encoded_body << "\n";
+    }
+
+    // Serialize Schedules
+    for (auto &pair : schedules_) {
+        ScheduleInfo *sched = pair.second.get();
+        std::string encoded_sql = sched->sql;
+        for (auto &ch : encoded_sql) {
+            if (ch == ' ') ch = '\x01';
+        }
+        ss << "SCHEDULE " << sched->name << " " << sched->interval_seconds << " " << encoded_sql << "\n";
+    }
+
     // 2. Handover string to DiskManager for Secure Write
     bpm_->GetDiskManager()->WriteMetadata(ss.str());
 }
@@ -363,6 +401,51 @@ void Catalog::LoadCatalog() {
             view->name = view_name;
             view->select_query = encoded_query;
             views_[view_name] = std::move(view);
+        } else if (type == "PROCEDURE") {
+            std::string name;
+            int param_count;
+            in >> name >> param_count;
+            auto proc = std::make_unique<ProcedureInfo>();
+            proc->name = name;
+            for (int i = 0; i < param_count; i++) {
+                std::string pname, ptype;
+                in >> pname >> ptype;
+                proc->parameters.push_back({pname, ptype});
+            }
+            std::string encoded_body;
+            in >> encoded_body;
+            for (auto &ch : encoded_body) {
+                if (ch == '\x01') ch = ' ';
+                if (ch == '\x02') ch = '\n';
+            }
+            proc->body = encoded_body;
+            procedures_[name] = std::move(proc);
+        } else if (type == "TRIGGER") {
+            std::string name, table, timing, event, encoded_body;
+            in >> name >> table >> timing >> event >> encoded_body;
+            for (auto &ch : encoded_body) {
+                if (ch == '\x01') ch = ' ';
+                if (ch == '\x02') ch = '\n';
+            }
+            auto trig = std::make_unique<TriggerInfo>();
+            trig->name = name;
+            trig->table_name = table;
+            trig->timing = timing;
+            trig->event = event;
+            trig->body = encoded_body;
+            triggers_[name] = std::move(trig);
+        } else if (type == "SCHEDULE") {
+            std::string name, encoded_sql;
+            int interval;
+            in >> name >> interval >> encoded_sql;
+            for (auto &ch : encoded_sql) {
+                if (ch == '\x01') ch = ' ';
+            }
+            auto sched = std::make_unique<ScheduleInfo>();
+            sched->name = name;
+            sched->interval_seconds = interval;
+            sched->sql = encoded_sql;
+            schedules_[name] = std::move(sched);
         }
     }
     std::cout << "[SYSTEM] Database restored from disk." << std::endl;
@@ -406,6 +489,133 @@ std::vector<std::string> Catalog::GetAllViewNames() {
         names.push_back(name);
     }
     return names;
+}
+
+// ============================================================================
+// PROCEDURE OPERATIONS
+// ============================================================================
+
+bool Catalog::CreateProcedure(const std::string &name, const ProcedureInfo &proc) {
+    std::lock_guard<std::mutex> lock(latch_);
+    if (procedures_.find(name) != procedures_.end()) return false;
+    auto p = std::make_unique<ProcedureInfo>(proc);
+    procedures_[name] = std::move(p);
+    return true;
+}
+
+ProcedureInfo* Catalog::GetProcedure(const std::string &name) {
+    std::lock_guard<std::mutex> lock(latch_);
+    auto it = procedures_.find(name);
+    if (it == procedures_.end()) return nullptr;
+    return it->second.get();
+}
+
+bool Catalog::DropProcedure(const std::string &name) {
+    std::lock_guard<std::mutex> lock(latch_);
+    return procedures_.erase(name) > 0;
+}
+
+std::vector<std::string> Catalog::GetAllProcedureNames() {
+    std::lock_guard<std::mutex> lock(latch_);
+    std::vector<std::string> names;
+    for (const auto& [name, _] : procedures_) names.push_back(name);
+    return names;
+}
+
+// ============================================================================
+// TRIGGER OPERATIONS
+// ============================================================================
+
+bool Catalog::CreateTrigger(const std::string &name, const TriggerInfo &trigger) {
+    std::lock_guard<std::mutex> lock(latch_);
+    if (triggers_.find(name) != triggers_.end()) return false;
+    auto t = std::make_unique<TriggerInfo>(trigger);
+    triggers_[name] = std::move(t);
+    return true;
+}
+
+std::vector<TriggerInfo*> Catalog::GetTableTriggers(const std::string &table_name,
+                                                     const std::string &timing,
+                                                     const std::string &event) {
+    std::lock_guard<std::mutex> lock(latch_);
+    std::vector<TriggerInfo*> result;
+    for (auto &pair : triggers_) {
+        if (pair.second->table_name == table_name &&
+            pair.second->timing == timing &&
+            pair.second->event == event) {
+            result.push_back(pair.second.get());
+        }
+    }
+    return result;
+}
+
+bool Catalog::DropTrigger(const std::string &name) {
+    std::lock_guard<std::mutex> lock(latch_);
+    return triggers_.erase(name) > 0;
+}
+
+std::vector<std::string> Catalog::GetAllTriggerNames() {
+    std::lock_guard<std::mutex> lock(latch_);
+    std::vector<std::string> names;
+    for (const auto& [name, _] : triggers_) names.push_back(name);
+    return names;
+}
+
+// ============================================================================
+// SCHEDULE OPERATIONS
+// ============================================================================
+
+bool Catalog::CreateSchedule(const std::string &name, const ScheduleInfo &schedule) {
+    std::lock_guard<std::mutex> lock(latch_);
+    if (schedules_.find(name) != schedules_.end()) return false;
+    auto s = std::make_unique<ScheduleInfo>(schedule);
+    schedules_[name] = std::move(s);
+    return true;
+}
+
+bool Catalog::DropSchedule(const std::string &name) {
+    std::lock_guard<std::mutex> lock(latch_);
+    return schedules_.erase(name) > 0;
+}
+
+std::vector<ScheduleInfo> Catalog::GetAllSchedules() {
+    std::lock_guard<std::mutex> lock(latch_);
+    std::vector<ScheduleInfo> result;
+    for (auto &pair : schedules_) {
+        result.push_back(*pair.second);
+    }
+    return result;
+}
+
+// ============================================================================
+// FULL SCHEMA (for ER Diagram)
+// ============================================================================
+
+Catalog::FullSchemaInfo Catalog::GetFullSchema() {
+    std::lock_guard<std::mutex> lock(latch_);
+    FullSchemaInfo info;
+    for (auto &[oid, table_meta] : tables_) {
+        if (!table_meta) continue;
+        FullSchemaInfo::TableInfo ti;
+        ti.name = table_meta->name_;
+        auto cols = table_meta->schema_.GetColumns();
+        for (auto &col : cols) {
+            std::string type_str;
+            switch (col.GetType()) {
+                case TypeId::INTEGER: type_str = "INT"; break;
+                case TypeId::DECIMAL: type_str = "FLOAT"; break;
+                case TypeId::VARCHAR: type_str = "VARCHAR"; break;
+                case TypeId::BOOLEAN: type_str = "BOOLEAN"; break;
+                default: type_str = "UNKNOWN"; break;
+            }
+            ti.columns.push_back({col.GetName(), type_str});
+            if (col.IsPrimaryKey()) {
+                ti.primary_keys.push_back(col.GetName());
+            }
+        }
+        info.tables.push_back(ti);
+    }
+    return info;
 }
 
 IndexInfo *Catalog::GetIndex(const std::string &index_name) {

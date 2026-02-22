@@ -163,4 +163,49 @@ export const api = {
     }),
 
   getAIHealth: () => request('/test/ai-health'),
+
+  // Query History
+  getHistory: (limit = 50) =>
+    request<{ success: boolean; records: any[]; qps: number }>(`/history?limit=${limit}`),
+
+  // Schedules
+  getSchedules: () => request('/schedules'),
+  createSchedule: (name: string, interval: string, sql: string) =>
+    request('/schedules', {
+      method: 'POST',
+      body: JSON.stringify({ name, interval, sql }),
+    }),
+  deleteSchedule: (name: string) =>
+    request(`/schedules/${name}`, { method: 'DELETE' }),
+
+  // AI: Index Suggestions & Query Firewall
+  getIndexSuggestions: () => request('/ai/index-suggestions'),
+  getBlockedQueries: () => request('/ai/blocked-queries'),
+  approveQuery: (id: string) =>
+    request(`/ai/approve/${id}`, { method: 'POST' }),
+
+  // Replication
+  getReplicationStatus: () => request('/replication/status'),
+
+  // Buffer Stats
+  getBufferStats: () =>
+    request<{ success: boolean; buffer_pool_size: number; pages_in_use: number }>('/buffer-stats'),
+
+  // Schema (for ER Diagram)
+  getFullSchema: () =>
+    request<{ success: boolean; tables: any[] }>('/schema/full'),
+
+  // Export/Import
+  exportTable: (name: string) =>
+    fetch(`/api/tables/${name}/export`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { Authorization: `Bearer ${localStorage.getItem('chronos_token') || ''}` },
+    }).then(r => r.text()),
+
+  importTable: (name: string, csv: string) =>
+    request(`/tables/${name}/import`, {
+      method: 'POST',
+      body: JSON.stringify({ csv }),
+    }),
 };

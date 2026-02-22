@@ -25,6 +25,11 @@ namespace chronosdb {
             return ParseExplain();
         }
 
+        // 0b. WITH (CTE) ...
+        if (current_token_.type == TokenType::WITH) {
+            return ParseCTE();
+        }
+
         // 1. CREATE ...
         if (current_token_.type == TokenType::CREATE) {
             Advance(); // Eat '2E3MEL'
@@ -50,13 +55,69 @@ namespace chronosdb {
             } else if (current_token_.type == TokenType::USER) {
                 Advance(); // Eat 'USER'
                 return ParseCreateUser();
+            } else if (current_token_.type == TokenType::PROCEDURE) {
+                Advance(); // Eat PROCEDURE
+                return ParseCreateProcedure();
+            } else if (current_token_.type == TokenType::TRIGGER) {
+                Advance(); // Eat TRIGGER
+                return ParseCreateTrigger();
+            } else if (current_token_.type == TokenType::SCHEDULE) {
+                Advance(); // Eat SCHEDULE
+                return ParseCreateSchedule();
             }
-            throw Exception(ExceptionType::PARSER, "Expected GADWAL, FEHRIS, HASH INDEX, VIEW, DATABASE, or USER after 2E3MEL");
+            throw Exception(ExceptionType::PARSER, "Expected GADWAL, FEHRIS, HASH INDEX, VIEW, DATABASE, USER, PROCEDURE, TRIGGER, or SCHEDULE after 2E3MEL");
         }
 
         // 2. INSERT
         else if (current_token_.type == TokenType::INSERT) {
             return ParseInsert();
+        }
+        // 2b. EXPORT
+        else if (current_token_.type == TokenType::EXPORT) {
+            return ParseExport();
+        }
+        // 2c. IMPORT
+        else if (current_token_.type == TokenType::IMPORT) {
+            return ParseImport();
+        }
+        // 2d. BACKUP
+        else if (current_token_.type == TokenType::BACKUP) {
+            return ParseBackup();
+        }
+        // 2e. RESTORE
+        else if (current_token_.type == TokenType::RESTORE) {
+            return ParseRestore();
+        }
+        // 2f. CALL procedure
+        else if (current_token_.type == TokenType::CALL) {
+            return ParseCall();
+        }
+        // 2g. SET REPLICATION
+        else if (current_token_.type == TokenType::UPDATE_SET) {
+            // Check if SET REPLICATION
+            Advance(); // Eat SET
+            if (current_token_.type == TokenType::REPLICATION) {
+                return ParseSetReplication();
+            }
+            throw Exception(ExceptionType::PARSER, "Unexpected SET outside UPDATE context. Use UPDATE table SET ...");
+        }
+        // 2h. APPROVE QUERY
+        else if (current_token_.type == TokenType::APPROVE) {
+            Advance(); // Eat APPROVE
+            if (!Match(TokenType::QUERY_KW))
+                throw Exception(ExceptionType::PARSER, "Expected QUERY after APPROVE");
+            auto stmt = std::make_unique<ApproveQueryStatement>();
+            stmt->query_id_ = ParseNumber();
+            if (!Match(TokenType::SEMICOLON)) throw Exception(ExceptionType::PARSER, "Expected ;");
+            return stmt;
+        }
+        // 2i. PROMOTE (replication failover)
+        else if (current_token_.type == TokenType::PROMOTE) {
+            Advance();
+            if (!Match(TokenType::SEMICOLON)) throw Exception(ExceptionType::PARSER, "Expected ;");
+            auto stmt = std::make_unique<SetReplicationStatement>();
+            stmt->role_ = "PRIMARY";
+            return stmt;
         }
         // 3. SELECT
         else if (current_token_.type == TokenType::SELECT) {
@@ -106,7 +167,37 @@ namespace chronosdb {
                 Advance(); // Eat VIEW
                 return ParseDropView();
             }
-            throw Exception(ExceptionType::PARSER, "Expected TABLE, DATABASE, INDEX, or VIEW after DROP");
+            if (current_token_.type == TokenType::PROCEDURE) {
+                Advance();
+                auto stmt = std::make_unique<DropProcedureStatement>();
+                if (current_token_.type != TokenType::IDENTIFIER)
+                    throw Exception(ExceptionType::PARSER, "Expected procedure name");
+                stmt->name_ = current_token_.text;
+                Advance();
+                if (!Match(TokenType::SEMICOLON)) throw Exception(ExceptionType::PARSER, "Expected ;");
+                return stmt;
+            }
+            if (current_token_.type == TokenType::TRIGGER) {
+                Advance();
+                auto stmt = std::make_unique<DropTriggerStatement>();
+                if (current_token_.type != TokenType::IDENTIFIER)
+                    throw Exception(ExceptionType::PARSER, "Expected trigger name");
+                stmt->name_ = current_token_.text;
+                Advance();
+                if (!Match(TokenType::SEMICOLON)) throw Exception(ExceptionType::PARSER, "Expected ;");
+                return stmt;
+            }
+            if (current_token_.type == TokenType::SCHEDULE) {
+                Advance();
+                auto stmt = std::make_unique<DropScheduleStatement>();
+                if (current_token_.type != TokenType::IDENTIFIER && current_token_.type != TokenType::STRING_LIT)
+                    throw Exception(ExceptionType::PARSER, "Expected schedule name");
+                stmt->name_ = current_token_.text;
+                Advance();
+                if (!Match(TokenType::SEMICOLON)) throw Exception(ExceptionType::PARSER, "Expected ;");
+                return stmt;
+            }
+            throw Exception(ExceptionType::PARSER, "Expected TABLE, DATABASE, INDEX, VIEW, PROCEDURE, TRIGGER, or SCHEDULE after DROP");
         }
         // 6. BEGIN TRANSACTION
         else if (current_token_.type == TokenType::BEGIN_TXN) {
@@ -239,8 +330,44 @@ namespace chronosdb {
                 if (!Match(TokenType::SEMICOLON)) throw Exception(ExceptionType::PARSER, "Expected ;");
                 return std::make_unique<ShowExecutionStatsStatement>();
             }
+            else if (current_token_.type == TokenType::HISTORY) {
+                Advance();
+                auto stmt = std::make_unique<ShowHistoryStatement>();
+                if (current_token_.type == TokenType::LIMIT) {
+                    Advance();
+                    stmt->limit_ = ParseNumber();
+                }
+                if (!Match(TokenType::SEMICOLON)) throw Exception(ExceptionType::PARSER, "Expected ;");
+                return stmt;
+            } else if (current_token_.type == TokenType::INDEX) {
+                Advance();
+                if (current_token_.type == TokenType::SUGGESTIONS) {
+                    Advance();
+                    if (!Match(TokenType::SEMICOLON)) throw Exception(ExceptionType::PARSER, "Expected ;");
+                    return std::make_unique<ShowIndexSuggestionsStatement>();
+                }
+                throw Exception(ExceptionType::PARSER, "Expected SUGGESTIONS after INDEX");
+            } else if (current_token_.type == TokenType::BLOCKED) {
+                Advance();
+                if (current_token_.type == TokenType::QUERY_KW || current_token_.type == TokenType::IDENTIFIER) {
+                    Advance(); // Eat QUERIES
+                }
+                if (!Match(TokenType::SEMICOLON)) throw Exception(ExceptionType::PARSER, "Expected ;");
+                return std::make_unique<ShowBlockedQueriesStatement>();
+            } else if (current_token_.type == TokenType::SCHEDULE) {
+                Advance();
+                if (!Match(TokenType::SEMICOLON)) throw Exception(ExceptionType::PARSER, "Expected ;");
+                return std::make_unique<ShowSchedulesStatement>();
+            } else if (current_token_.type == TokenType::REPLICATION) {
+                Advance();
+                if (Match(TokenType::STATUS)) {
+                    // ok
+                }
+                if (!Match(TokenType::SEMICOLON)) throw Exception(ExceptionType::PARSER, "Expected ;");
+                return std::make_unique<ShowReplicationStatusStatement>();
+            }
             throw Exception(ExceptionType::PARSER,
-                "Expected USER, DATABASES, CREATE, TABLES, STATUS, AI STATUS, ANOMALIES, or EXECUTION STATS");
+                "Expected USER, DATABASES, CREATE, TABLES, STATUS, AI STATUS, ANOMALIES, EXECUTION STATS, HISTORY, INDEX SUGGESTIONS, BLOCKED QUERIES, SCHEDULES, or REPLICATION STATUS");
         }
         // 15. DESCRIBE
         else if (current_token_.type == TokenType::DESCRIBE) {
@@ -436,6 +563,12 @@ namespace chronosdb {
             }
         }
         Advance(); // Eat )
+
+        // Optional PARTITION BY clause
+        if (current_token_.type == TokenType::PARTITION) {
+            Advance(); // Eat PARTITION
+            ParsePartitionClause(stmt.get());
+        }
 
         if (!Match(TokenType::SEMICOLON))
             throw Exception(ExceptionType::PARSER, "Expected ; at end of command");
@@ -729,10 +862,14 @@ namespace chronosdb {
         if (Match(TokenType::STAR)) {
             stmt->select_all_ = true;
         } else {
-            // Parse columns or aggregate functions
+            // Parse columns, aggregate functions, or window functions
             while (true) {
+                // Check if it's a window function
+                if (IsWindowFunction()) {
+                    stmt->window_functions_.push_back(ParseWindowFunction());
+                }
                 // Check if it's an aggregate function
-                if (IsAggregateFunction()) {
+                else if (IsAggregateFunction()) {
                     stmt->aggregates_.push_back(ParseAggregateFunction());
                 } else if (current_token_.type == TokenType::IDENTIFIER) {
                     stmt->columns_.push_back(current_token_.text);
@@ -1426,6 +1563,529 @@ namespace chronosdb {
 
         return stmt;
     }
+
+    // ============ CTE PARSING ============
+
+    std::unique_ptr<Statement> Parser::ParseCTE() {
+        Advance(); // Eat WITH
+
+        auto stmt = std::make_unique<SelectStatement>();
+
+        // Parse CTE definitions: name AS (SELECT ...)
+        do {
+            SelectStatement::CTEDefinition cte;
+            if (current_token_.type != TokenType::IDENTIFIER)
+                throw Exception(ExceptionType::PARSER, "Expected CTE name after WITH");
+            cte.name = current_token_.text;
+            Advance();
+
+            if (!Match(TokenType::AS))
+                throw Exception(ExceptionType::PARSER, "Expected AS after CTE name");
+            if (!Match(TokenType::L_PAREN))
+                throw Exception(ExceptionType::PARSER, "Expected ( after AS");
+
+            cte.query = ParseSelectSubquery();
+
+            if (!Match(TokenType::R_PAREN))
+                throw Exception(ExceptionType::PARSER, "Expected ) after CTE query");
+
+            stmt->cte_definitions_.push_back(std::move(cte));
+        } while (Match(TokenType::COMMA));
+
+        // Now parse the main SELECT
+        if (current_token_.type != TokenType::SELECT)
+            throw Exception(ExceptionType::PARSER, "Expected SELECT after CTE definitions");
+
+        auto main_select = ParseSelect();
+        auto* sel = dynamic_cast<SelectStatement*>(main_select.get());
+        if (sel) {
+            stmt->select_all_ = sel->select_all_;
+            stmt->columns_ = sel->columns_;
+            stmt->table_name_ = sel->table_name_;
+            stmt->where_clause_ = std::move(sel->where_clause_);
+            stmt->is_distinct_ = sel->is_distinct_;
+            stmt->aggregates_ = sel->aggregates_;
+            stmt->joins_ = std::move(sel->joins_);
+            stmt->group_by_columns_ = sel->group_by_columns_;
+            stmt->having_clause_ = std::move(sel->having_clause_);
+            stmt->order_by_ = sel->order_by_;
+            stmt->limit_ = sel->limit_;
+            stmt->offset_ = sel->offset_;
+            stmt->as_of_timestamp_ = sel->as_of_timestamp_;
+            stmt->window_functions_ = std::move(sel->window_functions_);
+        }
+        return stmt;
+    }
+
+    // ============ WINDOW FUNCTION PARSING ============
+
+    bool Parser::IsWindowFunction() {
+        return current_token_.type == TokenType::ROW_NUMBER ||
+               current_token_.type == TokenType::RANK ||
+               current_token_.type == TokenType::DENSE_RANK ||
+               current_token_.type == TokenType::LAG ||
+               current_token_.type == TokenType::LEAD;
+    }
+
+    SelectStatement::WindowFunction Parser::ParseWindowFunction() {
+        SelectStatement::WindowFunction wf;
+
+        // Function name
+        switch (current_token_.type) {
+            case TokenType::ROW_NUMBER: wf.function_name = "ROW_NUMBER"; break;
+            case TokenType::RANK: wf.function_name = "RANK"; break;
+            case TokenType::DENSE_RANK: wf.function_name = "DENSE_RANK"; break;
+            case TokenType::LAG: wf.function_name = "LAG"; break;
+            case TokenType::LEAD: wf.function_name = "LEAD"; break;
+            default: throw Exception(ExceptionType::PARSER, "Expected window function");
+        }
+        Advance();
+
+        // Parse arguments: (col, offset) or ()
+        if (!Match(TokenType::L_PAREN))
+            throw Exception(ExceptionType::PARSER, "Expected ( after window function");
+
+        if (current_token_.type != TokenType::R_PAREN) {
+            if (current_token_.type == TokenType::IDENTIFIER) {
+                wf.argument = current_token_.text;
+                Advance();
+            }
+            if (Match(TokenType::COMMA)) {
+                wf.offset = ParseNumber();
+            }
+        }
+        if (!Match(TokenType::R_PAREN))
+            throw Exception(ExceptionType::PARSER, "Expected ) after window function args");
+
+        // OVER clause
+        if (!Match(TokenType::OVER))
+            throw Exception(ExceptionType::PARSER, "Expected OVER after window function");
+        if (!Match(TokenType::L_PAREN))
+            throw Exception(ExceptionType::PARSER, "Expected ( after OVER");
+
+        // Optional PARTITION BY
+        if (Match(TokenType::PARTITION)) {
+            if (!Match(TokenType::BY))
+                throw Exception(ExceptionType::PARSER, "Expected BY after PARTITION");
+            do {
+                if (current_token_.type != TokenType::IDENTIFIER)
+                    throw Exception(ExceptionType::PARSER, "Expected column in PARTITION BY");
+                wf.partition_by.push_back(current_token_.text);
+                Advance();
+            } while (Match(TokenType::COMMA));
+        }
+
+        // Optional ORDER BY
+        if (Match(TokenType::ORDER)) {
+            if (!Match(TokenType::BY))
+                throw Exception(ExceptionType::PARSER, "Expected BY after ORDER");
+            wf.order_by = ParseOrderByClause();
+        }
+
+        if (!Match(TokenType::R_PAREN))
+            throw Exception(ExceptionType::PARSER, "Expected ) after OVER clause");
+
+        // Optional AS alias
+        if (Match(TokenType::AS)) {
+            if (current_token_.type != TokenType::IDENTIFIER)
+                throw Exception(ExceptionType::PARSER, "Expected alias after AS");
+            wf.alias = current_token_.text;
+            Advance();
+        } else if (current_token_.type == TokenType::IDENTIFIER &&
+                   current_token_.type != TokenType::FROM &&
+                   current_token_.text != "FROM") {
+            // Implicit alias without AS
+            wf.alias = current_token_.text;
+            Advance();
+        }
+
+        if (wf.alias.empty()) {
+            wf.alias = wf.function_name;
+        }
+
+        return wf;
+    }
+
+    // ============ TABLE PARTITIONING ============
+
+    void Parser::ParsePartitionClause(CreateStatement* stmt) {
+        // PARTITION BY RANGE(col) (...)
+        if (!Match(TokenType::BY))
+            throw Exception(ExceptionType::PARSER, "Expected BY after PARTITION");
+
+        stmt->is_partitioned_ = true;
+
+        if (current_token_.type == TokenType::RANGE_KW) {
+            stmt->partition_type_ = "RANGE";
+            Advance();
+        } else if (current_token_.type == TokenType::HASH) {
+            stmt->partition_type_ = "HASH";
+            Advance();
+        } else {
+            throw Exception(ExceptionType::PARSER, "Expected RANGE or HASH after PARTITION BY");
+        }
+
+        if (!Match(TokenType::L_PAREN))
+            throw Exception(ExceptionType::PARSER, "Expected ( after partition type");
+        if (current_token_.type != TokenType::IDENTIFIER)
+            throw Exception(ExceptionType::PARSER, "Expected partition column name");
+        stmt->partition_column_ = current_token_.text;
+        Advance();
+        if (!Match(TokenType::R_PAREN))
+            throw Exception(ExceptionType::PARSER, "Expected ) after partition column");
+
+        // Parse partition definitions
+        if (!Match(TokenType::L_PAREN))
+            throw Exception(ExceptionType::PARSER, "Expected ( for partition definitions");
+
+        while (current_token_.type != TokenType::R_PAREN) {
+            if (!Match(TokenType::PARTITION))
+                throw Exception(ExceptionType::PARSER, "Expected PARTITION keyword");
+
+            CreateStatement::PartitionDef pdef;
+            if (current_token_.type != TokenType::IDENTIFIER)
+                throw Exception(ExceptionType::PARSER, "Expected partition name");
+            pdef.name = current_token_.text;
+            Advance();
+
+            if (!Match(TokenType::VALUES))
+                throw Exception(ExceptionType::PARSER, "Expected VALUES");
+            if (!Match(TokenType::LESS))
+                throw Exception(ExceptionType::PARSER, "Expected LESS");
+            if (!Match(TokenType::THAN))
+                throw Exception(ExceptionType::PARSER, "Expected THAN");
+
+            if (current_token_.type == TokenType::MAXVALUE) {
+                pdef.upper_bound = INT32_MAX;
+                Advance();
+            } else {
+                pdef.upper_bound = ParseNumber();
+            }
+
+            stmt->partitions_.push_back(pdef);
+
+            if (current_token_.type == TokenType::COMMA) Advance();
+        }
+        Advance(); // Eat closing )
+    }
+
+    // ============ EXPORT / IMPORT ============
+
+    std::unique_ptr<Statement> Parser::ParseExport() {
+        Advance(); // Eat EXPORT
+        auto stmt = std::make_unique<ExportStatement>();
+
+        if (!Match(TokenType::TABLE))
+            throw Exception(ExceptionType::PARSER, "Expected TABLE after EXPORT");
+
+        if (current_token_.type != TokenType::IDENTIFIER)
+            throw Exception(ExceptionType::PARSER, "Expected table name");
+        stmt->table_name_ = current_token_.text;
+        Advance();
+
+        if (!Match(TokenType::TO))
+            throw Exception(ExceptionType::PARSER, "Expected TO after table name");
+
+        if (current_token_.type != TokenType::STRING_LIT)
+            throw Exception(ExceptionType::PARSER, "Expected file path string");
+        stmt->file_path_ = current_token_.text;
+        Advance();
+
+        if (!Match(TokenType::SEMICOLON))
+            throw Exception(ExceptionType::PARSER, "Expected ;");
+        return stmt;
+    }
+
+    std::unique_ptr<Statement> Parser::ParseImport() {
+        Advance(); // Eat IMPORT
+        auto stmt = std::make_unique<ImportStatement>();
+
+        if (!Match(TokenType::FROM))
+            throw Exception(ExceptionType::PARSER, "Expected FROM after IMPORT");
+
+        if (current_token_.type != TokenType::STRING_LIT)
+            throw Exception(ExceptionType::PARSER, "Expected file path string");
+        stmt->file_path_ = current_token_.text;
+        Advance();
+
+        if (!Match(TokenType::INTO))
+            throw Exception(ExceptionType::PARSER, "Expected INTO after file path");
+
+        if (current_token_.type != TokenType::IDENTIFIER)
+            throw Exception(ExceptionType::PARSER, "Expected table name");
+        stmt->table_name_ = current_token_.text;
+        Advance();
+
+        if (!Match(TokenType::SEMICOLON))
+            throw Exception(ExceptionType::PARSER, "Expected ;");
+        return stmt;
+    }
+
+    // ============ BACKUP / RESTORE ============
+
+    std::unique_ptr<Statement> Parser::ParseBackup() {
+        Advance(); // Eat BACKUP
+        auto stmt = std::make_unique<BackupStatement>();
+
+        if (!Match(TokenType::DATABASE))
+            throw Exception(ExceptionType::PARSER, "Expected DATABASE after BACKUP");
+        if (!Match(TokenType::TO))
+            throw Exception(ExceptionType::PARSER, "Expected TO after DATABASE");
+
+        if (current_token_.type != TokenType::STRING_LIT)
+            throw Exception(ExceptionType::PARSER, "Expected file path string");
+        stmt->file_path_ = current_token_.text;
+        Advance();
+
+        if (!Match(TokenType::SEMICOLON))
+            throw Exception(ExceptionType::PARSER, "Expected ;");
+        return stmt;
+    }
+
+    std::unique_ptr<Statement> Parser::ParseRestore() {
+        Advance(); // Eat RESTORE
+        auto stmt = std::make_unique<RestoreStatement>();
+
+        if (!Match(TokenType::DATABASE))
+            throw Exception(ExceptionType::PARSER, "Expected DATABASE after RESTORE");
+        if (!Match(TokenType::FROM))
+            throw Exception(ExceptionType::PARSER, "Expected FROM after DATABASE");
+
+        if (current_token_.type != TokenType::STRING_LIT)
+            throw Exception(ExceptionType::PARSER, "Expected file path string");
+        stmt->file_path_ = current_token_.text;
+        Advance();
+
+        if (!Match(TokenType::SEMICOLON))
+            throw Exception(ExceptionType::PARSER, "Expected ;");
+        return stmt;
+    }
+
+    // ============ STORED PROCEDURES ============
+
+    std::string Parser::CaptureBodyUntilEnd() {
+        std::string body;
+        int depth = 1; // Already consumed BEGIN
+        while (depth > 0 && current_token_.type != TokenType::EOF_TOKEN) {
+            if (current_token_.type == TokenType::END_KW) {
+                depth--;
+                if (depth == 0) {
+                    Advance(); // Eat END
+                    break;
+                }
+            }
+            if (current_token_.type == TokenType::BEGIN_TXN) {
+                depth++;
+            }
+            if (!body.empty()) body += " ";
+            body += current_token_.text;
+            Advance();
+        }
+        return body;
+    }
+
+    std::unique_ptr<Statement> Parser::ParseCreateProcedure() {
+        auto stmt = std::make_unique<CreateProcedureStatement>();
+
+        if (current_token_.type != TokenType::IDENTIFIER)
+            throw Exception(ExceptionType::PARSER, "Expected procedure name");
+        stmt->name_ = current_token_.text;
+        Advance();
+
+        // Parse parameters
+        if (Match(TokenType::L_PAREN)) {
+            while (current_token_.type != TokenType::R_PAREN) {
+                ProcedureParam param;
+                if (current_token_.type != TokenType::IDENTIFIER)
+                    throw Exception(ExceptionType::PARSER, "Expected parameter name");
+                param.name = current_token_.text;
+                Advance();
+
+                if (Match(TokenType::INT_TYPE)) param.type = TypeId::INTEGER;
+                else if (Match(TokenType::STRING_TYPE)) param.type = TypeId::VARCHAR;
+                else if (Match(TokenType::DECIMAL_TYPE)) param.type = TypeId::DECIMAL;
+                else if (Match(TokenType::BOOL_TYPE)) param.type = TypeId::BOOLEAN;
+                else throw Exception(ExceptionType::PARSER, "Expected type for parameter");
+
+                stmt->params_.push_back(param);
+                if (current_token_.type == TokenType::COMMA) Advance();
+            }
+            Advance(); // Eat )
+        }
+
+        // Expect BEGIN
+        if (!Match(TokenType::BEGIN_TXN))
+            throw Exception(ExceptionType::PARSER, "Expected BEGIN after procedure parameters");
+
+        stmt->body_ = CaptureBodyUntilEnd();
+
+        Match(TokenType::SEMICOLON); // Optional trailing semicolon
+        return stmt;
+    }
+
+    std::unique_ptr<Statement> Parser::ParseCall() {
+        Advance(); // Eat CALL
+        auto stmt = std::make_unique<CallProcedureStatement>();
+
+        if (current_token_.type != TokenType::IDENTIFIER)
+            throw Exception(ExceptionType::PARSER, "Expected procedure name");
+        stmt->name_ = current_token_.text;
+        Advance();
+
+        // Parse arguments
+        if (Match(TokenType::L_PAREN)) {
+            while (current_token_.type != TokenType::R_PAREN) {
+                stmt->arguments_.push_back(ParseValue());
+                if (current_token_.type == TokenType::COMMA) Advance();
+            }
+            Advance(); // Eat )
+        }
+
+        if (!Match(TokenType::SEMICOLON))
+            throw Exception(ExceptionType::PARSER, "Expected ;");
+        return stmt;
+    }
+
+    // ============ TRIGGERS ============
+
+    std::unique_ptr<Statement> Parser::ParseCreateTrigger() {
+        auto stmt = std::make_unique<CreateTriggerStatement>();
+
+        if (current_token_.type != TokenType::IDENTIFIER)
+            throw Exception(ExceptionType::PARSER, "Expected trigger name");
+        stmt->name_ = current_token_.text;
+        Advance();
+
+        // BEFORE or AFTER
+        if (Match(TokenType::BEFORE)) {
+            stmt->timing_ = "BEFORE";
+        } else if (Match(TokenType::AFTER)) {
+            stmt->timing_ = "AFTER";
+        } else {
+            throw Exception(ExceptionType::PARSER, "Expected BEFORE or AFTER");
+        }
+
+        // Event: INSERT, UPDATE, DELETE
+        if (Match(TokenType::INSERT)) stmt->event_ = "INSERT";
+        else if (Match(TokenType::UPDATE_CMD)) stmt->event_ = "UPDATE";
+        else if (Match(TokenType::DELETE_CMD)) stmt->event_ = "DELETE";
+        else throw Exception(ExceptionType::PARSER, "Expected INSERT, UPDATE, or DELETE");
+
+        if (!Match(TokenType::ON))
+            throw Exception(ExceptionType::PARSER, "Expected ON after event");
+
+        if (current_token_.type != TokenType::IDENTIFIER)
+            throw Exception(ExceptionType::PARSER, "Expected table name");
+        stmt->table_name_ = current_token_.text;
+        Advance();
+
+        // Optional FOR EACH ROW
+        if (Match(TokenType::FOR_KW)) {
+            Match(TokenType::EACH);
+            Match(TokenType::ROW_KW);
+        }
+
+        // BEGIN ... END body
+        if (!Match(TokenType::BEGIN_TXN))
+            throw Exception(ExceptionType::PARSER, "Expected BEGIN for trigger body");
+
+        stmt->body_ = CaptureBodyUntilEnd();
+
+        Match(TokenType::SEMICOLON);
+        return stmt;
+    }
+
+    // ============ SCHEDULED JOBS ============
+
+    std::unique_ptr<Statement> Parser::ParseCreateSchedule() {
+        auto stmt = std::make_unique<CreateScheduleStatement>();
+
+        if (current_token_.type != TokenType::IDENTIFIER && current_token_.type != TokenType::STRING_LIT)
+            throw Exception(ExceptionType::PARSER, "Expected schedule name");
+        stmt->name_ = current_token_.text;
+        Advance();
+
+        if (!Match(TokenType::EVERY))
+            throw Exception(ExceptionType::PARSER, "Expected EVERY after schedule name");
+
+        int interval = ParseNumber();
+
+        // Parse unit
+        if (Match(TokenType::SECONDS_KW)) {
+            stmt->interval_seconds_ = interval;
+        } else if (Match(TokenType::MINUTES_KW)) {
+            stmt->interval_seconds_ = interval * 60;
+        } else if (Match(TokenType::HOURS_KW)) {
+            stmt->interval_seconds_ = interval * 3600;
+        } else {
+            throw Exception(ExceptionType::PARSER, "Expected SECONDS, MINUTES, or HOURS");
+        }
+
+        if (!Match(TokenType::DO_KW))
+            throw Exception(ExceptionType::PARSER, "Expected DO after interval");
+
+        // Capture SQL body as string literal
+        if (current_token_.type == TokenType::STRING_LIT) {
+            stmt->sql_body_ = current_token_.text;
+            Advance();
+        } else {
+            // Capture raw SQL until semicolon
+            std::string body;
+            while (current_token_.type != TokenType::SEMICOLON &&
+                   current_token_.type != TokenType::EOF_TOKEN) {
+                if (!body.empty()) body += " ";
+                body += current_token_.text;
+                Advance();
+            }
+            stmt->sql_body_ = body;
+        }
+
+        if (!Match(TokenType::SEMICOLON))
+            throw Exception(ExceptionType::PARSER, "Expected ;");
+        return stmt;
+    }
+
+    // ============ REPLICATION ============
+
+    std::unique_ptr<Statement> Parser::ParseSetReplication() {
+        Advance(); // Eat REPLICATION
+        auto stmt = std::make_unique<SetReplicationStatement>();
+
+        if (!Match(TokenType::ROLE))
+            throw Exception(ExceptionType::PARSER, "Expected ROLE after REPLICATION");
+
+        if (current_token_.type == TokenType::PRIMARY_SRV ||
+            (current_token_.type == TokenType::PRIMARY_KEY && current_token_.text == "PRIMARY") ||
+            (current_token_.type == TokenType::IDENTIFIER && current_token_.text == "PRIMARY")) {
+            stmt->role_ = "PRIMARY";
+            Advance();
+        } else if (Match(TokenType::REPLICA)) {
+            stmt->role_ = "REPLICA";
+            // Optional primary host
+            if (current_token_.type == TokenType::STRING_LIT) {
+                std::string host_port = current_token_.text;
+                Advance();
+                size_t colon = host_port.find(':');
+                if (colon != std::string::npos) {
+                    stmt->primary_host_ = host_port.substr(0, colon);
+                    stmt->primary_port_ = std::stoi(host_port.substr(colon + 1));
+                } else {
+                    stmt->primary_host_ = host_port;
+                }
+            }
+        } else if (current_token_.type == TokenType::IDENTIFIER) {
+            stmt->role_ = current_token_.text;
+            Advance();
+        } else {
+            throw Exception(ExceptionType::PARSER, "Expected PRIMARY, REPLICA, or STANDALONE");
+        }
+
+        if (!Match(TokenType::SEMICOLON))
+            throw Exception(ExceptionType::PARSER, "Expected ;");
+        return stmt;
+    }
+
+    // ============ END OF NEW FEATURES ============
 
     uint64_t Parser::ParseHumanDateToMicros(const std::string& date_str) {
         int day = 0, month = 0, year = 0, hour = 0, minute = 0, second = 0;
