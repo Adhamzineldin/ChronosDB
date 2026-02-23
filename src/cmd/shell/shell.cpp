@@ -7,6 +7,7 @@
 #include <random>
 #include <iomanip>
 #include <sstream>
+#include <set>
 
 #include "network/chronos_client.h"
 #include "common/chronos_net_config.h"
@@ -14,12 +15,370 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <conio.h>
 #else
 #include <unistd.h>
+#include <termios.h>
 #endif
 
 using namespace chronosdb;
 namespace fs = std::filesystem;
+
+// =============================================================================
+// AUTOCOMPLETE ENGINE
+// =============================================================================
+
+class ShellAutocomplete {
+public:
+    void Initialize() {
+        // SQL keywords from lexer
+        const auto& kw = Lexer::GetKeywords();
+        for (const auto& [word, type] : kw) {
+            std::string upper = word;
+            std::transform(upper.begin(), upper.end(), upper.begin(), ::toupper);
+            keywords_.insert(upper);
+        }
+        // Add common SQL keywords that may not be in the Franco-Arab map
+        for (const char* kw : {
+            "SELECT", "FROM", "WHERE", "INSERT", "INTO", "VALUES", "UPDATE", "SET",
+            "DELETE", "CREATE", "DROP", "ALTER", "TABLE", "INDEX", "DATABASE", "VIEW",
+            "SHOW", "DESCRIBE", "USE", "BEGIN", "COMMIT", "ROLLBACK", "EXPLAIN",
+            "ANALYZE", "AND", "OR", "NOT", "NULL", "IN", "BETWEEN", "LIKE", "AS",
+            "ON", "JOIN", "INNER", "LEFT", "RIGHT", "CROSS", "OUTER", "GROUP", "BY",
+            "HAVING", "ORDER", "ASC", "DESC", "LIMIT", "OFFSET", "DISTINCT", "ALL",
+            "COUNT", "SUM", "AVG", "MIN", "MAX", "PRIMARY", "KEY", "FOREIGN",
+            "REFERENCES", "CASCADE", "UNIQUE", "CHECK", "DEFAULT", "AUTO_INCREMENT",
+            "INT", "VARCHAR", "BOOLEAN", "DECIMAL", "DATE", "BIGINT",
+            "WITH", "OVER", "PARTITION", "ROW_NUMBER", "RANK", "DENSE_RANK", "LAG", "LEAD",
+            "PROCEDURE", "CALL", "TRIGGER", "BEFORE", "AFTER", "EACH", "ROW", "FOR",
+            "IF", "ELSE", "WHILE", "RETURN", "DECLARE",
+            "EXPORT", "IMPORT", "BACKUP", "RESTORE", "SCHEDULE", "EVERY", "SECONDS",
+            "HISTORY", "BLOCKED", "QUERIES", "APPROVE", "QUERY",
+            "REPLICATION", "ROLE", "REPLICA", "PROMOTE", "STATUS",
+            "CHECKPOINT", "RECOVER", "LATEST", "STOP", "SERVER",
+            "TABLES", "DATABASES", "USERS", "ANOMALIES", "SUGGESTIONS",
+            "TRUE", "FALSE", "HASH"
+        }) {
+            keywords_.insert(kw);
+        }
+        // Shell commands
+        shell_commands_ = {"exit", "quit", "help", "syntax", "clear", "cls", "run", "exec", "source"};
+    }
+
+    void SetTableNames(const std::vector<std::string>& tables) {
+        table_names_ = tables;
+    }
+
+    void SetColumnNames(const std::string& table, const std::vector<std::string>& cols) {
+        column_names_[table] = cols;
+    }
+
+    std::vector<std::string> GetCompletions(const std::string& input, const std::string& partial) const {
+        std::vector<std::string> results;
+        if (partial.empty()) return results;
+
+        std::string upper_partial = partial;
+        std::transform(upper_partial.begin(), upper_partial.end(), upper_partial.begin(), ::toupper);
+        std::string lower_partial = partial;
+        std::transform(lower_partial.begin(), lower_partial.end(), lower_partial.begin(), ::tolower);
+
+        // Check context: after FROM/INTO/TABLE/UPDATE/JOIN → suggest table names
+        std::string upper_input = input;
+        std::transform(upper_input.begin(), upper_input.end(), upper_input.begin(), ::toupper);
+        bool after_table_context = false;
+        for (const char* ctx : {"FROM ", "INTO ", "TABLE ", "UPDATE ", "JOIN ", "DESCRIBE "}) {
+            if (upper_input.length() >= strlen(ctx)) {
+                // Check if the last keyword before partial is a table context keyword
+                size_t pos = upper_input.rfind(ctx);
+                if (pos != std::string::npos) {
+                    std::string after = upper_input.substr(pos + strlen(ctx));
+                    // If partial is the first word after the context keyword
+                    if (after.find(' ') == std::string::npos || after.find(' ') == after.length() - 1) {
+                        after_table_context = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (after_table_context) {
+            // Suggest table names
+            for (const auto& t : table_names_) {
+                std::string upper_t = t;
+                std::transform(upper_t.begin(), upper_t.end(), upper_t.begin(), ::toupper);
+                if (upper_t.find(upper_partial) == 0) {
+                    results.push_back(t);
+                }
+            }
+        }
+
+        // Shell commands (only if input starts with partial, i.e., beginning of line)
+        if (input.length() == partial.length()) {
+            for (const auto& cmd : shell_commands_) {
+                if (cmd.find(lower_partial) == 0) {
+                    results.push_back(cmd);
+                }
+            }
+        }
+
+        // Always suggest matching keywords
+        for (const auto& kw : keywords_) {
+            if (kw.find(upper_partial) == 0) {
+                results.push_back(kw);
+            }
+        }
+
+        // Deduplicate
+        std::sort(results.begin(), results.end());
+        results.erase(std::unique(results.begin(), results.end()), results.end());
+
+        return results;
+    }
+
+private:
+    std::set<std::string> keywords_;
+    std::vector<std::string> shell_commands_;
+    std::vector<std::string> table_names_;
+    std::map<std::string, std::vector<std::string>> column_names_;
+};
+
+// =============================================================================
+// READLINE WITH TAB COMPLETION (cross-platform)
+// =============================================================================
+
+std::string GetLastWord(const std::string& input) {
+    size_t pos = input.find_last_of(" \t");
+    if (pos == std::string::npos) return input;
+    return input.substr(pos + 1);
+}
+
+#ifdef _WIN32
+// Windows: Use console API for raw input with tab completion
+std::string ReadLineWithCompletion(const std::string& prompt, const ShellAutocomplete& ac, std::vector<std::string>& cmd_history, int& history_pos) {
+    std::cout << prompt;
+    std::cout.flush();
+
+    std::string line;
+    size_t cursor = 0;
+    int tab_index = -1;
+    std::string tab_prefix;
+    std::vector<std::string> tab_matches;
+
+    HANDLE hIn = GetStdHandle(STD_INPUT_HANDLE);
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    DWORD old_mode;
+    GetConsoleMode(hIn, &old_mode);
+    SetConsoleMode(hIn, ENABLE_WINDOW_INPUT | ENABLE_MOUSE_INPUT);
+
+    while (true) {
+        INPUT_RECORD ir;
+        DWORD read;
+        ReadConsoleInputA(hIn, &ir, 1, &read);
+
+        if (ir.EventType != KEY_EVENT || !ir.Event.KeyEvent.bKeyDown) continue;
+
+        WORD vk = ir.Event.KeyEvent.wVirtualKeyCode;
+        char ch = ir.Event.KeyEvent.uChar.AsciiChar;
+
+        // Reset tab state on non-tab key
+        if (vk != VK_TAB) {
+            tab_index = -1;
+            tab_matches.clear();
+        }
+
+        if (vk == VK_RETURN) {
+            std::cout << std::endl;
+            break;
+        } else if (vk == VK_BACK) {
+            if (cursor > 0) {
+                line.erase(cursor - 1, 1);
+                cursor--;
+                // Redraw line
+                std::cout << "\r" << prompt << line << " \r" << prompt;
+                std::cout << line.substr(0, cursor);
+                // Position cursor
+                if (cursor < line.size()) {
+                    std::cout << line.substr(cursor);
+                    // Move cursor back
+                    for (size_t i = cursor; i < line.size(); i++) std::cout << "\b";
+                }
+                std::cout.flush();
+            }
+        } else if (vk == VK_TAB) {
+            std::string partial = GetLastWord(line);
+            if (tab_index == -1) {
+                // First tab press
+                tab_prefix = partial;
+                tab_matches = ac.GetCompletions(line, partial);
+                if (tab_matches.empty()) continue;
+                tab_index = 0;
+            } else {
+                // Cycle through matches
+                tab_index = (tab_index + 1) % tab_matches.size();
+            }
+
+            if (!tab_matches.empty()) {
+                // Replace partial with match
+                std::string completion = tab_matches[tab_index];
+                size_t prefix_start = line.length() - tab_prefix.length();
+                line = line.substr(0, prefix_start) + completion;
+                cursor = line.length();
+
+                // Redraw
+                std::cout << "\r" << prompt << line << "   \r" << prompt << line;
+                std::cout.flush();
+
+                // Show all matches if multiple
+                if (tab_matches.size() > 1 && tab_index == 0) {
+                    std::cout << std::endl;
+                    for (size_t i = 0; i < tab_matches.size() && i < 20; i++) {
+                        std::cout << "  " << tab_matches[i];
+                        if ((i + 1) % 5 == 0) std::cout << std::endl;
+                    }
+                    if (tab_matches.size() > 20) std::cout << "  ... (" << tab_matches.size() << " total)";
+                    std::cout << std::endl << prompt << line;
+                    std::cout.flush();
+                }
+            }
+        } else if (vk == VK_UP) {
+            // History: previous
+            if (!cmd_history.empty() && history_pos > 0) {
+                history_pos--;
+                line = cmd_history[history_pos];
+                cursor = line.length();
+                std::cout << "\r" << prompt << std::string(80, ' ') << "\r" << prompt << line;
+                std::cout.flush();
+            }
+        } else if (vk == VK_DOWN) {
+            // History: next
+            if (history_pos < (int)cmd_history.size() - 1) {
+                history_pos++;
+                line = cmd_history[history_pos];
+                cursor = line.length();
+                std::cout << "\r" << prompt << std::string(80, ' ') << "\r" << prompt << line;
+                std::cout.flush();
+            } else if (history_pos == (int)cmd_history.size() - 1) {
+                history_pos = cmd_history.size();
+                line.clear();
+                cursor = 0;
+                std::cout << "\r" << prompt << std::string(80, ' ') << "\r" << prompt;
+                std::cout.flush();
+            }
+        } else if (vk == VK_LEFT) {
+            if (cursor > 0) { cursor--; std::cout << "\b"; std::cout.flush(); }
+        } else if (vk == VK_RIGHT) {
+            if (cursor < line.size()) { std::cout << line[cursor]; cursor++; std::cout.flush(); }
+        } else if (ch >= 32 && ch < 127) {
+            line.insert(cursor, 1, ch);
+            cursor++;
+            // Redraw from cursor position
+            std::cout << line.substr(cursor - 1);
+            for (size_t i = cursor; i < line.size(); i++) std::cout << "\b";
+            std::cout.flush();
+        }
+    }
+
+    SetConsoleMode(hIn, old_mode);
+    return line;
+}
+#else
+// Linux/Mac: Simple fallback using termios
+std::string ReadLineWithCompletion(const std::string& prompt, const ShellAutocomplete& ac, std::vector<std::string>& cmd_history, int& history_pos) {
+    std::cout << prompt;
+    std::cout.flush();
+
+    struct termios old_t, new_t;
+    tcgetattr(STDIN_FILENO, &old_t);
+    new_t = old_t;
+    new_t.c_lflag &= ~(ICANON | ECHO);
+    tcsetattr(STDIN_FILENO, TCSANOW, &new_t);
+
+    std::string line;
+    size_t cursor = 0;
+    int tab_index = -1;
+    std::string tab_prefix;
+    std::vector<std::string> tab_matches;
+
+    while (true) {
+        int ch = getchar();
+        if (ch == EOF) { line.clear(); break; }
+
+        if (ch != '\t') { tab_index = -1; tab_matches.clear(); }
+
+        if (ch == '\n' || ch == '\r') {
+            std::cout << std::endl;
+            break;
+        } else if (ch == 127 || ch == 8) { // Backspace
+            if (cursor > 0) {
+                line.erase(cursor - 1, 1);
+                cursor--;
+                std::cout << "\r" << prompt << line << " \r" << prompt << line.substr(0, cursor);
+                if (cursor < line.size()) {
+                    std::cout << line.substr(cursor);
+                    for (size_t i = cursor; i < line.size(); i++) std::cout << "\b";
+                }
+                std::cout.flush();
+            }
+        } else if (ch == '\t') {
+            std::string partial = GetLastWord(line);
+            if (tab_index == -1) {
+                tab_prefix = partial;
+                tab_matches = ac.GetCompletions(line, partial);
+                if (tab_matches.empty()) continue;
+                tab_index = 0;
+            } else {
+                tab_index = (tab_index + 1) % tab_matches.size();
+            }
+            if (!tab_matches.empty()) {
+                std::string completion = tab_matches[tab_index];
+                size_t prefix_start = line.length() - tab_prefix.length();
+                line = line.substr(0, prefix_start) + completion;
+                cursor = line.length();
+                std::cout << "\r" << prompt << line << "   \r" << prompt << line;
+                std::cout.flush();
+            }
+        } else if (ch == 27) { // Escape sequence (arrow keys)
+            int next1 = getchar();
+            int next2 = getchar();
+            if (next1 == '[') {
+                if (next2 == 'A') { // Up
+                    if (!cmd_history.empty() && history_pos > 0) {
+                        history_pos--;
+                        line = cmd_history[history_pos];
+                        cursor = line.length();
+                        std::cout << "\r" << prompt << std::string(80, ' ') << "\r" << prompt << line;
+                        std::cout.flush();
+                    }
+                } else if (next2 == 'B') { // Down
+                    if (history_pos < (int)cmd_history.size() - 1) {
+                        history_pos++;
+                        line = cmd_history[history_pos];
+                    } else {
+                        history_pos = cmd_history.size();
+                        line.clear();
+                    }
+                    cursor = line.length();
+                    std::cout << "\r" << prompt << std::string(80, ' ') << "\r" << prompt << line;
+                    std::cout.flush();
+                } else if (next2 == 'D' && cursor > 0) { // Left
+                    cursor--; std::cout << "\b"; std::cout.flush();
+                } else if (next2 == 'C' && cursor < line.size()) { // Right
+                    std::cout << line[cursor]; cursor++; std::cout.flush();
+                }
+            }
+        } else if (ch >= 32 && ch < 127) {
+            line.insert(cursor, 1, (char)ch);
+            cursor++;
+            std::cout << line.substr(cursor - 1);
+            for (size_t i = cursor; i < line.size(); i++) std::cout << "\b";
+            std::cout.flush();
+        }
+    }
+
+    tcsetattr(STDIN_FILENO, TCSANOW, &old_t);
+    return line;
+}
+#endif
 
 // -----------------------------------------------------------------------------
 // DYNAMIC SYNTAX HELPER
@@ -166,7 +525,79 @@ void DisplayDynamicSyntax() {
             case TokenType::AUTO_INCREMENT:
                 category = "COLUMN CONSTRAINTS";
                 break;
-                
+
+            // CTEs & WINDOW FUNCTIONS
+            case TokenType::WITH:
+                category = "CTEs";
+                break;
+            case TokenType::OVER:
+            case TokenType::PARTITION:
+            case TokenType::ROW_NUMBER:
+            case TokenType::RANK:
+            case TokenType::DENSE_RANK:
+            case TokenType::LAG:
+            case TokenType::LEAD:
+                category = "WINDOW FUNCTIONS";
+                break;
+
+            // STORED PROCEDURES & TRIGGERS
+            case TokenType::PROCEDURE:
+            case TokenType::CALL:
+            case TokenType::TRIGGER:
+            case TokenType::BEFORE:
+            case TokenType::AFTER:
+            case TokenType::EACH:
+            case TokenType::ROW_KW:
+            case TokenType::FOR_KW:
+            case TokenType::IF:
+            case TokenType::ELSE_KW:
+            case TokenType::WHILE_KW:
+            case TokenType::RETURN_KW:
+            case TokenType::DECLARE:
+            case TokenType::END_KW:
+                category = "PROCEDURES & TRIGGERS";
+                break;
+
+            // EXPORT/IMPORT/BACKUP
+            case TokenType::EXPORT:
+            case TokenType::IMPORT:
+            case TokenType::BACKUP:
+            case TokenType::RESTORE:
+                category = "EXPORT/IMPORT/BACKUP";
+                break;
+
+            // SCHEDULING
+            case TokenType::SCHEDULE:
+            case TokenType::EVERY:
+            case TokenType::SECONDS_KW:
+            case TokenType::DO_KW:
+                category = "SCHEDULED JOBS";
+                break;
+
+            // REPLICATION
+            case TokenType::REPLICATION:
+            case TokenType::REPLICA:
+            case TokenType::PRIMARY_SRV:
+            case TokenType::PROMOTE:
+                category = "REPLICATION";
+                break;
+
+            // HISTORY & FIREWALL
+            case TokenType::HISTORY:
+            case TokenType::BLOCKED:
+            case TokenType::APPROVE:
+            case TokenType::QUERY_KW:
+                category = "HISTORY & FIREWALL";
+                break;
+
+            // PARTITIONING
+            case TokenType::RANGE_KW:
+            case TokenType::LESS:
+            case TokenType::THAN:
+            case TokenType::HASH:
+                category = "PARTITIONING & HASH";
+                break;
+
             default:
                 category = "OTHER";
                 break;
@@ -192,7 +623,15 @@ void DisplayDynamicSyntax() {
         "DISTINCT & ALL",
         "JOINS",
         "FOREIGN KEYS",
-        "COLUMN CONSTRAINTS"
+        "COLUMN CONSTRAINTS",
+        "CTEs",
+        "WINDOW FUNCTIONS",
+        "PROCEDURES & TRIGGERS",
+        "EXPORT/IMPORT/BACKUP",
+        "SCHEDULED JOBS",
+        "REPLICATION",
+        "HISTORY & FIREWALL",
+        "PARTITIONING & HASH"
     };
     
     for (const auto& cat : order) {
@@ -277,8 +716,46 @@ void DisplayDynamicSyntax() {
     std::cout << "    stock RAKAM FA7S (stock >= 0)" << std::endl;
     std::cout << "  );" << std::endl;
     
+    std::cout << "\n  -- CTEs:" << std::endl;
+    std::cout << "  WITH active AS (SELECT * FROM users WHERE active = 1)" << std::endl;
+    std::cout << "    SELECT * FROM active WHERE age > 25;" << std::endl;
+
+    std::cout << "\n  -- Window Functions:" << std::endl;
+    std::cout << "  SELECT name, ROW_NUMBER() OVER (ORDER BY age DESC) FROM users;" << std::endl;
+    std::cout << "  SELECT dept, name, RANK() OVER (PARTITION BY dept ORDER BY salary DESC) FROM employees;" << std::endl;
+
+    std::cout << "\n  -- Stored Procedures:" << std::endl;
+    std::cout << "  CREATE PROCEDURE greet(name VARCHAR) BEGIN SELECT name; END;" << std::endl;
+    std::cout << "  CALL greet('Ahmed');" << std::endl;
+
+    std::cout << "\n  -- Triggers:" << std::endl;
+    std::cout << "  CREATE TRIGGER log_ins AFTER INSERT ON users FOR EACH ROW BEGIN" << std::endl;
+    std::cout << "    INSERT INTO audit VALUES (0, 'INSERT'); END;" << std::endl;
+
+    std::cout << "\n  -- Export/Import:" << std::endl;
+    std::cout << "  EXPORT TABLE users TO 'users.csv';" << std::endl;
+    std::cout << "  IMPORT FROM 'users.csv' INTO users_copy;" << std::endl;
+
+    std::cout << "\n  -- Backup/Restore:" << std::endl;
+    std::cout << "  BACKUP DATABASE TO './backups/mydb';" << std::endl;
+    std::cout << "  RESTORE DATABASE FROM './backups/mydb';" << std::endl;
+
+    std::cout << "\n  -- Scheduled Jobs:" << std::endl;
+    std::cout << "  CREATE SCHEDULE cleanup EVERY 3600 SECONDS DO 'DELETE FROM logs WHERE ts < 1000;';" << std::endl;
+    std::cout << "  SHOW SCHEDULES;" << std::endl;
+
+    std::cout << "\n  -- AI & Monitoring:" << std::endl;
+    std::cout << "  SHOW AI STATUS;             SHOW ANOMALIES;" << std::endl;
+    std::cout << "  SHOW INDEX SUGGESTIONS;     SHOW BLOCKED QUERIES;" << std::endl;
+    std::cout << "  SHOW HISTORY;               SHOW EXECUTION STATS;" << std::endl;
+    std::cout << "  APPROVE QUERY 42;" << std::endl;
+
+    std::cout << "\n  -- Replication:" << std::endl;
+    std::cout << "  SET REPLICATION ROLE PRIMARY;    PROMOTE;" << std::endl;
+    std::cout << "  SHOW REPLICATION STATUS;" << std::endl;
+
     std::cout << "\n" << std::string(80, '=') << std::endl;
-    std::cout << "TIP: Franco keywords are case-insensitive. Use what you prefer!" << std::endl;
+    std::cout << "TIP: Franco keywords are case-insensitive. Press TAB for autocomplete!" << std::endl;
     std::cout << "     Total keywords available: " << keywords.size() << std::endl;
     std::cout << std::string(80, '=') << std::endl << std::endl;
 }
@@ -677,22 +1154,70 @@ int main(int argc, char* argv[]) {
     }
 
     // -------------------------------------------------------------------------
-    // SHELL LOOP - Supports multi-line commands
+    // INITIALIZE AUTOCOMPLETE
+    // -------------------------------------------------------------------------
+    ShellAutocomplete autocomplete;
+    autocomplete.Initialize();
+
+    // Fetch table names for autocomplete
+    {
+        std::string tables_result = db_client.Query("SHOW TABLES;");
+        // Parse table names from result (simple line-based parsing)
+        std::istringstream tss(tables_result);
+        std::string tline;
+        std::vector<std::string> table_names;
+        while (std::getline(tss, tline)) {
+            // Skip header/separator lines
+            if (tline.empty() || tline[0] == '+' || tline[0] == '|' || tline.find("---") != std::string::npos) {
+                // Try to extract table name from "| tablename |" format
+                if (tline.size() > 2 && tline[0] == '|') {
+                    size_t s = tline.find_first_not_of("| ");
+                    size_t e = tline.find_last_not_of("| ");
+                    if (s != std::string::npos && e != std::string::npos && s <= e) {
+                        std::string name = tline.substr(s, e - s + 1);
+                        // Skip header row
+                        std::string upper_name = name;
+                        std::transform(upper_name.begin(), upper_name.end(), upper_name.begin(), ::toupper);
+                        if (upper_name != "TABLE" && upper_name != "TABLE_NAME" && upper_name != "TABLES" && !name.empty()) {
+                            table_names.push_back(name);
+                        }
+                    }
+                }
+                continue;
+            }
+            // Plain text results
+            size_t s = tline.find_first_not_of(" \t");
+            if (s != std::string::npos) {
+                std::string name = tline.substr(s);
+                size_t e = name.find_first_of(" \t\r\n");
+                if (e != std::string::npos) name = name.substr(0, e);
+                if (!name.empty()) table_names.push_back(name);
+            }
+        }
+        autocomplete.SetTableNames(table_names);
+    }
+
+    std::vector<std::string> cmd_history;
+    int history_pos = 0;
+
+    // -------------------------------------------------------------------------
+    // SHELL LOOP - Supports multi-line commands with autocomplete
     // -------------------------------------------------------------------------
     std::string input;
     std::string accumulated_input;  // For multi-line command support
     bool in_multiline = false;
 
     while (connected) {
-        // Show different prompt for continuation lines
+        // Build prompt
+        std::string prompt;
         if (in_multiline) {
-            std::cout << "       -> ";
+            prompt = "       -> ";
         } else {
-            std::cout << username << "@" << current_db << "> ";
+            prompt = username + "@" + current_db + "> ";
         }
-        std::cout.flush();
-        
-        if (!std::getline(std::cin, input)) break;
+
+        input = ReadLineWithCompletion(prompt, autocomplete, cmd_history, history_pos);
+        if (input.empty() && std::cin.eof()) break;
 
         // Handle exit only if not in middle of a statement
         if (!in_multiline && (input == "exit" || input == "quit")) break;
@@ -776,6 +1301,12 @@ int main(int argc, char* argv[]) {
         input = accumulated_input;
         accumulated_input.clear();
         in_multiline = false;
+
+        // Add to command history
+        if (!input.empty()) {
+            cmd_history.push_back(input);
+            history_pos = cmd_history.size();
+        }
 
         // --- [FIXED] PROMPT UPDATE LOGIC - Only update on success ---
         std::string upper_input = input;

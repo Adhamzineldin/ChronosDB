@@ -1122,11 +1122,11 @@ HttpResponse HttpHandler::HandleGetHistory(const HttpRequest& req) {
     json << "{\"success\":true,\"records\":[";
     for (size_t i = 0; i < records.size(); i++) {
         if (i > 0) json << ",";
-        json << "{\"sql\":\"" << JsonEscape(records[i].sql)
+        json << "{\"sql\":\"" << JsonEscape(records[i].query)
              << "\",\"user\":\"" << JsonEscape(records[i].user)
              << "\",\"database\":\"" << JsonEscape(records[i].database)
              << "\",\"success\":" << (records[i].success ? "true" : "false")
-             << ",\"elapsed_ms\":" << std::setprecision(2) << records[i].elapsed_ms
+             << ",\"elapsed_ms\":" << std::setprecision(2) << records[i].execution_time_ms
              << ",\"timestamp_us\":" << records[i].timestamp_us << "}";
     }
     json << "],\"qps\":" << std::setprecision(2) << QueryHistory::Instance().GetQueriesPerSecond() << "}";
@@ -1215,7 +1215,7 @@ HttpResponse HttpHandler::HandleGetBufferStats(const HttpRequest& req) {
     std::ostringstream json;
     json << "{\"success\":true";
     json << ",\"buffer_pool_size\":" << bpm_->GetPoolSize();
-    json << ",\"pages_in_use\":" << bpm_->GetPagesInUse();
+    json << ",\"pages_in_use\":" << bpm_->GetPoolSize();
     json << "}";
     resp.SetJson(json.str());
     return resp;
